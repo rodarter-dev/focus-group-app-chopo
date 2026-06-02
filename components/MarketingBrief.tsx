@@ -8,7 +8,7 @@ import { useCompanyContext } from '../context/CompanyContext';
 export const MarketingBrief: React.FC = () => {
   const { name, description } = useCompanyContext();
   const [context, setContext] = useState(description);
-  const [goal, setGoal] = useState("Drive increase in activity and conversions from gen-z audiences across QVC brands.");
+  const [goal, setGoal] = useState("Promote premium preventive health checkups to health-conscious families and individuals.");
   const [brief, setBrief] = useState<MarketingBriefData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [language, setLanguage] = useState<'en' | 'es'>('en');

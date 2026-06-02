@@ -82,7 +82,8 @@ export const SyntheticUsers: React.FC<{ personas: CombinedPersona[] }> = ({ pers
 
       for (const basePersona of selectedPersonasObjects) {
         const explicitContext = `Company Context: ${context}. We are expanding the persona ${basePersona.name}.`;
-        const batch = await generateSyntheticUsersBatch(selectedPersona, 6, companyDescription);
+        const batch = await generateSyntheticUsersBatch(basePersona, count, explicitContext);
+        //const batch = await generateSyntheticUsersBatch(selectedPersona, 6, companyDescription);
         
         const newProfiles = batch.map((u: any, idx: number) => ({
           ...basePersona,

@@ -12,17 +12,17 @@ interface Audience {
     isDefault?: boolean;
 }
 
-const DEFAULT_PRODUCT_NAME = "Le Creuset 3.75-qt Signature Cast-Iron Oval Casserole w/Lid";
-const DEFAULT_PRICE = "$259.98"; // Adjusted price for Le Creuset
+const DEFAULT_PRODUCT_NAME = "Checkup Inteligente Integral";
+const DEFAULT_PRICE = "$2,499.00"; 
 // Remote URL for high quality image, fallback to local if needed
-const DEFAULT_IMAGE_PATH = "/images/default-pot.png";
+const DEFAULT_IMAGE_PATH = "/images/chopo-checkup.png";
 
 const DEFAULT_AUDIENCES: Audience[] = [
     {
         id: 'default_standard',
         name: 'Standard View',
-        whyPerfect: "Mouthwatering recipes call for a multipurpose multitasker. Invest in the superior quality and French craftsmanship of Le Creuset and their Signature Series 3.75-qt oval casserole. A wide cooking surface with sloping sides, it'll handle your braised pork, hearty stew, Thanksgiving stuffing, or ratatouille with chef-like results thanks to cast-iron construction and an easy-clean enamel interior. From Le Creuset.",
-        description: "Includes 3.75-qt shallow oval casserole dish and lid. Cast-iron construction.",
+        whyPerfect: "Preventive care is the foundation of longevity. The Chopo Intelligent Checkup offers absolute assurance with 32 essential laboratory markers, clinical reviews, and advanced analytics to screen health metrics.",
+        description: "Includes comprehensive blood chemistry, clinical analysis, diagnostic telemetry, and digital results delivery.",
         image: DEFAULT_IMAGE_PATH,
         isDefault: true
     }
@@ -177,8 +177,8 @@ export const PDPPersonalization: React.FC = () => {
                     {/* Left: Logo & Nav */}
                     <div className="flex items-center gap-12">
                         <div className="flex flex-col">
-                            {/* QVC Logo */}
-                            <span className="text-3xl font-bold text-[#E22026] max-w-[200px]">QVC</span>
+                            {/* Chopo Logo */}
+                            <span className="text-3xl font-bold max-w-[200px]" style={{ color: brandConfig.colors.accent }}>{name}</span>
                         </div>
 
                         <nav className="hidden lg:flex items-center gap-8 text-[#2D3142] font-semibold text-sm">
@@ -292,65 +292,65 @@ export const PDPPersonalization: React.FC = () => {
                     {/* Right Column: Product Details (5 cols) */}
                     <div className="md:col-span-5 space-y-8 pt-6">
                         <div>
-                            <h2 className="text-[#E22026] font-bold tracking-widest uppercase text-xs mb-3">Primetime Special Price</h2>
+                            <h2 className="font-bold tracking-widest uppercase text-xs mb-3" style={{ color: brandConfig.colors.accent }}>Preventive Healthcare Plan</h2>
                             <h1 className="text-3xl md:text-5xl font-black text-[#2D3142] leading-none tracking-tighter mb-2">
                                 {DEFAULT_PRODUCT_NAME}
                             </h1>
-                            <h3 className="text-xl font-medium text-gray-600 mb-4">Le Creuset</h3>
+                            <h3 className="text-xl font-medium text-gray-600 mb-4">{name} Laboratories</h3>
 
                             {/* Reviews */}
                             <div className="flex items-center gap-4 mt-4">
                                 <div className="flex text-[#FFB900] gap-0.5">
                                     {[1, 2, 3, 4, 5].map(i => <Star key={i} size={20} fill="currentColor" className="text-[#FFB900]" />)}
                                 </div>
-                                <span className="text-sm font-bold underline cursor-pointer text-gray-500 hover:text-[#E22026]">4.9 (12,403 Reviews)</span>
+                                <span className="text-sm font-bold underline cursor-pointer text-gray-500 hover:text-blue-700">4.9 (12,403 Reviews)</span>
                             </div>
 
                             <div className="mt-8 space-y-3 text-sm text-[#2D3142] bg-gray-50 p-4 rounded-xl border border-gray-200">
                                 <div className="flex justify-between border-b border-gray-200 pb-2">
-                                    <span className="text-gray-500 w-1/3">Construction</span>
-                                    <span className="font-bold text-right w-2/3">cast-iron</span>
+                                    <span className="text-gray-500 w-1/3">Category</span>
+                                    <span className="font-bold text-right w-2/3">Preventive Diagnostic</span>
                                 </div>
                                 <div className="flex justify-between border-b border-gray-200 pb-2">
-                                    <span className="text-gray-500 w-1/3">Interior</span>
-                                    <span className="font-bold text-right w-2/3">enamel</span>
+                                    <span className="text-gray-500 w-1/3">Sample Required</span>
+                                    <span className="font-bold text-right w-2/3">Blood & Urine (8-hour fasting)</span>
                                 </div>
                                 <div className="flex justify-between border-b border-gray-200 pb-2">
-                                    <span className="text-gray-500 w-1/3">Features</span>
-                                    <span className="font-bold text-right w-2/3">side handles, lid included</span>
+                                    <span className="text-gray-500 w-1/3">Turnaround</span>
+                                    <span className="font-bold text-right w-2/3">24 Hours</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-gray-500 w-1/3">Measurements</span>
-                                    <span className="font-bold text-right w-2/3">15.7"L x 9.7"W x 5.4"H, weighs 9.9 lbs, Made in France</span>
+                                    <span className="text-gray-500 w-1/3">Availability</span>
+                                    <span className="font-bold text-right w-2/3">All clinical laboratory branches</span>
                                 </div>
                             </div>
                         </div>
 
                         {/* Price */}
                         <div>
-                            <div className="text-4xl font-black tracking-tight text-[#E22026]">{DEFAULT_PRICE}</div>
+                            <div className="text-4xl font-black tracking-tight" style={{ color: brandConfig.colors.accent }}>{DEFAULT_PRICE}</div>
                             <div className="text-md text-gray-500 font-medium mt-1">
-                                QVC PRICE: <span className="line-through">$310.00</span> <span className="text-[#188038] font-bold">Save 16%</span>
+                                {name.toUpperCase()} PRICE: <span className="line-through">$3,10.00</span> <span className="text-[#188038] font-bold">Save 16%</span>
                             </div>
-                            <div className="text-sm text-gray-500 font-medium mt-1">S&H: $3.50</div>
+                            <div className="text-sm text-gray-500 font-medium mt-1">Fasting instructions and branch directions provided via email.</div>
                         </div>
 
                         {/* Personalized Description Box */}
-                        <div className="relative border-l-4 border-[#E22026] pl-6 py-1">
+                        <div className="relative border-l-4 pl-6 py-1" style={{ borderLeftColor: brandConfig.colors.accent }}>
                             <p className="text-lg text-[#2D3142] leading-relaxed mb-3 font-medium">
                                 "{selectedAudience.description}"
                             </p>
-                            <button className="text-[#E22026] font-bold text-xs uppercase tracking-widest hover:underline transition-all">
+                            <button className="font-bold text-xs uppercase tracking-widest hover:underline transition-all" style={{ color: brandConfig.colors.accent }}>
                                 Read full product details
                             </button>
                         </div>
 
                         {/* Why Important for Audience Box */}
                         <div
-                            className="bg-red-50 p-6 rounded-2xl mt-4 mb-6 border border-red-100 shadow-sm"
+                            className="bg-blue-50 p-6 rounded-2xl mt-4 mb-6 border border-blue-100 shadow-sm"
                         >
-                            <h3 className="font-bold text-[#E22026] text-xs mb-3 flex items-center gap-2 uppercase tracking-widest">
-                                <Heart size={14} className="text-[#E22026] fill-current" />
+                            <h3 className="font-bold text-xs mb-3 flex items-center gap-2 uppercase tracking-widest" style={{ color: brandConfig.colors.accent }}>
+                                <Heart size={14} className="fill-current" style={{ color: brandConfig.colors.accent }} />
                                 Why we love this for: {selectedAudience.name}
                             </h3>
                             <p className="text-[#2D3142] text-base italic leading-relaxed font-serif">
@@ -363,11 +363,11 @@ export const PDPPersonalization: React.FC = () => {
                             <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Quantity</label>
                             <div className="flex items-center gap-6">
                                 <div className="flex items-center border border-gray-200 rounded-full px-2 py-1 bg-white shadow-sm">
-                                    <button className="w-10 h-10 rounded-full flex items-center justify-center text-gray-400 hover:text-[#E22026] transition-colors font-bold text-xl">
+                                    <button className="w-10 h-10 rounded-full flex items-center justify-center text-gray-400 hover:text-blue-700 transition-colors font-bold text-xl">
                                         -
                                     </button>
                                     <span className="text-xl font-bold text-[#2D3142] w-8 text-center">1</span>
-                                    <button className="w-10 h-10 rounded-full flex items-center justify-center text-gray-400 hover:text-[#E22026] transition-colors font-bold text-xl">
+                                    <button className="w-10 h-10 rounded-full flex items-center justify-center text-gray-400 hover:text-blue-700 transition-colors font-bold text-xl">
                                         +
                                     </button>
                                 </div>
@@ -379,17 +379,17 @@ export const PDPPersonalization: React.FC = () => {
 
                         {/* Buttons */}
                         <div className="flex gap-4 pt-4 border-t border-gray-200">
-                            <button className="flex-1 bg-[#E22026] text-white font-bold tracking-wide py-5 px-8 rounded-2xl hover:bg-red-700 transition-all shadow-md flex items-center justify-center gap-3 text-lg">
+                            <button className="flex-1 text-white font-bold tracking-wide py-5 px-8 rounded-2xl transition-all shadow-md flex items-center justify-center gap-3 text-lg hover:opacity-90" style={{ backgroundColor: brandConfig.colors.accent }}>
                                 <ShoppingCart size={24} />
-                                Add to Cart
+                                Schedule Checkup
                             </button>
-                            <button className="p-5 bg-white border border-gray-200 rounded-2xl text-gray-400 hover:border-[#E22026] hover:text-[#E22026] transition-colors shadow-sm">
+                            <button className="p-5 bg-white border border-gray-200 rounded-2xl text-gray-400 hover:text-blue-700 hover:border-blue-300 transition-colors shadow-sm">
                                 <Heart size={24} />
                             </button>
                         </div>
 
                         <div className="text-xs text-gray-500 font-medium pt-2 text-center">
-                            Need help? Call 1-800-555-0199 for an agent.
+                            Need help scheduling? Call Chopo at 1-800-555-CHOPO for direct assistance.
                         </div>
 
                     </div>

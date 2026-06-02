@@ -30,8 +30,8 @@ def adapt_to_proxy(func_text):
     # To:   const text = extractTextFromResponse(response) || "{}";
     func_text = func_text.replace('const text = response?.text || "{}";', 'const text = extractTextFromResponse(response) || "{}";')
     
-    # Change Ralph Lauren references to QVC for branding
-    func_text = func_text.replace('Ralph Lauren', 'QVC')
+    # Change Ralph Lauren references to Chopo for branding
+    func_text = func_text.replace('Ralph Lauren', 'Chopo')
     
     return func_text
 

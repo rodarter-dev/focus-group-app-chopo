@@ -2010,8 +2010,8 @@ export const simulateMarketingFocusGroup = async (
 export const simulateAcquisitionFocusGroup = async (
     personas: any[],
     offers: string[],
-    companyName: string = "QVC AI",
-    productContext: string = "Retail and Live Commerce"
+    companyName: string = "Chopo AI",
+    productContext: string = "Medical Diagnostic Services"
 ): Promise<any[]> => {
     
     const BATCH_SIZE = 10;
@@ -2443,7 +2443,7 @@ export const conductQualitativeInterview = async (persona: CombinedPersona, cont
     }
 };
 
-export const generateRegionalVariants = async (basePrompt: string, companyName: string = "QVC AI", productContext: string = "Retail & Live Commerce"): Promise<{ region: string, imagePrompt: string, image: string | null }[]> => {
+export const generateRegionalVariants = async (basePrompt: string, companyName: string = "Chopo AI", productContext: string = "Medical Diagnostic Services"): Promise<{ region: string, imagePrompt: string, image: string | null }[]> => {
     
     try {
         const categories = ["Lifestyle & Context", "Benefit & Feature-First", "Social-First & Aesthetic", "Value & Urgency-Based", "Aspirational Luxury"];
@@ -2498,8 +2498,8 @@ export const generateRegionalVariants = async (basePrompt: string, companyName: 
 export const simulateABTestFocusGroup = async (
     pool: any[], 
     variants: { region: string, image: string | null }[],
-    companyName: string = "QVC AI",
-    productContext: string = "Retail & Live Commerce"
+    companyName: string = "Chopo AI",
+    productContext: string = "Medical Diagnostic Services"
 ): Promise<ABTestResult[]> => {
     
     if (!variants || variants.length === 0) return [];

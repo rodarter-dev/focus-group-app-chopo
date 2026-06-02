@@ -13,9 +13,9 @@ interface CompanyContextType {
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 
 export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [name, setName] = useState<string>('QVC');
+  const [name, setName] = useState<string>('Chopo');
   const [description, setDescription] = useState<string>(
-    'QVC is a world leader in video commerce, reaching audiences through TV broadcasts and online retail. They specialize in live shopping experiences across fashion, home, beauty, and more.'
+    'Chopo is a premium clinical diagnostics provider, offering a wide range of laboratory tests, medical checkups, imaging, and preventive health packages with high precision and care.'
   );
 
   const [isLoaded, setIsLoaded] = useState(false);

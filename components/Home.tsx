@@ -81,7 +81,7 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                 <div className="max-w-4xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-left mb-12">
                     <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
                         <Sparkles className="text-[#0077C8]" size={20} />
-                        The QVC AI Workflow
+                        The {name} AI Workflow
                     </h2>
                     <div className="grid md:grid-cols-3 gap-8">
                         <div className="space-y-2">

@@ -28,16 +28,16 @@ const parseCSV = (csvText: string) => {
 };
 
 const SAMPLE_CUSTOMER_DATA = [
-  { name: 'Jane Smith', email: 'jane.smith@email.com', primaryCategory: 'Jewelry', topChannel: 'QVC1 Broadcast', loyaltyStatus: 'QCard Member', lastPurchase: 'Diamonique 2ct Ring', avgOrderValue: '$125' },
-  { name: 'Mary Johnson', email: 'mary.j@email.com', primaryCategory: 'Home & Kitchen', topChannel: 'QVC.com', loyaltyStatus: 'Premier Member', lastPurchase: 'Shark Vacuum', avgOrderValue: '$89' },
-  { name: 'Robert Brown', email: 'r.brown@email.com', primaryCategory: 'Electronics/Tech', topChannel: 'Mobile App', loyaltyStatus: 'New Member', lastPurchase: 'Bose Headphones', avgOrderValue: '$150' },
-  { name: 'Linda Davis', email: 'linda.d@email.com', primaryCategory: 'Beauty/Skincare', topChannel: 'QVC2', loyaltyStatus: 'QCard Member', lastPurchase: 'Tatcha Skincare Set', avgOrderValue: '$65' },
-  { name: 'Susan Wilson', email: 'susan.w@email.com', primaryCategory: 'Fashion Forward', topChannel: 'QVC.com', loyaltyStatus: 'Brand Loyalist', lastPurchase: 'Susan Graver Blazer', avgOrderValue: '$110' },
-  { name: 'Karen Taylor', email: 'karen.t@email.com', primaryCategory: 'Garden & Patio', topChannel: 'QVC1 Broadcast', loyaltyStatus: 'Value Seeker', lastPurchase: 'Solar Garden Lights', avgOrderValue: '$75' },
-  { name: 'Patricia Moore', email: 'p.moore@email.com', primaryCategory: 'Jewelry/Gifts', topChannel: 'Mobile App', loyaltyStatus: 'High Frequency', lastPurchase: 'Gold Hoop Earrings', avgOrderValue: '$200' },
-  { name: 'Elizabeth White', email: 'e.white@email.com', primaryCategory: 'Health & Wellness', topChannel: 'QVC.com', loyaltyStatus: 'Wellness Advocate', lastPurchase: 'Yoga Mat Set', avgOrderValue: '$45' },
-  { name: 'Barbara Harris', email: 'b.harris@email.com', primaryCategory: 'Kitchen Gadgets', topChannel: 'QVC2', loyaltyStatus: 'Family Shopper', lastPurchase: 'Air Fryer XL', avgOrderValue: '$135' },
-  { name: 'Jennifer Clark', email: 'j.clark@email.com', primaryCategory: 'Handbags & Accessories', topChannel: 'Mobile App', loyaltyStatus: 'Trend Follower', lastPurchase: 'Dooney & Bourke Bag', avgOrderValue: '$95' },
+  { name: 'Jane Smith', email: 'jane.smith@email.com', primaryCategory: 'Prenatal/Maternal', topChannel: 'Phone', loyaltyStatus: 'Premier Member', lastPurchase: 'EGO', avgOrderValue: '$125' },
+  { name: 'Mary Johnson', email: 'mary.j@email.com', primaryCategory: 'Compliance User', topChannel: 'Web app', loyaltyStatus: 'Premier Member', lastPurchase: 'Blood test', avgOrderValue: '$89' },
+  { name: 'Robert Brown', email: 'r.brown@email.com', primaryCategory: 'Occupational Health Lead', topChannel: 'Mobile App', loyaltyStatus: 'New Member', lastPurchase: 'Vitamin B12', avgOrderValue: '$150' },
+  { name: 'Linda Davis', email: 'linda.d@email.com', primaryCategory: 'Chronic Manager', topChannel: 'Phone', loyaltyStatus: 'None', lastPurchase: 'Vitamin K', avgOrderValue: '$65' },
+  { name: 'Susan Wilson', email: 'susan.w@email.com', primaryCategory: 'Check-up Regular', topChannel: 'Web app', loyaltyStatus: 'Brand Loyalist', lastPurchase: 'Plasma Fatty Acid Panel', avgOrderValue: '$110' },
+  { name: 'Karen Taylor', email: 'karen.t@email.com', primaryCategory: 'Concerned Parent', topChannel: 'Phone', loyaltyStatus: 'High Frequency', lastPurchase: 'Comprehensive Metabolic Panel', avgOrderValue: '$100' },
+  { name: 'Patricia Moore', email: 'p.moore@email.com', primaryCategory: 'Check-up Regular', topChannel: 'Mobile App', loyaltyStatus: 'High Frequency', lastPurchase: 'Lipid Panel', avgOrderValue: '$200' },
+  { name: 'Elizabeth White', email: 'e.white@email.com', primaryCategory: 'Accute Symptom Seeker', topChannel: 'Phone', loyaltyStatus: 'Wellness Advocate', lastPurchase: 'Prenatal Multivitamin', avgOrderValue: '$45' },
+  { name: 'Barbara Harris', email: 'b.harris@email.com', primaryCategory: 'Performance Athlete', topChannel: 'Web app', loyaltyStatus: 'Wellness Advocate', lastPurchase: 'Complete Blood Count', avgOrderValue: '$95' },
+  { name: 'Jennifer Clark', email: 'j.clark@email.com', primaryCategory: 'Performance Biohacker', topChannel: 'Mobile App', loyaltyStatus: 'Trend Follower', lastPurchase: 'Complete Blood Count', avgOrderValue: '$95' },
 ];
 
 interface AudienceGeneratorProps {
@@ -212,7 +212,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({ personas, 
               <Settings size={20} />
             </button>
           </div>
-          <p className="text-subtext mt-1">Preview member data and generate detailed QVC user personas.</p>
+          <p className="text-subtext mt-1">Preview member data and generate detailed Chopo user personas.</p>
         </div>
       </div>
 

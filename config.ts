@@ -1,20 +1,20 @@
 export const brandConfig = {
-  companyName: "QVC AI",
+  companyName: "Chopo AI",
   logo: {
-    sidebar: "/images/qvc-logo.png",
+    sidebar: "/images/chopo_logo.png",
     width: "w-[160px]",
   },
   colors: {
     primary: "#FFFFFF", // White
     secondary: "#111827", // Gray-900
-    accent: "#0077C8", // Brand Blue
+    accent: "#004B87", // Chopo Dark Blue
   },
   meta: {
-    title: "QVC AI Lab",
+    title: "Chopo AI Lab",
   },
   ui: {
-    welcomeTitle: "QVC AI",
-    welcomeColor: "text-[#0077C8]",
+    welcomeTitle: "Chopo AI",
+    welcomeColor: "text-[#004B87]",
     button: {
       primary: "btn-primary",
       secondary: "btn-secondary",
@@ -22,6 +22,7 @@ export const brandConfig = {
     },
   },
   examples: {
-    privateBrands: ["Le Creuset", "Dyson", "KitchenAid", "Ninja", "Shark", "Bose", "Samsung", "Philosophy", "IT Cosmetics", "Dooney & Bourke"],
+    privateBrands: ["Checkup Completo", "Perfil Femenino", "Perfil Masculino", "Estudios de Sangre", "Salud Cardiovascular", "Prevención Diabetes"],
   }
 };
+

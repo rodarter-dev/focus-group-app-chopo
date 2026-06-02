@@ -99,7 +99,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         <div className="hidden md:flex items-center justify-center p-6 border-b border-gray-200">
-          <img src={brandConfig.logo.sidebar} alt="QVC AI" className="h-16 w-auto" />
+          <img src={brandConfig.logo.sidebar} alt={`${brandConfig.companyName} Logo`} className="h-16 w-auto" />
         </div>
 
         <div className="p-4 space-y-2">
@@ -182,7 +182,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                   value={tempName}
                   onChange={(e) => setTempName(e.target.value)}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#0077C8] focus:border-transparent transition-all outline-none font-medium text-gray-900"
-                  placeholder="e.g. QVC"
+                  placeholder="e.g. Chopo"
                 />
               </div>
               

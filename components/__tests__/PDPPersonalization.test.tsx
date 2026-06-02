@@ -32,9 +32,9 @@ vi.mock('../services/geminiService', () => ({
 // Mock CompanyContext
 vi.mock('../../context/CompanyContext', () => ({
   useCompanyContext: () => ({
-    name: 'QVC',
-    description: 'QVC is a world leader in video commerce.',
-    guidelines: 'QVC style'
+    name: 'Chopo',
+    description: 'Chopo is a world leader in medical diagnostic services.',
+    guidelines: 'Chopo style'
   })
 }));
 
