@@ -2,114 +2,89 @@ import React, { useState, useEffect } from 'react';
 import { brandConfig } from './config';
 import { AppMode, CombinedPersona } from './types';
 import { Navigation } from './components/Navigation';
-import { PDPHub } from './components/PDPHub';
-import { PDPEnrichment } from './components/PDPEnrichment';
-import { MultiImage } from './components/MultiImage';
-import { PDPPersonalization } from './components/PDPPersonalization';
-import { ESpots } from './components/ESpots';
-import { GenSiteStub } from './components/GenSiteStub';
 import { AudienceGenerator } from './components/AudienceGenerator';
-import { MarketingCampaign } from './components/MarketingCampaign';
-import { ContentVersioning } from './components/ContentVersioning';
 import { MarketingBrief } from './components/MarketingBrief';
 import { SyntheticChat } from './components/SyntheticChat';
 import { SyntheticTesting } from './components/SyntheticTesting';
 import { Home } from './components/Home';
-import { CompanyContext } from './components/CompanyContext';
-import { ProjectHelper } from './components/ProjectHelper';
-import { FeasibilityAnalysis } from './components/FeasibilityAnalysis';
-import { RunwayAnalysis } from './components/RunwayAnalysis';
-
-import { Assistant } from './components/Assistant';
-import { Concierge } from './components/Concierge';
 import { SyntheticUsers } from './components/SyntheticUsers';
+import { STANDARD_AUDIENCES } from './data/simulationData';
 import { CompanyProvider } from './context/CompanyContext';
-import { ProductSpin } from './components/ProductSpin';
+import { LanguageProvider } from './context/LanguageContext';
 
 function App() {
   return (
-    <CompanyProvider>
-      <AppContent />
-    </CompanyProvider>
+    <LanguageProvider>
+      <CompanyProvider>
+        <AppContent />
+      </CompanyProvider>
+    </LanguageProvider>
   );
 }
 
 function AppContent() {
   const [mode, setMode] = useState<AppMode>(AppMode.HOME);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [personas, setPersonas] = useState<CombinedPersona[]>([]);
+  const [personas, setPersonas] = useState<CombinedPersona[]>(
+    STANDARD_AUDIENCES as unknown as CombinedPersona[]
+  );
 
   useEffect(() => {
     document.title = brandConfig.meta.title;
 
-    // Load audiences from the file system explicitly if they exist
+    // Load audiences from /api/config/personas as the single authoritative source
     const loadAudiences = async () => {
+      try {
+        const configRes = await fetch('/api/config/personas');
+        if (configRes.ok) {
+          const configData = await configRes.json();
+          const configPersonas: CombinedPersona[] | null = Array.isArray(configData)
+            ? configData
+            : Array.isArray(configData?.personas)
+              ? configData.personas
+              : null;
+          if (configPersonas !== null) {
+            setPersonas(configPersonas);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load /api/config/personas:", err);
+      }
+
       try {
         const res = await fetch('/api/load-run/audience_generator');
         if (res.ok) {
           const data = await res.json();
-          if (data.personas && Array.isArray(data.personas)) {
+          if (Array.isArray(data?.personas)) {
             setPersonas(data.personas);
           }
         }
       } catch (err) {
-        console.warn("No saved audience run found, starting empty.", err);
+        console.warn("No saved audience run found:", err);
       }
     };
     loadAudiences();
-
-    
   }, []);
-
-  
 
   const renderContent = () => {
     switch (mode) {
-      case AppMode.PDP_HUB:
-        return <PDPHub />;
-      case AppMode.INSIGHTS:
-        return <RunwayAnalysis />;
-      case AppMode.PDP_PERSONALIZATION:
-        return <PDPPersonalization />;
-      case AppMode.PDP_ENRICHMENT:
-        return <PDPEnrichment />;
-      case AppMode.MULTI_IMAGE:
-        return <MultiImage />;
-      case AppMode.E_SPOTS:
-        return <ESpots />;
-      case AppMode.CONTENT_VERSIONING:
-        return <ContentVersioning />;
-      case AppMode.GEN_SITE:
-        return <GenSiteStub />;
-      case AppMode.PRODUCT_SPIN:
-        return <ProductSpin />;
       case AppMode.AUDIENCE_GEN:
         return (
-          <AudienceGenerator 
-            personas={personas} 
-            setPersonas={setPersonas} 
+          <AudienceGenerator
+            personas={personas}
+            setPersonas={setPersonas}
+            setMode={setMode}
           />
         );
-      case AppMode.MARKETING_CAMPAIGN:
-        return <MarketingCampaign />;
       case AppMode.MARKETING_BRIEF:
-        return <MarketingBrief />;
+        return <MarketingBrief setMode={setMode} />;
       case AppMode.SYNTHETIC_CHAT:
         return <SyntheticChat />;
       case AppMode.SYNTHETIC_USERS:
-        return <SyntheticUsers personas={personas} />;
+        return <SyntheticUsers personas={personas} setMode={setMode} />;
       case AppMode.SYNTHETIC_FOCUS_GROUP:
-        return <SyntheticTesting />;
-      case AppMode.FEASIBILITY_ANALYSIS:
-        return <FeasibilityAnalysis />;
-      case AppMode.PROJECT_HELPER:
-        return <ProjectHelper />;
-      case AppMode.ASSISTANT:
-        return <Assistant />;
-      case AppMode.CONCIERGE:
-        return <Concierge />;
-      case AppMode.COMPANY_CONTEXT:
-        return <CompanyContext  />;
+        return <SyntheticTesting setMode={setMode} />;
       case AppMode.HOME:
       default:
         return (
@@ -125,7 +100,6 @@ function AppContent() {
         setMode={setMode}
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
-        
       />
 
       <main className={`

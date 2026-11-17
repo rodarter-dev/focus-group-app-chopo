@@ -1,32 +1,39 @@
 import { describe, it, expect } from 'vitest';
 import { SIMULATION_PRODUCTS, STANDARD_AUDIENCES } from './simulationData';
 
-describe('Simulation Data Content', () => {
-    it('contains retail products instead of insurance plans', () => {
-        const medicalKeywords = [/PPO/i, /HMO/i, /EPO/i, /Care/i, /Wellness/i, /Health Premium/i];
-        
-        // We expect at least some retail items like Cookware, Vacuum, etc.
-        const retailKeywords = [/Mixer/i, /Vacuum/i, /Cookware/i, /Jewelry/i, /Beauty/i];
-        
+describe('Simulation Data Content (Laboratorios Chopo)', () => {
+    it('contains Chopo clinical diagnostic studies instead of legacy retail products', () => {
+        const legacyRetailKeywords = [/Mixer/i, /Vacuum/i, /Cookware/i, /Jewelry/i];
+        const chopoClinicalKeywords = [
+            /Check-up Control Diabetes/i,
+            /Hemoglobina Glicosilada \(HbA1c\)/i,
+            /Check-up Completo Chopo/i,
+            /Mastografía Digital/i,
+            /Rayos X de Tórax Digital/i
+        ];
+
         const productsText = SIMULATION_PRODUCTS.join(' ');
-        
-        medicalKeywords.forEach(k => {
-             // Some "Care" might remain but general insurance terms should be gone
-             if (k.toString().includes('PPO') || k.toString().includes('HMO') || k.toString().includes('Insurance')) {
-                 expect(productsText).not.toMatch(k);
-             }
+
+        legacyRetailKeywords.forEach(k => {
+            expect(productsText).not.toMatch(k);
         });
-        
-        const matchFound = retailKeywords.some(k => productsText.match(k));
-        expect(matchFound).toBe(true);
+
+        chopoClinicalKeywords.forEach(k => {
+            expect(productsText).toMatch(k);
+        });
     });
 
-    it('has retail-focused personas', () => {
-        const personasText = JSON.stringify(STANDARD_AUDIENCES);
-        const healthKeywords = [/Preventive Care/i, /Wellness Advocate/i, /Insurance/i];
-        
-        healthKeywords.forEach(k => {
-             expect(personasText).not.toMatch(k);
+    it('has standardized fixed-schema B2C patient and B2B physician personas', () => {
+        expect(STANDARD_AUDIENCES.length).toBeGreaterThanOrEqual(5);
+
+        STANDARD_AUDIENCES.forEach(persona => {
+            expect(['patient', 'physician']).toContain(persona.track);
+            expect(typeof persona.age).toBe('number');
+            expect(persona.job_title).toBeTruthy();
+            expect(Array.isArray(persona.pain_points)).toBe(true);
+            expect(persona.pain_points.length).toBeGreaterThan(0);
+            expect(Array.isArray(persona.goals)).toBe(true);
+            expect(persona.goals.length).toBeGreaterThan(0);
         });
     });
 });

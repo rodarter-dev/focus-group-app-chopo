@@ -4,6 +4,7 @@ import { User, X, MessageSquare, Send, Loader2, Bot, Briefcase, Heart, TrendingU
 import { generatePersonaChatResponse } from '../services/geminiService';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { brandConfig } from '../config';
+import { useLanguage } from '../context/LanguageContext';
 
 interface SyntheticInterviewProps {
     persona: any;
@@ -32,6 +33,7 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
 };
 
 export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona, simulationResult, brief, onClose }) => {
+    const { t } = useLanguage();
     const [messages, setMessages] = useState<{ role: 'user' | 'persona', content: string }[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -40,9 +42,14 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
     // Initial greeting
     useEffect(() => {
         if (messages.length === 0) {
+            const productName = brief?.productName || t('el estudio clínico de Chopo', 'the Chopo clinical study');
+            const score = simulationResult.conversionLikelihood ?? simulationResult.likelihoodToJoin ?? 75;
             setMessages([{
                 role: 'persona',
-                content: `Hi, I'm ${persona.name}. I've just reviewed your campaign for ${brief.productName || 'product'}. I gave it a score of ${simulationResult.conversionLikelihood || simulationResult.likelihoodToJoin}/100. asks me anything about my feedback!`
+                content: t(
+                    `Hola, soy ${persona.name}. Acabo de revisar tu campaña para ${productName}. Le di una calificación de ${score}/100. ¡Pregúntame lo que quieras sobre mi retroalimentación!`,
+                    `Hi, I'm ${persona.name}. I've just reviewed your campaign for ${productName}. I gave it a score of ${score}/100. Ask me anything about my feedback!`
+                )
             }]);
         }
     }, []);
@@ -70,7 +77,7 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
             setMessages(prev => [...prev, { role: 'persona', content: response }]);
         } catch (error) {
             console.error(error);
-            setMessages(prev => [...prev, { role: 'persona', content: "I'm having trouble thinking right now. Could you repeat that?" }]);
+            setMessages(prev => [...prev, { role: 'persona', content: t("Tengo problemas para responder en este momento. ¿Podrías repetir tu pregunta?", "I'm having trouble thinking right now. Could you repeat that?") }]);
         } finally {
             setIsLoading(false);
         }
@@ -114,15 +121,15 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
                     <div className="p-6 space-y-6">
                         <div>
                             <h4 className="font-bold text-white mb-2 flex items-center gap-2 text-xs uppercase tracking-wider">
-                                <Briefcase size={14} /> Profile
+                                <Briefcase size={14} /> {t('Perfil', 'Profile')}
                             </h4>
                             <div className="grid grid-cols-2 gap-2 text-sm">
                                 <div className="bg-gray-900 p-2 rounded border border-gray-800">
-                                    <span className="block text-gray-400 text-xs">Age</span>
+                                    <span className="block text-gray-400 text-xs">{t('Edad', 'Age')}</span>
                                     <span className="font-bold text-white">{persona.age}</span>
                                 </div>
                                 <div className="bg-gray-900 p-2 rounded border border-gray-800">
-                                    <span className="block text-gray-400 text-xs">Income</span>
+                                    <span className="block text-gray-400 text-xs">{t('Ingresos', 'Income')}</span>
                                     <span className="font-bold text-white">{persona.details?.income || persona.income}</span>
                                 </div>
                             </div>
@@ -134,7 +141,7 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
                         {persona.details?.preferred_brands && (
                             <div>
                                 <h4 className="font-bold text-white mb-2 flex items-center gap-2 text-xs uppercase tracking-wider">
-                                    <Heart size={14} className="text-red-500" /> Brands
+                                    <Heart size={14} className="text-red-500" /> {t('Marcas', 'Brands')}
                                 </h4>
                                 <div className="flex flex-wrap gap-1">
                                     {persona.details.preferred_brands.map((b: string, i: number) => (
@@ -147,12 +154,12 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
                         {persona.details?.charts?.brand_affinity && (
                             <div>
                                 <h4 className="font-bold text-white mb-2 flex items-center gap-2 text-xs uppercase tracking-wider">
-                                    <TrendingUp size={14} /> Brand Affinity
+                                    <TrendingUp size={14} /> {t('Afinidad de Marca', 'Brand Affinity')}
                                 </h4>
                                 <div className="h-32 w-full">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <LineChart data={transformChartData(persona.details.charts.brand_affinity)}>
-                                            <Line type="monotone" dataKey="value" stroke="#3F47E9" strokeWidth={2} dot={false} />
+                                            <Line type="monotone" dataKey="value" stroke="#0066FF" strokeWidth={2} dot={false} />
                                         </LineChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -164,7 +171,7 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
                 {/* Middle Panel: Simulation Results */}
                 <div className="w-full md:w-1/4 bg-[#111] border-r border-gray-800 overflow-y-auto p-6">
                     <h3 className="font-bold text-xl text-white mb-6 flex items-center gap-2">
-                        <BarChart2 className="text-[#3F47E9]" /> Result Summary
+                        <BarChart2 className="text-[#0066FF]" /> {t('Resumen de Resultados', 'Result Summary')}
                     </h3>
 
                     {/* Creative Scores */}
@@ -172,37 +179,37 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
                         <div className="space-y-4 mb-8">
                             <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
                                 <div className="flex justify-between items-center mb-1">
-                                    <span className="text-sm font-bold text-gray-300">Visual Appeal</span>
+                                    <span className="text-sm font-bold text-gray-300">{t('Diseño y Atractivo Visual', 'Visual Appeal')}</span>
                                     <span className={`text-sm font-bold ${simulationResult.visualAppeal >= 70 ? 'text-green-600' : 'text-orange-500'}`}>
                                         {simulationResult.visualAppeal}/100
                                     </span>
                                 </div>
                                 <div className="w-full bg-gray-800 rounded-full h-2">
-                                    <div className="bg-[#3F47E9] h-2 rounded-full" style={{ width: `${simulationResult.visualAppeal}%` }}></div>
+                                    <div className="bg-[#0066FF] h-2 rounded-full" style={{ width: `${simulationResult.visualAppeal}%` }}></div>
                                 </div>
                             </div>
 
                             <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
                                 <div className="flex justify-between items-center mb-1">
-                                    <span className="text-sm font-bold text-gray-300">Brand Fit</span>
+                                    <span className="text-sm font-bold text-gray-300">{t('Afinidad con la Marca', 'Brand Fit')}</span>
                                     <span className={`text-sm font-bold ${simulationResult.brandFit >= 70 ? 'text-green-500' : 'text-orange-500'}`}>
                                         {simulationResult.brandFit}/100
                                     </span>
                                 </div>
                                 <div className="w-full bg-gray-800 rounded-full h-2">
-                                    <div className="bg-[#3F47E9] h-2 rounded-full" style={{ width: `${simulationResult.brandFit}%` }}></div>
+                                    <div className="bg-[#0066FF] h-2 rounded-full" style={{ width: `${simulationResult.brandFit}%` }}></div>
                                 </div>
                             </div>
 
                             <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
                                 <div className="flex justify-between items-center mb-1">
-                                    <span className="text-sm font-bold text-gray-300">Stopping Power</span>
+                                    <span className="text-sm font-bold text-gray-300">{t('Impacto Visual y Claridad', 'Visual Impact & Clarity')}</span>
                                     <span className={`text-sm font-bold ${simulationResult.stoppingPower >= 70 ? 'text-green-500' : 'text-orange-500'}`}>
                                         {simulationResult.stoppingPower}/100
                                     </span>
                                 </div>
                                 <div className="w-full bg-gray-800 rounded-full h-2">
-                                    <div className="bg-[#3F47E9] h-2 rounded-full" style={{ width: `${simulationResult.stoppingPower}%` }}></div>
+                                    <div className="bg-[#0066FF] h-2 rounded-full" style={{ width: `${simulationResult.stoppingPower}%` }}></div>
                                 </div>
                             </div>
                         </div>
@@ -210,7 +217,7 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
 
                     {/* Feedback */}
                     <div className="mb-6">
-                        <h4 className="font-bold text-white mb-2 text-sm uppercase tracking-wider">Initial Reaction</h4>
+                        <h4 className="font-bold text-white mb-2 text-sm uppercase tracking-wider">{t('Reacción Inicial', 'Initial Reaction')}</h4>
                         <div className="bg-[#2a1a1a] p-4 rounded-xl text-gray-200 text-sm leading-relaxed border border-red-900/30 relative">
                             <span className="absolute top-2 left-2 text-4xl text-red-500/20 font-serif leading-none">“</span>
                             <p className="relative z-10">{simulationResult.feedback}</p>
@@ -221,7 +228,7 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
                     {(simulationResult.suggestedMessaging || simulationResult.suggestedImage) && (
                         <div>
                             <h4 className="font-bold text-white mb-2 text-sm uppercase tracking-wider flex items-center gap-2">
-                                <Star size={14} className="text-yellow-500" /> Optimization Idea
+                                <Star size={14} className="text-yellow-500" /> {t('Idea de Optimización', 'Optimization Idea')}
                             </h4>
                             <div className="space-y-3">
                                 {simulationResult.suggestedMessaging && (
@@ -243,8 +250,8 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
                 <div className="flex-1 flex flex-col bg-black">
                     <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-[#111]">
                         <div>
-                            <h3 className="font-bold text-lg text-white">Deep Dive Interview</h3>
-                            <p className="text-xs text-gray-500">AI Moderator Mode • {persona.name} is Online</p>
+                            <h3 className="font-bold text-lg text-white">{t('Entrevista a Profundidad 1-a-1', 'Deep Dive Interview')}</h3>
+                            <p className="text-xs text-gray-500">{t(`Modo Moderador IA • ${persona.name} está en línea`, `AI Moderator Mode • ${persona.name} is Online`)}</p>
                         </div>
                         <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-full transition-colors hidden md:block text-gray-400">
                             <X size={24} />
@@ -256,13 +263,13 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
                             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                 <div className={`flex gap-3 max-w-[85%] ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
                                     <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${
-                                        m.role === 'user' ? 'bg-[#3F47E9] text-white' : 'bg-gray-800 text-white'
+                                        m.role === 'user' ? 'bg-[#0066FF] text-white' : 'bg-gray-800 text-white'
                                     }`}>
                                         {m.role === 'user' ? <User size={16} /> : <Bot size={16} />}
                                     </div>
                                     <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${
                                         m.role === 'user' 
-                                        ? 'bg-[#3F47E9] text-white rounded-tr-none' 
+                                        ? 'bg-[#0066FF] text-white rounded-tr-none' 
                                          : 'bg-gray-900 text-gray-200 rounded-tl-none border border-gray-800'
                                     }`}>
                                         <FormattedMessage content={m.content} />
@@ -292,7 +299,7 @@ export const SyntheticInterview: React.FC<SyntheticInterviewProps> = ({ persona,
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                                placeholder="Ask a follow-up question..."
+                                placeholder={t("Haz una pregunta de seguimiento...", "Ask a follow-up question...")}
                                 className="flex-1 input-field"
                                 disabled={isLoading}
                             />

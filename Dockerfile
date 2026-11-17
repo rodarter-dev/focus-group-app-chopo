@@ -1,4 +1,4 @@
-FROM node:20-alpine as builder
+FROM node:20-alpine
 
 WORKDIR /app
 
@@ -10,11 +10,10 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-# Remove development dependencies to keep the image small
-# (Optional, depending on if you need them for the server)
-# RUN npm prune --production
+ENV NODE_ENV=production
+ENV PORT=8080
 
 EXPOSE 8080
 
-# Start the server
+# Start the server (100% Vertex AI IAM/ADC + Cloud Firestore + Cloud Storage)
 CMD ["node", "server.js"]

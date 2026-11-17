@@ -17,13 +17,13 @@ beforeEach(() => {
               {
                 text: JSON.stringify([
                   {
-                    personaId: 'gen_z_test',
-                    personaName: 'Gen Z Tester',
-                    likelihoodToJoin: 85,
-                    perceivedValue: 90,
-                    barriers: 'None',
-                    winningOffer: 'Early Access Collab',
-                    feedback: 'This is exactly what I was looking for! Love the exclusivity.'
+                    personaId: 'aud_diabetes_patient',
+                    personaName: 'Roberto Méndez (54, CDMX)',
+                    likelihoodToJoin: 88,
+                    perceivedValue: 92,
+                    barriers: 'Ninguna si el requisito de ayuno está claro',
+                    winningOffer: 'Precio especial exclusivo pagando en línea en chopo.com.mx',
+                    feedback: 'Me da mucha confianza poder pagar en línea y recibir mis resultados de HbA1c en la App Chopo.'
                   }
                 ])
               }
@@ -35,34 +35,39 @@ beforeEach(() => {
   });
 });
 
-describe('QVC Acquisition Simulation', () => {
+describe('Laboratorios Chopo Acquisition Simulation', () => {
     const mockPersonas = [
         {
-            id: 'gen_z_test',
-            name: 'Gen Z Tester',
-            bio: 'Tech-savvy, trend-seeking, Gen-Z consumer.',
-            demographics: '18-24, Urban',
-            preferred_brands: ['QVC', 'TikTok Shop', 'Revolve'],
-            details: { lifestyle_tags: ['Early Adopter', 'Aesthetic-driven'] }
+            id: 'aud_diabetes_patient',
+            track: 'patient',
+            name: '[Paciente B2C] Control Crónico de Diabetes',
+            personaName: 'Roberto Méndez (54, CDMX)',
+            age: 54,
+            job_title: 'Contador Público Independiente',
+            bio: 'Paciente con diabetes tipo 2 que monitorea su HbA1c cada 3 meses.',
+            demographics: '45–68 años, Urbano Nacional, NSE C / C+',
+            pain_points: ['Incertidumbre sobre horas de ayuno'],
+            goals: ['Pagar en línea con descuento y ver resultados en App Chopo'],
+            details: { lifestyle_tags: ['Monitoreo HbA1c', 'Resultados en App Chopo'] }
         }
     ];
 
     const mockOffers = [
-        "Early Access to Limited Edition Collaborations",
-        "Virtual AR Try-On for Beauty & Fashion"
+        "Precio especial exclusivo pagando en línea en chopo.com.mx",
+        "Resultados digitales de HbA1c directo en la App Chopo"
     ];
 
-    test('simulateAcquisitionFocusGroup returns valid results for QVC offers', async () => {
+    test('simulateAcquisitionFocusGroup returns valid results for Chopo clinical offers', async () => {
         const results = await simulateAcquisitionFocusGroup(
             mockPersonas,
             mockOffers,
-            "QVC",
-            "Retail & Live Commerce"
+            "Laboratorios Chopo",
+            "Diagnóstico Clínico e Imagenología (Grupo PROA)"
         );
 
         expect(results).toHaveLength(1);
-        expect(results[0].personaId).toBe('gen_z_test');
+        expect(results[0].personaId).toBe('aud_diabetes_patient');
         expect(results[0].likelihoodToJoin).toBeGreaterThan(50);
-        expect(results[0].winningOffer).toContain('Early Access Collab');
+        expect(results[0].winningOffer).toContain('chopo.com.mx');
     });
 });

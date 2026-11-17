@@ -7,14 +7,15 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-describe('Logo Configuration', () => {
-  test('brandConfig.logo.sidebar is set to the correct QVC logo', () => {
-    expect(brandConfig.logo.sidebar).toBe('/images/qvc-logo.png');
+describe('Logo Configuration (Laboratorios Chopo)', () => {
+  test('brandConfig.logo.sidebar is set to the official Chopo SVG logo', () => {
+    expect(brandConfig.logo.sidebar).toBe('/images/chopo-logo.svg');
   });
 
-  test('the qvc-logo.png file exists in the public/images directory', () => {
-    // Relative to the current test file location in qvc-app/tests/
-    const logoPath = path.resolve(__dirname, '../public/images/qvc-logo.png');
-    expect(fs.existsSync(logoPath)).toBe(true);
+  test('the chopo-logo.svg file exists in the public/images directory and legacy qvc-logo.png is removed', () => {
+    const chopoLogoPath = path.resolve(__dirname, '../public/images/chopo-logo.svg');
+    const legacyQvcLogoPath = path.resolve(__dirname, '../public/images/qvc-logo.png');
+    expect(fs.existsSync(chopoLogoPath)).toBe(true);
+    expect(fs.existsSync(legacyQvcLogoPath)).toBe(false);
   });
 });

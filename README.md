@@ -1,105 +1,60 @@
-# Focus Group AI
+# Laboratorios Chopo — Intelligence Hub (Grupo PROA)
 
-This is a comprehensive full-stack application built with React, Node.js, and Google Cloud Vertex AI to simulate real-world customer focus groups using synthetic personas. Follow the guide below to set up your environment and run the application locally or deploy it to Google Cloud Run.
-
-**Note:** When first using the application, be sure to run the **Audience Generator** and the **Marketing Brief** tools first. The synthetic Focus Group experience relies on that generated data to provide tailored, persona-driven answers!
-
-## Prerequisites
-
-Before starting, ensure you have the following installed on your machine (Mac or Windows):
-
-1.  **Node.js & npm**: Install the latest LTS version of Node.js from [nodejs.org](https://nodejs.org/). This will include `npm`.
-2.  **Google Cloud CLI (gcloud)**: Install the `gcloud` CLI to interact with Google Cloud services.
-    -   **Mac**: `brew install --cask google-cloud-sdk` (or download from the Google Cloud docs).
-    -   **Windows**: Download the installer from the Google Cloud CLI documentation.
+Plataforma de Inteligencia de Marketing Clínico construida con **React + TypeScript**, **Node.js / Express**, **Google Cloud Vertex AI**, **Cloud Firestore**, **Cloud Storage** y **Vertex AI Search (RAG)** para el diseño, validación y evaluación de campañas de la Parrilla de Estudios Clínicos con pacientes (B2C) y médicos prescriptores (B2B) 100% simulados bajo lineamientos COFEPRIS.
 
 ---
 
-## 1. Google Cloud Environment Setup
+## Arquitectura y Servicios GCP
 
-To use the AI features in this application, you need a Google Cloud Project with the Vertex AI API enabled and proper authentication configured on your local machine.
+- **Cómputo:** Google Cloud Run (`chopo-intelligence-hub` en `us-central1`)
+- **Modelos Vertex AI (IAM / ADC — Cero API Keys):**
+  - `gemini-3.5-flash` (Generación de audiencias, usuarios sintéticos, briefs y simulaciones de Focus Group)
+  - `gemini-3.1-pro-preview` (Razonamiento avanzado para Briefs y Evaluación Multimodal)
+  - `gemini-3-pro-image` (Generación de creatividad visual clínica)
+  - `veo-3.1-lite-generate-001` (Generación de video corto)
+- **Base de Conocimiento (RAG):** Vertex AI Search (`chopo-rag-datastore`) + Cloud Storage (`gs://<PROJECT_ID>-rag-docs`)
+- **Persistencia y Activos:** Cloud Firestore (`chopo_config`, `chopo_config_versions`, `chopo_runs`, `chopo_evaluations`) + Cloud Storage (`gs://<PROJECT_ID>-chopo-assets/chopo-media/`)
 
-### Step 1: Create a Google Cloud Project
-1.  Go to the [Google Cloud Console](https://console.cloud.google.com/).
-2.  Create a new project (or select an existing one).
-3.  Note your **Project ID**.
+---
 
-### Step 2: Enable the Vertex AI API
-1.  In the Google Cloud Console, navigate to **APIs & Services > Library**.
-2.  Search for **Vertex AI API** and click **Enable**.
+## Flujo de Trabajo (4 Pasos)
 
-### Step 3: Authenticate Locally
-Open your terminal (Command Prompt/PowerShell on Windows, Terminal on Mac) and authenticate the `gcloud` CLI:
+1. **`1. Audiencias`:** Catálogo de perfiles base de Laboratorios Chopo (Pacientes B2C y Médicos B2B) y creador directo de nuevas audiencias mediante prompts con IA.
+2. **`2. Usuarios Sintéticos`:** Generación por lotes (`1` a `15` usuarios por segmento) con contexto clínico adicional y sincronización automática con el Focus Group.
+3. **`3. Brief de Marketing`:** Generación de estrategia y piezas multicanal (Mensajes Clave, Banners de Redes, Correos tipo Banner Visual, Promociones) amarradas al catálogo de Estudios Clínicos y folios COFEPRIS.
+4. **`4. Focus Group`:** Simulación y evaluación de Mensajes Clave, Promociones, Correos, Compra de Estudios (Sucursal vs. Domicilio), Imagen / Banner (con carga de arte propio), A/B Test y Entrevistas Cualitativas (`Chat`).
+
+---
+
+## Ejecución Local y Despliegue
+
+### 1. Configurar Variables de Entorno
+Copia `.env.example` a `.env` y ajusta el proyecto de Google Cloud:
 
 ```bash
-# Log in to your Google Cloud account
+cp .env.example .env
 gcloud auth login
-
-# Set your active project
-gcloud config set project YOUR_PROJECT_ID
-
-# Set up Application Default Credentials (ADC)
-# This is required for the local Node.js server to call Vertex AI!
 gcloud auth application-default login
 ```
-*Note: The command `gcloud auth application-default login` will open a browser window for you to authenticate and will generate a local credentials file that the Google Cloud SDKs use automatically.*
 
----
-
-## 2. Local Application Setup
-
-Once your cloud environment is ready, set up the project locally.
-
-### Step 1: Install Dependencies
-Navigate to the root of your project directory and install the required npm packages:
+### 2. Instalar y Ejecutar en Local
 
 ```bash
-cd focus-group-app
 npm install
+npm run build
+node server.js
+# Disponible en http://localhost:8080
 ```
 
-### Step 2: Verify Configuration
-If you copied this from a template, ensure you update any specific configurations:
--   Edit `package.json` if you need to update the `"name"` field.
--   Edit `cloud_run.sh` to update the `SERVICE_NAME` variable if you plan to deploy.
+### 3. Pruebas Unitarias
 
----
-
-## 3. Running the Application Locally
-
-You can start the development server using the provided bash script or standard npm commands.
-
-### Option A: Using the Start Script (Recommended for Mac/Linux)
 ```bash
-./start_local.sh
+npx vitest run
 ```
 
-### Option B: Using npm Directly (Windows or Mac)
-```bash
-npm run dev
-```
-
-The application should now be accessible in your browser at `http://localhost:5173` (or the port specified in your console output).
-
----
-
-## 4. Deployment to Google Cloud Run
-
-To deploy the application to the internet using Google Cloud Run, follow these steps:
-
-### Step 1: Upload Secrets (One-time Setup)
-If your application requires specific API keys (like a Gemini API key for the frontend widget), run the setup script to upload it to Google Cloud Secret Manager:
+### 4. Aprovisionar Recursos GCP y Desplegar en Cloud Run
 
 ```bash
-./setup_api_key.sh
-```
-*You will be prompted to enter your API key, which will be securely stored.*
-
-### Step 2: Deploy to Cloud Run
-Run the deployment script to build the Docker container and deploy it to Cloud Run:
-
-```bash
+./setup_gcp_resources.sh
 ./cloud_run.sh
 ```
-
-Upon successful deployment, the CLI will output a public URL where your application is hosted.

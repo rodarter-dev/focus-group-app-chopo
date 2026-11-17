@@ -10,13 +10,15 @@ interface CompanyContextType {
   isLoaded: boolean;
 }
 
+const DEFAULT_NAME = 'Laboratorios Chopo';
+const DEFAULT_DESCRIPTION =
+  'Laboratorios Chopo (Grupo PROA) — Red líder de diagnóstico clínico e imagenología en México. Enfoque estratégico dual: Pista Paciente B2C (prevención accesible, calidez en el servicio, indicaciones claras de preparación y entrega digital en App Chopo) y Pista Médico B2B (rigor analítico acreditado, precisión diagnóstica para especialistas y tiempos de respuesta oportunos) en estricto apego a la regulación sanitaria de COFEPRIS.';
+
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 
 export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [name, setName] = useState<string>('QVC');
-  const [description, setDescription] = useState<string>(
-    'QVC is a world leader in video commerce, reaching audiences through TV broadcasts and online retail. They specialize in live shopping experiences across fashion, home, beauty, and more.'
-  );
+  const [name, setName] = useState<string>(DEFAULT_NAME);
+  const [description, setDescription] = useState<string>(DEFAULT_DESCRIPTION);
 
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -30,8 +32,20 @@ export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children })
       const response = await fetch('/api/load-run/company_context');
       if (response.ok) {
         const data = await response.json();
-        if (data.name) setName(data.name);
-        if (data.description) setDescription(data.description);
+        const rawName = typeof data?.name === 'string' ? data.name : '';
+        const rawDesc = typeof data?.description === 'string' ? data.description : '';
+        const isStaleOrEnglish =
+          rawName.toLowerCase().includes('qvc') ||
+          rawName.toLowerCase() === 'chopo diagnostics' ||
+          rawDesc.includes('Leading clinical laboratory') ||
+          rawDesc.includes('Dual strategic focus');
+        if (isStaleOrEnglish) {
+          setName(DEFAULT_NAME);
+          setDescription(DEFAULT_DESCRIPTION);
+        } else {
+          if (rawName) setName(rawName);
+          if (rawDesc) setDescription(rawDesc);
+        }
       }
     } catch (e) {
       console.error("Error loading company context from filesystem:", e);

@@ -1,7 +1,7 @@
 {
-  "name": "lab-next",
+  "name": "chopo-intelligence-hub",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,8 @@
     "start": "npm run build && node server.js"
   },
   "dependencies": {
+    "@google-cloud/firestore": "^7.11.2",
+    "@google-cloud/storage": "^7.16.0",
     "@google/genai": "^1.30.0",
     "@types/recharts": "^1.8.29",
     "@vitejs/plugin-react": "^5.2.0",

@@ -1,9 +1,13 @@
 /** @vitest-environment jsdom */
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
 import { Home } from '../Home';
 import React from 'react';
-import { AppMode } from '../../types';
+import { LanguageProvider } from '../../context/LanguageContext';
+
+afterEach(() => {
+  cleanup();
+});
 
 // Mock Lucide icons
 vi.mock('lucide-react', () => ({
@@ -25,44 +29,48 @@ vi.mock('lucide-react', () => ({
 // Mock CompanyContext
 vi.mock('../../context/CompanyContext', () => ({
   useCompanyContext: () => ({
-    name: 'QVC',
-    description: 'QVC is a world leader in video commerce.'
+    name: 'Laboratorios Chopo',
+    description: 'Laboratorios Médicos El Chopo (Grupo PROA) es líder en diagnóstico clínico e imagenología en México.'
   })
 }));
 
-describe('Home Component', () => {
+describe('Home Component (Laboratorios Chopo)', () => {
     const mockSetMode = vi.fn();
 
-    it('renders the correct brand text from context', () => {
-        render(<Home setMode={mockSetMode} />);
-        expect(screen.getByText(/QVC AI/i)).toBeDefined();
+    const renderWithProviders = () =>
+        render(
+            <LanguageProvider>
+                <Home setMode={mockSetMode} />
+            </LanguageProvider>
+        );
+
+    it('renders the correct Chopo brand text from context', () => {
+        renderWithProviders();
+        expect(screen.getAllByText(/Laboratorios Chopo IA/i).length).toBeGreaterThan(0);
     });
 
     it('does not use dark mode classes on the main heading', () => {
-        render(<Home setMode={mockSetMode} />);
-        const heading = screen.getByText(/Welcome to/i);
-        // The instruction specifies that the h1 should not have 'text-white'
+        renderWithProviders();
+        const heading = screen.getByText(/Bienvenido a/i);
         expect(heading.parentElement?.className).not.toContain('text-white');
     });
 
     it('does not use dark mode classes on the description', () => {
-        render(<Home setMode={mockSetMode} />);
-        const description = screen.getByText(/The centralized commerce intelligence hub/i);
-        // The instruction specifies that the description should not have 'text-blue-100'
+        renderWithProviders();
+        const description = screen.getByText(/Espacio exclusivo del equipo de Marketing de Laboratorios Chopo/i);
         expect(description.className).not.toContain('text-blue-100');
     });
 
-    it('uses the correct QVC-appropriate brand text', () => {
-        render(<Home setMode={mockSetMode} />);
-        // Checking for "The QVC AI Workflow" which is a rebranding item
-        expect(screen.getByText(/The QVC AI Workflow/i)).toBeDefined();
+    it('uses the correct Chopo AI workflow heading', () => {
+        renderWithProviders();
+        expect(screen.getByText(/Flujo de Trabajo de Laboratorios Chopo IA/i)).toBeDefined();
     });
 
-    it('renders all tool cards', () => {
-        render(<Home setMode={mockSetMode} />);
-        const tools = ["Insights", "Audiences", "Synthetic Users", "Marketing Brief", "Content Hub", "Focus Group"];
+    it('renders all 4 active Chopo tool cards', () => {
+        renderWithProviders();
+        const tools = ["Audiencias", "Usuarios Sintéticos", "Brief de Marketing", "Focus Group"];
         tools.forEach(tool => {
-            expect(screen.getByText(new RegExp(tool, 'i'))).toBeDefined();
+            expect(screen.getAllByText(new RegExp(tool, 'i')).length).toBeGreaterThan(0);
         });
     });
 });

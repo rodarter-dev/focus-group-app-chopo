@@ -1,45 +1,55 @@
 export enum AppMode {
-  // Existing QVC Modes
-  HOME = 'HOME', // Use Home as the dashboard
-  PDP_PERSONALIZATION = 'PDP_PERSONALIZATION',
-  PDP_ENRICHMENT = 'PDP_ENRICHMENT',
-  E_SPOTS = 'E_SPOTS',
-  GEN_SITE = 'GEN_SITE',
-
-  // Lowe's / Example Features
-  AD_ANALYSIS = 'AD_ANALYSIS',
-  AD_COMPARISON = 'AD_COMPARISON',
-  INFLUENCER_ANALYSIS = 'INFLUENCER_ANALYSIS',
-  AUDIENCE_CREATION = 'AUDIENCE_CREATION',
-  SYNTHETIC_ANALYSIS = 'SYNTHETIC_ANALYSIS',
-  AGENTSPACE = 'AGENTSPACE',
-  LANDING_PAGE = 'LANDING_PAGE',
-  PROJECT_HELPER = 'PROJECT_HELPER',
-  TASK_LIST = 'TASK_LIST',
-
-  // Target App Modes
-  ROOM_DESIGNER = 'ROOM_DESIGNER',
-  LIFESTYLE_GEN = 'LIFESTYLE_GEN',
-  VIBE_MATCH = 'VIBE_MATCH',
+  HOME = 'HOME',
   AUDIENCE_GEN = 'AUDIENCE_GEN',
-  MARKETING_CAMPAIGN = 'MARKETING_CAMPAIGN',
-  PRODUCT_VARIANT = 'PRODUCT_VARIANT',
-  MARKETING_BRIEF = 'MARKETING_BRIEF',
-  SYNTHETIC_CHAT = 'SYNTHETIC_CHAT',
-
-  // New Modes
-  INSIGHTS = 'INSIGHTS',
-  CONCIERGE = 'CONCIERGE',
-  PDP_HUB = 'PDP_HUB',
-  MARKETING_HUB = 'MARKETING_HUB',
-  SYNTHETIC_FOCUS_GROUP = 'SYNTHETIC_FOCUS_GROUP',
-  MULTI_IMAGE = 'MULTI_IMAGE',
-  CONTENT_VERSIONING = 'CONTENT_VERSIONING',
-  FEASIBILITY_ANALYSIS = 'FEASIBILITY_ANALYSIS',
-  ASSISTANT = 'ASSISTANT',
   SYNTHETIC_USERS = 'SYNTHETIC_USERS',
-  COMPANY_CONTEXT = 'COMPANY_CONTEXT',
-  PRODUCT_SPIN = 'PRODUCT_SPIN'
+  MARKETING_BRIEF = 'MARKETING_BRIEF',
+  SYNTHETIC_FOCUS_GROUP = 'SYNTHETIC_FOCUS_GROUP',
+  SYNTHETIC_CHAT = 'SYNTHETIC_CHAT'
+}
+
+export interface FocusGroupRubric {
+  id: string;
+  name: string;
+  track: 'both' | 'patient' | 'physician';
+  weight: number;
+  evaluationQuestion: string;
+  scoringAnchors: {
+    low_0_to_40: string;
+    mid_41_to_79: string;
+    high_80_to_100: string;
+  };
+}
+
+export interface RubricScore {
+  rubricId: string;
+  name: string;
+  weight: number;
+  score: number;
+  rationale: string;
+}
+
+export interface ClinicalUseCase {
+  id: string;
+  studyName: string;
+  category: string;
+  track: 'both' | 'patient' | 'physician';
+  isDefault: boolean;
+  includedStudies: string[];
+  fastingRequirement: string;
+  visualRealismRules: string;
+  defaultPromoText: string;
+  cofeprisPermitB2C: string;
+  cofeprisPermitB2B: string;
+  responsableSanitario: string;
+}
+
+export interface ConfigVersionSnapshot {
+  versionId: string;
+  entityType: 'personas' | 'rubrics' | 'use_cases' | 'prompts' | 'rag_docs';
+  timestamp: string;
+  label: string;
+  itemCount: number;
+  data?: any;
 }
 
 export interface FeasibilityReport {
@@ -60,6 +70,8 @@ export interface MarketingBriefData {
   campaignGoal: string;
   productName: string;
   companyName: string;
+  studyName?: string;
+  track?: 'both' | 'patient' | 'physician';
   assumptions: {
     budget: string;
     timeline: string;
@@ -100,6 +112,7 @@ export interface MarketingBriefData {
     title: string;
     dates: string;
     focus: string;
+    action?: string;
     goal: string;
   }>;
   campaignAssets?: MarketingAssets;
@@ -120,7 +133,12 @@ export interface MarketingAssets {
   email: {
     subject: string;
     preheader: string;
+    bannerHeadline?: string;
+    bannerSubheadline?: string;
     body: string;
+    ctaText?: string;
+    legalFooter?: string;
+    image?: string;
   };
   youtube: {
     title: string;
@@ -137,15 +155,21 @@ export interface MarketingAssets {
 
 export interface Persona {
   id: string;
+  track?: 'patient' | 'physician';
   name: string;
+  personaName?: string;
   age: number;
   job_title: string;
+  demographics?: string;
   bio: string;
-  income: string;
+  income?: string;
   lifestyle_tags: string[];
+  preferred_products?: string[];
   pain_points: string[];
   goals: string[];
+  imagePrompt?: string;
   imageUrl?: string;
+  isStandard?: boolean;
 }
 
 export interface GeneratedImageResult {
@@ -193,15 +217,6 @@ export interface GenerateVideoParams {
   personGeneration?: string;
 }
 
-export interface MarketingAssets {
-  image: string | null;
-  social: { caption: string; hashtags: string[] };
-  search: { headline: string; description: string; url: string };
-  email: { subject: string; preheader: string; body: string };
-  youtube: { title: string; script: string };
-  website: { recommendations: Array<{ name: string, price: string, image: string | null }> };
-}
-
 export interface SimulationResult {
   personaId: string;
   personaName: string;
@@ -221,8 +236,9 @@ export interface SimulationResult {
     subjectLine: string;
     opened: boolean;
     clicked: boolean;
+    feedback?: string;
   }[];
-  messageReactions?: { // Restored to fix syntax error
+  messageReactions?: {
     message: string;
     score: number;
     sentiment: string;
@@ -232,6 +248,11 @@ export interface SimulationResult {
 export interface CreativeResult {
   personaId: string;
   personaName: string;
+  track?: 'patient' | 'physician' | string;
+  weightedOverallScore?: number;
+  rubricScores?: RubricScore[];
+  barriersOrConcerns?: string;
+  suggestedImprovement?: string;
   visualAppeal: number;
   brandFit: number;
   stoppingPower: number;
@@ -242,7 +263,7 @@ export interface CreativeResult {
   suggestedMessaging?: string;
   suggestedImage?: string;
   copyEdit?: string;
-  audienceGroup?: string; // The creative variant/audience this result belongs to
+  audienceGroup?: string;
 }
 
 export interface ABTestResult {
@@ -270,7 +291,7 @@ export interface AcquisitionResult {
   perceivedValue: number; // 0-100
   barriers: string;
   feedback: string;
-  winningOffer?: string; // Which offer tempted them the most
+  winningOffer?: string;
 }
 
 export type SavedSimulation =
@@ -281,6 +302,7 @@ export type SavedSimulation =
     timestamp: string;
     results: AcquisitionResult[];
     stats: any;
+    offers?: string[];
   }
   | {
     type: 'MEMBER_SIMULATION';
@@ -289,6 +311,18 @@ export type SavedSimulation =
     timestamp: string;
     results: SimulationResult[];
     emailBodies?: { [key: string]: string };
+    marketingMessages?: string[];
+    simulationProducts?: string[];
+    emailDrafts?: {
+      subject: string;
+      preheader?: string;
+      bannerHeadline?: string;
+      bannerSubheadline?: string;
+      body: string;
+      image?: string;
+      ctaText?: string;
+      legalFooter?: string;
+    }[];
   }
   | {
     type: 'CHAT_SESSION';
@@ -352,20 +386,28 @@ export interface DetailedPersona {
   age: number;
   job_title: string;
   bio: string;
-  income: string;
-  net_worth: string;
-  household_size: string;
+  income?: string;
+  net_worth?: string;
+  household_size?: string;
   lifestyle_tags: string[];
   preferred_products: string[];
   pain_points: string[];
   goals: string[];
-  charts: {
+  charts?: {
     brand_affinity: { labels: string[], data: number[] };
   };
 }
 
 export interface CombinedPersona extends AudienceSegment {
   id?: string;
+  track?: 'patient' | 'physician';
+  age?: number;
+  job_title?: string;
+  pain_points?: string[];
+  goals?: string[];
+  lifestyle_tags?: string[];
+  preferred_products?: string[];
+  isStandard?: boolean;
   details?: DetailedPersona;
   score?: {
     propensity: number;

@@ -1,8 +1,6 @@
 /* 
- * Brand AI Assistant - Centralized Semantic Styles
- * This file contains semantic classes to replace inline Tailwind utility classes.
- * It manages the visual styling for components to ensure global consistency.
- * THEME: LIGHT (Brand Blue)
+ * Chopo Diagnostics | Intelligence Hub - Centralized Semantic Styles
+ * THEME: CHOPO CLINICAL (Royal Blue #0066FF, Navy #003B7A & Pulse Lime Green #78D600)
  */
 
 /*=================================
@@ -10,10 +8,8 @@
 =================================*/
 .app-container {
   min-height: 100vh;
-  background-color: #F3F4F6;
-  /* gray-100 */
-  color: #111827;
-  /* gray-900 */
+  background-color: #F8FAFC;
+  color: #1E293B;
   display: flex;
   overflow: hidden;
 }
@@ -39,18 +35,19 @@
 .nav-sidebar {
   height: 100vh;
   background-color: #FFFFFF;
-  color: #1F2937;
-  /* gray-800 */
+  color: #003B7A;
   width: 18rem;
   z-index: 40;
-  border-right: 1px solid #E5E7EB;
-  /* gray-200 */
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  border-top: 4px solid #78D600;
+  border-right: 1px solid #E2E8F0;
+  box-shadow: 0 2px 10px 0 rgba(0, 59, 122, 0.05);
   overflow-y: auto;
   position: fixed;
   top: 0;
   left: 0;
   bottom: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 @media (min-width: 768px) {
@@ -61,12 +58,12 @@
 
 .page-header {
   background-color: #FFFFFF;
-  border-bottom: 1px solid #E5E7EB;
-  /* gray-200 */
+  border-top: 3px solid #78D600;
+  border-bottom: 1px solid #E2E8F0;
   position: sticky;
   top: 0;
   z-index: 40;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 3px 0 rgba(0, 59, 122, 0.05);
   padding: 1rem 1.5rem;
   display: flex;
   justify-content: space-between;
@@ -77,14 +74,12 @@
 .page-title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #111827;
-  /* gray-900 */
+  color: #003B7A;
 }
 
 .page-subtitle {
   font-size: 0.75rem;
-  color: #6B7280;
-  /* gray-500 */
+  color: #64748B;
 }
 
 /*=================================
@@ -92,81 +87,75 @@
 =================================*/
 .panel-dark {
   background-color: #FFFFFF;
-  border: 1px solid #E5E7EB;
-  /* gray-200 */
+  border: 1px solid #E2E8F0;
   border-radius: 1rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.04);
   padding: 1.5rem;
-  color: #111827;
+  color: #1E293B;
 }
 
 .panel-card {
   background-color: #FFFFFF;
-  border: 1px solid #E5E7EB;
-  /* gray-200 */
+  border: 1px solid #E2E8F0;
   border-radius: 1rem;
   padding: 1.5rem;
   transition: all 0.3s;
 }
 
 .panel-card:hover {
-  border-color: #0077C8;
-  /* Brand Blue */
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  border-color: #0066FF;
+  box-shadow: 0 10px 15px -3px rgba(0, 102, 255, 0.08), 0 4px 6px -2px rgba(0, 102, 255, 0.04);
 }
 
 /*=================================
   Buttons & Controls
 =================================*/
 .btn-primary {
-  background-color: #0077C8;
+  background-color: #0066FF;
   color: #ffffff;
   font-weight: 700;
   padding: 0.75rem 1.5rem;
-  border-radius: 0.75rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 10px -1px rgba(0, 102, 255, 0.22), 0 2px 4px -1px rgba(0, 102, 255, 0.12);
   transition: all 0.2s;
 }
 
 .btn-primary:hover {
-  background-color: #005a9e;
+  background-color: #004ECC;
 }
 
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  background-color: #9CA3AF;
+  background-color: #94A3B8;
+  box-shadow: none;
 }
 
 .btn-secondary {
-  background-color: #ffffff;
-  color: #0077C8;
-  border: 1px solid #0077C8;
+  background-color: #FFFFFF;
+  color: #0066FF;
+  border: 1px solid #0066FF;
   font-weight: 700;
   padding: 0.75rem 1.5rem;
-  border-radius: 0.75rem;
+  border-radius: 0.5rem;
   transition: all 0.2s;
 }
 
 .btn-secondary:hover {
-  background-color: #F0F9FF;
-  /* light blue tint */
+  background-color: #EFF6FF;
 }
 
 .btn-ghost {
   background-color: transparent;
-  color: #6B7280;
-  /* gray-500 */
+  color: #64748B;
   padding: 0.75rem;
   border-radius: 0.5rem;
   transition: all 0.2s;
 }
 
 .btn-ghost:hover {
-  color: #111827;
-  /* gray-900 */
-  background-color: #F3F4F6;
-  /* gray-100 */
+  color: #003B7A;
+  background-color: #F1F5F9;
 }
 
 /*=================================
@@ -176,23 +165,22 @@
   width: 100%;
   padding: 0.75rem 1rem;
   background-color: #FFFFFF;
-  color: #111827;
-  border: 2px solid #E5E7EB;
+  color: #1E293B;
+  border: 1.5px solid #CBD5E1;
   border-radius: 0.5rem;
   transition: border-color 0.2s;
 }
 
 .input-field:focus {
   outline: none;
-  border-color: #0077C8;
+  border-color: #0066FF;
 }
 
 .form-label {
   display: block;
   font-size: 0.875rem;
   font-weight: 700;
-  color: #4B5563;
-  /* gray-600 */
+  color: #003B7A;
   margin-bottom: 0.5rem;
 }
 
@@ -202,16 +190,28 @@
 .text-heading {
   font-size: 1.125rem;
   font-weight: 700;
-  color: #111827;
+  color: #003B7A;
+}
+
+.bg-heading {
+  background-color: #003B7A;
+}
+
+.border-b-heading {
+  border-bottom-color: #003B7A;
+}
+
+.border-t-heading {
+  border-top-color: #003B7A;
 }
 
 .text-subtext {
   font-size: 0.875rem;
-  color: #6B7280;
+  color: #64748B;
 }
 
 .text-highlight {
-  color: #111827;
+  color: #003B7A;
   font-weight: 600;
 }
 
@@ -220,21 +220,18 @@
 =================================*/
 .tab-scroll-container {
   display: flex;
-  gap: 2rem;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  row-gap: 0.5rem;
   overflow-x: auto;
   padding-bottom: 0.25rem;
-  scrollbar-width: none;
-}
-
-.tab-scroll-container::-webkit-scrollbar {
-  display: none;
 }
 
 .tab-button {
   padding-bottom: 0.75rem;
   font-weight: 700;
   font-size: 0.875rem;
-  border-bottom-width: 2px;
+  border-bottom-width: 3px;
   transition: color 0.2s, border-color 0.2s;
   display: flex;
   align-items: center;
@@ -247,17 +244,17 @@
 }
 
 .tab-button.active {
-  border-color: #0077C8;
-  color: #0077C8;
+  border-color: #78D600;
+  color: #0066FF;
 }
 
 .tab-button.inactive {
   border-color: transparent;
-  color: #6B7280;
+  color: #64748B;
 }
 
 .tab-button.inactive:hover {
-  color: #111827;
+  color: #003B7A;
 }
 
 /*=================================
@@ -284,48 +281,49 @@
 .tool-card {
   background-color: #FFFFFF;
   border-radius: 0.75rem;
-  border: 1px solid #E5E7EB;
+  border: 1px solid #E2E8F0;
   padding: 2rem;
   cursor: pointer;
   transition: all 0.3s;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  box-shadow: 0 4px 14px 0 rgba(0, 59, 122, 0.06);
 }
 
 .tool-card:hover {
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  border-color: #0077C8;
+  box-shadow: 0 12px 24px -4px rgba(0, 102, 255, 0.14);
+  border-color: #0066FF;
 }
 
 .tool-icon-wrapper {
-  padding: 1rem;
-  border-radius: 0.75rem;
-  background-color: #F0F9FF;
-  /* light blue tint */
+  padding: 0.875rem;
+  border-radius: 9999px;
+  background-color: #EFF6FF;
+  border: 1.5px solid #BFDBFE;
   margin-bottom: 1.5rem;
   transition: transform 0.3s;
 }
 
 .tool-card:hover .tool-icon-wrapper {
-  transform: scale(1.1);
+  transform: scale(1.08);
 }
 
 .tool-card-title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #111827;
+  color: #003B7A;
   margin-bottom: 0.5rem;
 }
 
 .tool-card-desc {
-  color: #6B7280;
+  color: #64748B;
   margin-bottom: 1.5rem;
   flex: 1;
 }
 
 .tool-card-action {
-  color: #0077C8;
+  color: #0066FF;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -346,7 +344,7 @@
 .section-header {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #111827;
+  color: #003B7A;
   margin-bottom: 1.5rem;
   display: flex;
   align-items: center;
@@ -355,16 +353,15 @@
 
 .content-card {
   background-color: #FFFFFF;
-  border-radius: 1rem;
-  border: 1px solid #E5E7EB;
+  border-radius: 0.875rem;
+  border: 1px solid #E2E8F0;
   padding: 1.5rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 12px -1px rgba(0, 59, 122, 0.06), 0 2px 4px -1px rgba(0, 59, 122, 0.04);
   transition: all 0.3s;
 }
 
 .content-card:hover {
-  border-color: #D1D5DB;
-  /* gray-300 */
+  border-color: #CBD5E1;
 }
 
 .data-table {
@@ -374,25 +371,24 @@
 }
 
 .data-table th {
-  background-color: #F9FAFB;
-  /* gray-50 */
-  color: #4B5563;
+  background-color: #F8FAFC;
+  color: #003B7A;
   font-weight: 600;
   text-transform: uppercase;
   font-size: 0.75rem;
   padding: 0.75rem 1.5rem;
-  border-bottom: 1px solid #E5E7EB;
+  border-bottom: 1px solid #E2E8F0;
 }
 
 .data-table td {
   padding: 0.75rem 1.5rem;
-  border-bottom: 1px solid #E5E7EB;
-  color: #111827;
+  border-bottom: 1px solid #E2E8F0;
+  color: #1E293B;
   font-size: 0.875rem;
 }
 
 .data-table tr:hover {
-  background-color: #F3F4F6;
+  background-color: #F8FAFC;
 }
 
 .badge {
@@ -406,21 +402,21 @@
 }
 
 .badge-gray {
-  background-color: #F3F4F6;
-  color: #4B5563;
-  border-color: #E5E7EB;
+  background-color: #F1F5F9;
+  color: #475569;
+  border-color: #E2E8F0;
 }
 
 .badge-red {
-  background-color: #FEF2F2;
-  color: #EF4444;
-  border-color: #FCA5A5;
+  background-color: #FFF1F2;
+  color: #F2385A;
+  border-color: #FECDD3;
 }
 
 .badge-blue {
   background-color: #EFF6FF;
-  color: #3B82F6;
-  border-color: #93C5FD;
+  color: #0066FF;
+  border-color: #BFDBFE;
 }
 
 /*=================================
@@ -432,4 +428,27 @@
   object-fit: cover;
   object-position: top;
   display: block;
+}
+
+/*=================================
+  Modals & Overlays
+=================================*/
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modal-content {
+  background-color: #FFFFFF;
+  border-radius: 1rem;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 25px 50px -12px rgba(0, 59, 122, 0.25);
+  width: 100%;
 }

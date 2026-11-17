@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 72" fill="none">
+  <!-- CHOPO Bold Royal Blue Wordmark (#0057FF) -->
+  <g transform="translate(8, 6)">
+    <text x="12" y="38" font-family="'Inter', 'Arial Black', sans-serif" font-size="42" font-weight="900" letter-spacing="1.5" fill="#0057FF">
+      CHOPO
+    </text>
+    <!-- Registered Trademark R -->
+    <text x="190" y="16" font-family="'Inter', sans-serif" font-size="10" font-weight="700" fill="#0057FF">
+      ®
+    </text>
+
+    <!-- Characteristic Chopo Lime-Green Pulse Wave (#78D600) crossing horizontally through CHOPO -->
+    <path
+      d="M0 25 H82 C88 25, 91 36, 97 36 C103 36, 107 11, 114 11 C121 11, 124 25, 132 25 H204"
+      stroke="#78D600"
+      stroke-width="3.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <!-- Subtitle matching "Análisis clínicos y estudios especializados" -->
+    <text x="12" y="55" font-family="'Inter', -apple-system, BlinkMacSystemFont, sans-serif" font-size="9.6" font-weight="500" letter-spacing="0.2" fill="#0057FF">
+      Clinical Analysis &amp; Intelligence Hub
+    </text>
+  </g>
+</svg>

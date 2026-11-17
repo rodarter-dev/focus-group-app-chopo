@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "client": "Grupo Proa / Laboratorios Médicos El Chopo",
+    "purpose": "Dynamic, customer-editable Focus Group evaluation rubrics for Patient (B2C) and Physician (B2B) tracks.",
+    "howItWorks": "Non-technical Chopo users can add, edit, or delete rubrics here (or in Firestore/UI). Active rubrics matching the selected track ('both' + track) are injected into the Focus Group prompt, and Gemini returns a dynamic 'rubricScores' array."
+  },
+  "rubrics": [
+    {
+      "id": "clarity_3s",
+      "name": "Claridad y Concisión (3 seg de Scroll)",
+      "track": "both",
+      "weight": 25,
+      "evaluationQuestion": "¿Se entiende en 3 segundos de scroll en el celular qué estudio se anuncia y cuál es el beneficio principal sin saturar de texto?",
+      "scoringAnchors": {
+        "low_0_to_40": "El texto es demasiado largo (más de 3-4 líneas comerciales), parece un folleto o instructivo de sucursal (menciona batas, reglas internas o párrafos densos) y da flojera leerlo en redes sociales.",
+        "mid_41_to_79": "El mensaje se entiende pero tiene palabras de más o el beneficio principal no destaca en la primera línea.",
+        "high_80_to_100": "Mensaje directo, ágil y escaneable en menos de 3 segundos: gancho claro en la primera línea y llamado a la acción inmediato."
+      }
+    },
+    {
+      "id": "visual_trust_warmth",
+      "name": "Confianza Visual y Realismo Clínico",
+      "track": "both",
+      "weight": 25,
+      "evaluationQuestion": "¿La imagen y el tono transmiten la confianza, modernidad tecnológica y calidez de 'Tu laboratorio de cabecera'?",
+      "scoringAnchors": {
+        "low_0_to_40": "La imagen se ve falsa, fría, anticuada (ej. doctores viendo placas radiográficas físicas viejas a contraluz), muestra agujas/sangre o tiene errores de vestimenta/equipo médico.",
+        "mid_41_to_79": "Imagen aceptable pero genérica de foto de stock sin identidad clara de Chopo.",
+        "high_80_to_100": "Fotografía auténtica, luminosa y moderna (entrega digital en App/tablet, vestimenta y equipo correctos, paleta azul/blanco Chopo) que inspira tranquilidad."
+      }
+    },
+    {
+      "id": "digital_ease_promo",
+      "name": "Atractivo Promocional y Facilidad Digital",
+      "track": "patient",
+      "weight": 25,
+      "evaluationQuestion": "¿Qué tan fácil y conveniente se percibe agendar/pagar en línea (chopo.com.mx o App Chopo) y recibir resultados digitales?",
+      "scoringAnchors": {
+        "low_0_to_40": "No queda claro cómo agendar en línea, no menciona el beneficio de resultados digitales en la App/celular, o parece que hay que ir a hacer fila para cotizar.",
+        "mid_41_to_79": "Menciona el sitio web pero no resalta la comodidad de pagar en línea o consultar resultados en el celular.",
+        "high_80_to_100": "Motiva de inmediato a usar la App Chopo o chopo.com.mx por su practicidad (cero filas, precio especial en línea y resultados directo en el celular)."
+      }
+    },
+    {
+      "id": "patient_action_intent",
+      "name": "Intención de Agendar Estudio",
+      "track": "patient",
+      "weight": 25,
+      "evaluationQuestion": "Con base en tus necesidades personales y familiares, ¿qué tan probable es que detengas el scroll y entres a chopo.com.mx o la App para agendar?",
+      "scoringAnchors": {
+        "low_0_to_40": "Pasaría de largo el anuncio ('scroll past') porque me aburrió, me generó desconfianza o no conecta con mi necesidad de salud.",
+        "mid_41_to_79": "Me llama la atención el estudio pero lo dejaría para después.",
+        "high_80_to_100": "Detendría el scroll y haría clic en este momento para cotizar o agendar mi estudio en línea."
+      }
+    },
+    {
+      "id": "clinical_utility_rigor",
+      "name": "Rigor Clínico y Utilidad Diagnóstica",
+      "track": "physician",
+      "weight": 25,
+      "evaluationQuestion": "Como médico, ¿el mensaje proyecta seriedad científica, precisión analítica y utilidad real para el seguimiento de tus pacientes?",
+      "scoringAnchors": {
+        "low_0_to_40": "Tono sensacionalista o comercial superficial, promete diagnósticos mágicos, o carece de seriedad médica para respaldar mis decisiones clínicas.",
+        "mid_41_to_79": "Mensaje correcto pero demasiado genérico para un profesional de la salud.",
+        "high_80_to_100": "Comunica precisión diagnóstica, respaldo de especialistas certificados y entrega digital práctica para revisar resultados en consulta."
+      }
+    },
+    {
+      "id": "physician_prescription_intent",
+      "name": "Intención de Prescribir / Recomendar a Pacientes",
+      "track": "physician",
+      "weight": 25,
+      "evaluationQuestion": "¿Qué tan probable es que recomiendes o envíes a tus pacientes a realizarse este estudio en Laboratorios Médicos El Chopo?",
+      "scoringAnchors": {
+        "low_0_to_40": "No lo recomendaría porque el anuncio confunde al paciente o muestra inconsistencias clínicas.",
+        "mid_41_to_79": "Lo consideraría como una opción más entre varios laboratorios.",
+        "high_80_to_100": "Lo recomendaría activamente a mis pacientes por su confiabilidad, accesibilidad y facilidad de consulta digital de resultados."
+      }
+    }
+  ]
+}

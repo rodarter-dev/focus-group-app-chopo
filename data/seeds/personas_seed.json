@@ -1,0 +1,319 @@
+{
+  "metadata": {
+    "version": "2.0.0",
+    "client": "Grupo Proa / Laboratorios Médicos El Chopo",
+    "purpose": "Synthetic Patient (B2C) and Physician (B2B) personas for Campaign Generation and Focus Group Simulation (Cleaned Fixed Schema)",
+    "complianceNote": "100% synthetic profiles generated for Stage 1 & Stage 2 benchmarking. Zero PII."
+  },
+  "chopoCatalogItems": [
+    "Check-up Control Diabetes (Hemoglobina Glicosilada HbA1c + Química Sanguínea + Examen General de Orina EGO)",
+    "Estudio Individual: Hemoglobina Glicosilada (HbA1c) certificada NGSP",
+    "Check-up Completo Chopo (Biometría Hemática + Química Sanguínea de 45 elementos + EGO)",
+    "Mastografía Digital + Ultrasonido Mamario",
+    "Rayos X de Tórax Digital"
+  ],
+  "personas": [
+    {
+      "id": "chopo_pat_diabetes_senior",
+      "track": "patient",
+      "name": "[Paciente B2C] Adulto en Control de Diabetes",
+      "personaName": "Roberto Hernández (58 años, CDMX)",
+      "age": 58,
+      "job_title": "Contador Independiente",
+      "demographics": "55-68 años, Urbano (CDMX / Área Metropolitana), NSE C/C+, Paciente Crónico Controlado",
+      "bio": "Contador independiente diagnosticado con Diabetes Tipo 2 hace 6 años. Realiza sus análisis de control cada 3 meses por indicación de su médico internista. Valora sucursales cercanas a su domicilio, trato amable en la toma de muestra, precios especiales al pagar en línea y recibir sus resultados por WhatsApp o correo para enviárselos a su doctor.",
+      "pain_points": [
+        "Anuncios con demasiado texto pequeño o explicaciones técnicas que dan flojera leer en el celular",
+        "Perder tiempo haciendo fila temprano en la sucursal o cargando sobres/placas físicas",
+        "Publicidad exagerada o alarmista que intenta asustar en lugar de dar tranquilidad"
+      ],
+      "goals": [
+        "Llevar sus resultados digitales en el celular para mostrárselos fácilmente a su médico",
+        "Entrar y salir rápido de la sucursal agendando desde casa",
+        "Aprovechar descuentos claros al pagar en línea sin letras chiquitas"
+      ],
+      "lifestyle_tags": [
+        "Control Trimestral HbA1c",
+        "Compra en Línea / WhatsApp",
+        "Cuidado Familiar",
+        "Sensible a Promociones Claras"
+      ],
+      "preferred_products": [
+        "Check-up Control Diabetes",
+        "Hemoglobina Glicosilada (HbA1c)",
+        "Química Sanguínea de 45 elementos"
+      ],
+      "imagePrompt": "Un hombre mexicano de 58 años, sonriente y tranquilo, con camisa casual impecable en una sala luminosa de su casa en Ciudad de México revisando su teléfono celular, luz natural cálida, estilo fotográfico realista.",
+      "imageUrl": "/api/media/chopo_persona_roberto.jpg",
+      "isStandard": true,
+      "details": {
+        "name": "Roberto Hernández",
+        "age": 58,
+        "job_title": "Contador Independiente",
+        "bio": "Lleva un control disciplinado de su glucosa pero busca practicidad, claridad en las indicaciones de ayuno y promociones transparentes.",
+        "income": "Medio ($28,000 - $45,000 MXN/mes)",
+        "lifestyle_tags": [
+          "Control Trimestral HbA1c",
+          "Compra en Línea / WhatsApp",
+          "Cuidado Familiar",
+          "Sensible a Promociones Claras"
+        ],
+        "preferred_products": [
+          "Check-up Control Diabetes",
+          "Hemoglobina Glicosilada (HbA1c)",
+          "Química Sanguínea de 45 elementos"
+        ],
+        "pain_points": [
+          "Anuncios con demasiado texto pequeño o explicaciones técnicas que dan flojera leer en el celular",
+          "Perder tiempo haciendo fila temprano en la sucursal o cargando sobres/placas físicas",
+          "Publicidad exagerada o alarmista que intenta asustar en lugar de dar tranquilidad"
+        ],
+        "goals": [
+          "Llevar sus resultados digitales en el celular para mostrárselos fácilmente a su médico",
+          "Entrar y salir rápido de la sucursal agendando desde casa",
+          "Aprovechar descuentos claros al pagar en línea sin letras chiquitas"
+        ]
+      }
+    },
+    {
+      "id": "chopo_pat_preventive_mom",
+      "track": "patient",
+      "name": "[Paciente B2C] Mamá Preventiva y Cuidadora Familiar",
+      "personaName": "Laura Gómez (41 años, Guadalajara)",
+      "age": 41,
+      "job_title": "Gerente de Recursos Humanos",
+      "demographics": "34-48 años, Urbana (Guadalajara / Monterrey / CDMX), NSE C+/B, Decisora de Salud Familiar",
+      "bio": "Gerente de recursos humanos y madre de dos hijos que también coordina los estudios médicos de sus padres mayores. Tiene antecedentes familiares de diabetes e hipertensión, por lo que agenda Check-ups anuales para ella y su familia. Busca empatía, calidez y facilidad para agendar en línea o a domicilio.",
+      "pain_points": [
+        "Publicidad fría de hospital o imágenes con agujas que ponen nerviosos a sus hijos o papás",
+        "Posts de redes sociales eternos que parecen folletos médicos en vez de ir al grano",
+        "Tener que llamar por teléfono para saber si hay promoción en línea"
+      ],
+      "goals": [
+        "Cuidar la salud de sus papás y su familia de forma preventiva y sin estrés",
+        "Agendar y pagar en 2 minutos desde el celular y recibir todo en la App Chopo",
+        "Sentir confianza, calidez humana y modernidad en las instalaciones"
+      ],
+      "lifestyle_tags": [
+        "Prevención Familiar",
+        "Usuaria de App Chopo",
+        "Antecedentes de Diabetes",
+        "Toma de Muestra a Domicilio"
+      ],
+      "preferred_products": [
+        "Check-up Completo Chopo",
+        "Check-up Control Diabetes",
+        "Mastografía Digital + Ultrasonido"
+      ],
+      "imagePrompt": "Una mujer mexicana profesional de 41 años con expresión cálida y confiada junto a su familia en un entorno luminoso y moderno, estilo fotografía editorial de bienestar.",
+      "imageUrl": "/api/media/chopo_persona_laura.jpg",
+      "isStandard": true,
+      "details": {
+        "name": "Laura Gómez",
+        "age": 41,
+        "job_title": "Gerente de Recursos Humanos",
+        "bio": "Es quien investiga, compara y agenda los estudios clínicos de toda la familia. Prioriza la prevención oportuna y la tranquilidad.",
+        "income": "Medio-Alto ($45,000 - $70,000 MXN/mes)",
+        "lifestyle_tags": [
+          "Prevención Familiar",
+          "Usuaria de App Chopo",
+          "Antecedentes de Diabetes",
+          "Toma de Muestra a Domicilio"
+        ],
+        "preferred_products": [
+          "Check-up Completo Chopo",
+          "Check-up Control Diabetes",
+          "Mastografía Digital + Ultrasonido"
+        ],
+        "pain_points": [
+          "Publicidad fría de hospital o imágenes con agujas que ponen nerviosos a sus hijos o papás",
+          "Posts de redes sociales eternos que parecen folletos médicos en vez de ir al grano",
+          "Tener que llamar por teléfono para saber si hay promoción en línea"
+        ],
+        "goals": [
+          "Cuidar la salud de sus papás y su familia de forma preventiva y sin estrés",
+          "Agendar y pagar en 2 minutos desde el celular y recibir todo en la App Chopo",
+          "Sentir confianza, calidez humana y modernidad en las instalaciones"
+        ]
+      }
+    },
+    {
+      "id": "chopo_pat_exec_checkup",
+      "track": "patient",
+      "name": "[Paciente B2C] Joven Profesionista Preventivo",
+      "personaName": "Alejandro Morales (33 años, Monterrey)",
+      "age": 33,
+      "job_title": "Ingeniero de Software Senior",
+      "demographics": "27-38 años, Urbano, NSE C+/B, Digital First (Instagram / Reels / Google Search)",
+      "bio": "Ingeniero de software con ritmo de trabajo intenso, sedentarismo reciente y estrés laboral. Empezó a cuidar su alimentación y quiere hacerse un Check-up metabólico para descartar resistencia a la insulina o colesterol alto antes de ir con su nutriólogo y médico.",
+      "pain_points": [
+        "Si un post de Instagram tiene más de 3 líneas de texto, le da scroll sin leerlo",
+        "Anuncios con fotos de stock falsas o anticuadas (como doctores viendo placas físicas viejas)",
+        "Procesos lentos o burocráticos fuera de una App móvil"
+      ],
+      "goals": [
+        "Resolver todo desde la App Chopo (cita, pago y resultados digitales)",
+        "Hacerse su chequeo rápido antes de ir a la oficina sin perder tiempo"
+      ],
+      "lifestyle_tags": [
+        "Salud Metabólica",
+        "100% Digital / App",
+        "Sin Filas",
+        "Fitness & Nutrición"
+      ],
+      "preferred_products": [
+        "Check-up Completo Chopo",
+        "Química Sanguínea de 45 elementos",
+        "Hemoglobina Glicosilada (HbA1c)"
+      ],
+      "imagePrompt": "Un joven profesionista mexicano de 33 años en una oficina moderna e iluminada en Monterrey, aspecto saludable y dinámico, fotografía realista.",
+      "imageUrl": "/api/media/chopo_persona_alejandro.jpg",
+      "isStandard": true,
+      "details": {
+        "name": "Alejandro Morales",
+        "age": 33,
+        "job_title": "Ingeniero de Software Senior",
+        "bio": "Acostumbrado a experiencias 100% digitales. Quiere comprar en línea, entrar y salir de la sucursal en 15 minutos y ver sus gráficas históricas en la App.",
+        "income": "Alto ($55,000 - $85,000 MXN/mes)",
+        "lifestyle_tags": [
+          "Salud Metabólica",
+          "100% Digital / App",
+          "Sin Filas",
+          "Fitness & Nutrición"
+        ],
+        "preferred_products": [
+          "Check-up Completo Chopo",
+          "Química Sanguínea de 45 elementos",
+          "Hemoglobina Glicosilada (HbA1c)"
+        ],
+        "pain_points": [
+          "Si un post de Instagram tiene más de 3 líneas de texto, le da scroll sin leerlo",
+          "Anuncios con fotos de stock falsas o anticuadas (como doctores viendo placas físicas viejas)",
+          "Procesos lentos o burocráticos fuera de una App móvil"
+        ],
+        "goals": [
+          "Resolver todo desde la App Chopo (cita, pago y resultados digitales)",
+          "Hacerse su chequeo rápido antes de ir a la oficina sin perder tiempo"
+        ]
+      }
+    },
+    {
+      "id": "chopo_phy_endocrinologist",
+      "track": "physician",
+      "name": "[Médico B2B] Médico Especialista (Endocrinología / Medicina Interna)",
+      "personaName": "Dra. Valeria Mendoza (44 años, Endocrinóloga)",
+      "age": 44,
+      "job_title": "Médica Internista y Endocrinóloga (Cédula Prof. 4829103)",
+      "demographics": "36-60 años, Especialista con Cédula de Subespecialidad, Práctica Privada e Institucional",
+      "bio": "Médica Internista y Endocrinóloga certificada con consulta privada en hospital de alta especialidad. Atiende diariamente a pacientes con Diabetes Mellitus Tipo 1 y 2, síndrome metabólico y patología tiroidea. Para ella, la precisión analítica, la estandarización NGSP en HbA1c y el apego estricto a COFEPRIS son innegociables para recomendar un laboratorio a sus pacientes.",
+      "pain_points": [
+        "Publicidad médica que parece comercial sensacionalista o que muestra errores clínicos obvios en la fotografía",
+        "Que sus pacientes pierdan las placas o papeles impresos antes de llegar a consulta",
+        "Textos publicitarios saturados que confunden al paciente en lugar de invitarlo a acudir a consulta"
+      ],
+      "goals": [
+        "Que sus pacientes traigan resultados digitales confiables y fáciles de revisar en tablet o celular",
+        "Contar con un laboratorio de respaldo con tecnología moderna e interpretación certificada"
+      ],
+      "lifestyle_tags": [
+        "Medicina Basada en Evidencia",
+        "Guías ADA / ALAD",
+        "Rigor Analítico ISO 15189",
+        "Ética Médica y Cumplimiento COFEPRIS"
+      ],
+      "preferred_products": [
+        "Hemoglobina Glicosilada (HbA1c) estandarizada NGSP",
+        "Check-up Control Diabetes",
+        "Perfil Tiroideo y de Lípidos"
+      ],
+      "imagePrompt": "Una médica especialista mexicana de 44 años en bata clínica blanca impecable dentro de un consultorio médico moderno y luminoso, expresión profesional y empática.",
+      "imageUrl": "/api/media/chopo_persona_dra_valeria.jpg",
+      "isStandard": true,
+      "details": {
+        "name": "Dra. Valeria Mendoza, FACP",
+        "age": 44,
+        "job_title": "Médica Internista y Endocrinóloga (Cédula Prof. 4829103)",
+        "bio": "Exige certeza diagnóstica, trazabilidad preanalítica, acreditación ISO 15189 y reportes comparativos claros para ajustar esquemas terapéuticos.",
+        "income": "Alto (Consulta de Especialidad)",
+        "lifestyle_tags": [
+          "Medicina Basada en Evidencia",
+          "Guías ADA / ALAD",
+          "Rigor Analítico ISO 15189",
+          "Ética Médica y Cumplimiento COFEPRIS"
+        ],
+        "preferred_products": [
+          "Hemoglobina Glicosilada (HbA1c) estandarizada NGSP",
+          "Check-up Control Diabetes",
+          "Perfil Tiroideo y de Lípidos"
+        ],
+        "pain_points": [
+          "Publicidad médica que parece comercial sensacionalista o que muestra errores clínicos obvios en la fotografía",
+          "Que sus pacientes pierdan las placas o papeles impresos antes de llegar a consulta",
+          "Textos publicitarios saturados que confunden al paciente en lugar de invitarlo a acudir a consulta"
+        ],
+        "goals": [
+          "Que sus pacientes traigan resultados digitales confiables y fáciles de revisar en tablet o celular",
+          "Contar con un laboratorio de respaldo con tecnología moderna e interpretación certificada"
+        ]
+      }
+    },
+    {
+      "id": "chopo_phy_general_practitioner",
+      "track": "physician",
+      "name": "[Médico B2B] Médico General de Primer Contacto",
+      "personaName": "Dr. Carlos Domínguez (39 años, Médico General)",
+      "age": 39,
+      "job_title": "Médico General de Primer Contacto (Cédula Prof. 6190421)",
+      "demographics": "30-55 años, Médico General Titulado con Cédula Profesional, Práctica Privada Familiar",
+      "bio": "Médico cirujano de primer contacto en consultorio particular. Es el primero en detectar prediabetes, dislipidemias e hipertensión en pacientes que acuden por fatiga o revisión general. Necesita perfiles diagnósticos integrales y accesibles para que sus pacientes no abandonen el seguimiento por costo.",
+      "pain_points": [
+        "Anuncios demasiado largos o técnicos que sus pacientes no entienden rápido",
+        "Que el paciente posponga sus estudios por creer que es caro o complicado agendar"
+      ],
+      "goals": [
+        "Detectar problemas a tiempo con estudios accesibles y entrega digital rápida",
+        "Facilitar al paciente una experiencia ágil en sucursal y resultados directo en la App"
+      ],
+      "lifestyle_tags": [
+        "Detección Oportuna",
+        "Apego del Paciente",
+        "Perfiles Integrales Costo-Efectivos",
+        "Comunicación Médico-Paciente"
+      ],
+      "preferred_products": [
+        "Check-up Completo Chopo",
+        "Check-up Control Diabetes",
+        "Química Sanguínea de 45 elementos + EGO"
+      ],
+      "imagePrompt": "Un médico general mexicano de 39 años en consultorio clínico bien iluminado explicando resultados preventivos con calidez y profesionalismo.",
+      "imageUrl": "/api/media/chopo_persona_dr_carlos.png",
+      "isStandard": true,
+      "details": {
+        "name": "Dr. Carlos Domínguez",
+        "age": 39,
+        "job_title": "Médico General de Primer Contacto (Cédula Prof. 6190421)",
+        "bio": "Acompaña a familias enteras en la prevención y detección oportuna de enfermedades crónico-degenerativas.",
+        "income": "Medio-Alto",
+        "lifestyle_tags": [
+          "Detección Oportuna",
+          "Apego del Paciente",
+          "Perfiles Integrales Costo-Efectivos",
+          "Comunicación Médico-Paciente"
+        ],
+        "preferred_products": [
+          "Check-up Completo Chopo",
+          "Check-up Control Diabetes",
+          "Química Sanguínea de 45 elementos + EGO"
+        ],
+        "pain_points": [
+          "Anuncios demasiado largos o técnicos que sus pacientes no entienden rápido",
+          "Que el paciente posponga sus estudios por creer que es caro o complicado agendar"
+        ],
+        "goals": [
+          "Detectar problemas a tiempo con estudios accesibles y entrega digital rápida",
+          "Facilitar al paciente una experiencia ágil en sucursal y resultados directo en la App"
+        ]
+      }
+    }
+  ]
+}

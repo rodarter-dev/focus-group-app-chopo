@@ -1,28 +1,93 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { simulateMarketingFocusGroup, simulateAcquisitionFocusGroup, generateWildcardAudience, generateAudienceFromCriteria, generateSyntheticPersona, generateImageFromPrompt, simulateCreativeFocusGroup, generateMarketingCampaignAssets } from '../services/geminiService';
+import {
+    simulateMarketingFocusGroup,
+    simulateAcquisitionFocusGroup,
+    generateWildcardAudience,
+    generateAudienceFromCriteria,
+    generateSyntheticPersona,
+    generateImageFromPrompt,
+    simulateCreativeFocusGroup,
+    generateMarketingCampaignAssets,
+    fetchPersonas,
+    savePersonas,
+    fetchRubrics,
+    saveRubrics,
+    fetchConfigVersions,
+    restoreConfigVersion,
+    DEFAULT_CHOPO_RUBRICS
+} from '../services/geminiService';
 import { brandConfig } from '../config';
-import { SimulationResult, MarketingBriefData, AcquisitionResult, SavedSimulation, Persona, ABTestResult } from '../types';
-import { Users, BarChart2, Save, Download, Play, ShoppingCart, Mail, MessageSquare, Settings, X, ChevronDown, ChevronUp, Sparkles, UserPlus, Zap, Trash2, Edit2, History, MessageCircle, Plus, Info, ShoppingBag, Image, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { AppMode, SimulationResult, MarketingBriefData, AcquisitionResult, SavedSimulation, Persona, ABTestResult, FocusGroupRubric, ConfigVersionSnapshot } from '../types';
+import { Users, BarChart2, Save, Download, Play, ShoppingCart, Mail, MessageSquare, Settings, X, ChevronDown, ChevronUp, Sparkles, UserPlus, Zap, Trash2, Edit2, History, MessageCircle, Plus, Info, ShoppingBag, Image, CheckCircle2, XCircle, Loader2, Upload, ClipboardList, RotateCcw } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { SyntheticChat } from './SyntheticChat';
 import { SyntheticInterview } from './SyntheticInterview';
-import { SIMULATION_PRODUCTS, STANDARD_AUDIENCES } from '../data/simulationData';
+import { SIMULATION_PRODUCTS, STANDARD_AUDIENCES, localizePersonaLabel, getPersonaInitial } from '../data/simulationData';
 import { useCompanyContext } from '../context/CompanyContext';
+import { useLanguage } from '../context/LanguageContext';
 
-export const SyntheticTesting: React.FC = () => {
+interface SyntheticTestingProps {
+    setMode?: (mode: AppMode) => void;
+}
+
+export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
     const { name, description } = useCompanyContext();
+    const { language, t } = useLanguage();
     // --- Global State ---
     const [personas, setPersonas] = useState<any[]>([]);
+    const [allCatalogPersonas, setAllCatalogPersonas] = useState<any[]>(STANDARD_AUDIENCES);
     const [brief, setBrief] = useState<MarketingBriefData | null>(null);
     const [activeTab, setActiveTab] = useState<'ACQUISITION' | 'CHAT' | 'EMAIL' | 'BRIEF' | 'PURCHASE' | 'CREATIVE' | 'AB_TEST'>('CHAT');
     const [savedHistory, setSavedHistory] = useState<SavedSimulation[]>([]);
-    const [marketingMessages, setMarketingMessages] = useState<string[]>(["Innovative solutions for you", "Excellence in every detail", "Your goals, our priority", "Leading with vision"]);
+    const [marketingMessages, setMarketingMessages] = useState<string[]>(() => {
+        try {
+            const saved = localStorage.getItem('chopo_fg_marketing_messages');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) return parsed;
+            }
+        } catch {}
+        return [
+            "Controla tu diabetes a tiempo: resultados de HbA1c el mismo día en tu WhatsApp",
+            "Precisión diagnóstica acreditada para el seguimiento clínico de tus pacientes con diabetes",
+            "Tu Check-up preventivo completo cerca de ti: agenda en línea con descuento especial",
+            "Prevención que da tranquilidad: estudios de laboratorio clínico certificados por Chopo"
+        ];
+    });
     const [newMessage, setNewMessage] = useState("");
+    const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
+    const [editingMessageText, setEditingMessageText] = useState("");
     const [isGeneratingWildcard, setIsGeneratingWildcard] = useState(false);
     const [status, setStatus] = useState("");
     const [isAddAudienceModalOpen, setIsAddAudienceModalOpen] = useState(false);
     const [audienceCriteria, setAudienceCriteria] = useState("");
     const [selectedAudience, setSelectedAudience] = useState<any | null>(null);
+    const [isEditingSelectedAudience, setIsEditingSelectedAudience] = useState(false);
+    const [editAudienceForm, setEditAudienceForm] = useState<any | null>(null);
+    const [personaVersions, setPersonaVersions] = useState<ConfigVersionSnapshot[]>([]);
+    const [personaVersionLabel, setPersonaVersionLabel] = useState("");
+    const [isSavingPersonas, setIsSavingPersonas] = useState(false);
+    const [newManualPersona, setNewManualPersona] = useState({
+        name: '',
+        personaName: '',
+        track: 'patient' as 'patient' | 'physician',
+        age: 42,
+        job_title: '',
+        demographics: '',
+        bio: '',
+        pain_points_text: '',
+        goals_text: ''
+    });
+    const [showManualPersonaForm, setShowManualPersonaForm] = useState(false);
+
+    // Dynamic Rubrics State
+    const [rubrics, setRubrics] = useState<FocusGroupRubric[]>(DEFAULT_CHOPO_RUBRICS);
+    const [isRubricsModalOpen, setIsRubricsModalOpen] = useState(false);
+    const [editingRubric, setEditingRubric] = useState<FocusGroupRubric | null>(null);
+    const [rubricVersions, setRubricVersions] = useState<ConfigVersionSnapshot[]>([]);
+    const [rubricVersionLabel, setRubricVersionLabel] = useState("");
+    const [isSavingRubrics, setIsSavingRubrics] = useState(false);
+
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [interviewPersona, setInterviewPersona] = useState<{ persona: Persona; result: any } | null>(null);
     const historyDropdownRef = useRef<HTMLDivElement>(null);
@@ -48,21 +113,108 @@ export const SyntheticTesting: React.FC = () => {
     const [isMemberLoading, setIsMemberLoading] = useState(false);
     const [showMemberSettings, setShowMemberSettings] = useState(false);
     const [showProducts, setShowProducts] = useState(false);
+    type EmailDraftItem = {
+        subject: string;
+        preheader?: string;
+        bannerHeadline?: string;
+        bannerSubheadline?: string;
+        body: string;
+        image?: string;
+        ctaText?: string;
+        legalFooter?: string;
+    };
+
     const [emailBodies, setEmailBodies] = useState<{ [key: string]: string }>({});
-    const [emailDrafts, setEmailDrafts] = useState<{ subject: string, body: string }[]>([]);
+    const [emailDrafts, setEmailDrafts] = useState<EmailDraftItem[]>(() => {
+        try {
+            const saved = localStorage.getItem('chopo_fg_email_drafts');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) return parsed;
+            }
+        } catch {}
+        return [];
+    });
     const [isEmailEditorOpen, setIsEmailEditorOpen] = useState(false);
     const [editingEmailIndex, setEditingEmailIndex] = useState<number | null>(null);
     const [editingEmailSubject, setEditingEmailSubject] = useState("");
+    const [editingEmailBannerHeadline, setEditingEmailBannerHeadline] = useState("");
+    const [editingEmailBannerSubheadline, setEditingEmailBannerSubheadline] = useState("");
     const [editingEmailBody, setEditingEmailBody] = useState("");
+    const [editingEmailImage, setEditingEmailImage] = useState("");
+    const [isUploadingEmailDraftImage, setIsUploadingEmailDraftImage] = useState(false);
+    const emailDraftImageInputRef = useRef<HTMLInputElement>(null);
     const [isGeneratingEmails, setIsGeneratingEmails] = useState(false);
 
     // New Modal States
     const [selectedCartResult, setSelectedCartResult] = useState<SimulationResult | null>(null);
-    const [selectedEmailStats, setSelectedEmailStats] = useState<{ subject: string, openRate: number, clickRate: number, body: string } | null>(null);
+    const [selectedEmailStats, setSelectedEmailStats] = useState<{
+        subject: string;
+        openRate: number;
+        clickRate: number;
+        body: string;
+        bannerHeadline?: string;
+        bannerSubheadline?: string;
+        image?: string;
+        ctaText?: string;
+        legalFooter?: string;
+    } | null>(null);
+    const [isSyntheticUsersModalOpen, setIsSyntheticUsersModalOpen] = useState(false);
     
     // Purchase Products
-    const [simulationProducts, setSimulationProducts] = useState<string[]>(SIMULATION_PRODUCTS);
+    type StudyModality = 'Disponible en Sucursal y Domicilio' | 'Disponible solo en Sucursal' | 'Disponible solo a Domicilio';
+    const [simulationProducts, setSimulationProducts] = useState<string[]>(() => {
+        try {
+            const saved = localStorage.getItem('chopo_fg_simulation_products');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) return parsed;
+            }
+        } catch {}
+        return SIMULATION_PRODUCTS;
+    });
     const [newProduct, setNewProduct] = useState("");
+    const [newProductModality, setNewProductModality] = useState<StudyModality>('Disponible en Sucursal y Domicilio');
+    const [editingProductIndex, setEditingProductIndex] = useState<number | null>(null);
+    const [editingProductTitle, setEditingProductTitle] = useState("");
+    const [editingProductDescription, setEditingProductDescription] = useState("");
+    const [editingProductModality, setEditingProductModality] = useState<StudyModality>('Disponible en Sucursal y Domicilio');
+
+    const parseSimulationProduct = (raw: string): { title: string; description: string; modality: StudyModality } => {
+        const colonIdx = raw.indexOf(':');
+        const leftPart = colonIdx !== -1 ? raw.slice(0, colonIdx) : raw;
+        const description = colonIdx !== -1 ? raw.slice(colonIdx + 1).trim() : '';
+
+        const bracketMatch = leftPart.match(/\[(.*?)\]/);
+        const bracketText = bracketMatch ? bracketMatch[1].trim() : '';
+        const cleanTitle = leftPart.replace(/\s*\[.*?\]\s*/g, '').trim();
+
+        let modality: StudyModality = 'Disponible en Sucursal y Domicilio';
+        if (/solo en sucursal/i.test(bracketText)) {
+            modality = 'Disponible solo en Sucursal';
+        } else if (/solo a domicilio/i.test(bracketText)) {
+            modality = 'Disponible solo a Domicilio';
+        } else if (/sucursal y domicilio/i.test(bracketText)) {
+            modality = 'Disponible en Sucursal y Domicilio';
+        } else if (/mastograf|rayos x|ultrasonido|resonancia|tomograf|imagen|densitometr|colposcop/i.test(raw)) {
+            modality = 'Disponible solo en Sucursal';
+        }
+
+        return { title: cleanTitle || raw, description, modality };
+    };
+
+    const formatSimulationProduct = (titleInput: string, modality: StudyModality, descriptionInput?: string): string => {
+        let titlePart = titleInput;
+        let descPart = descriptionInput || '';
+        if (descriptionInput === undefined && titleInput.includes(':')) {
+            const idx = titleInput.indexOf(':');
+            titlePart = titleInput.slice(0, idx);
+            descPart = titleInput.slice(idx + 1);
+        }
+        const cleanTitle = titlePart.replace(/\s*\[.*?\]\s*/g, '').trim();
+        const cleanDesc = descPart.trim();
+        return cleanDesc ? `${cleanTitle} [${modality}]: ${cleanDesc}` : `${cleanTitle} [${modality}]`;
+    };
 
     // A/B Test 
     const [abTestResults, setAbTestResults] = useState<ABTestResult[]>([]);
@@ -73,36 +225,284 @@ export const SyntheticTesting: React.FC = () => {
     const [creativeResults, setCreativeResults] = useState<any[]>([]);
     const [isCreativeLoading, setIsCreativeLoading] = useState(false);
     const [selectedCreativeAudience, setSelectedCreativeAudience] = useState<string>("");
+    const [customCreativesMap, setCustomCreativesMap] = useState<Record<string, any>>({});
+    const [customCreativeHeadline, setCustomCreativeHeadline] = useState<string>("");
+    const [customCreativeCaption, setCustomCreativeCaption] = useState<string>("");
+    const [isUploadingCreative, setIsUploadingCreative] = useState<boolean>(false);
+    const customCreativeInputRef = useRef<HTMLInputElement>(null);
 
-    const activeCreativeAssets = brief?.campaignAssetsMap && selectedCreativeAudience
-        ? brief.campaignAssetsMap[selectedCreativeAudience]
-        : brief?.campaignAssets;
+    const combinedCreativeAssetsMap: Record<string, any> = {
+        ...(brief?.campaignAssetsMap || {}),
+        ...customCreativesMap
+    };
+
+    const activeCreativeAssets = (selectedCreativeAudience && combinedCreativeAssetsMap[selectedCreativeAudience])
+        ? combinedCreativeAssetsMap[selectedCreativeAudience]
+        : (Object.keys(combinedCreativeAssetsMap).length > 0
+            ? combinedCreativeAssetsMap[Object.keys(combinedCreativeAssetsMap)[0]]
+            : brief?.campaignAssets);
 
     // Acquisition Simulation
     const [acquisitionResults, setAcquisitionResults] = useState<AcquisitionResult[]>([]);
-    const [acquisitionOffers, setAcquisitionOffers] = useState<string[]>([
-        "Early Access to Limited Edition Collaborations",
-        "Virtual AR Try-On for Beauty & Fashion",
-        "Interest-Free BNPL (Shop Now, Pay Later)",
-        "Exclusive 'Host Hangout' Virtual Events",
-        "Sustainability-First Curated Collections"
-    ]);
+    const [acquisitionOffers, setAcquisitionOffers] = useState<string[]>(() => {
+        try {
+            const saved = localStorage.getItem('chopo_fg_acquisition_offers');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) return parsed;
+            }
+        } catch {}
+        return [
+            "Descuento exclusivo en línea al agendar y pagar en chopo.com.mx",
+            "Resultados de HbA1c el mismo día directo en tu WhatsApp y en la App Chopo",
+            "Toma de muestra a domicilio sin costo adicional en el Perfil Control Diabetes",
+            "Portal Médico B2B con comparativo histórico de biomarcadores para especialistas",
+            "Paquete Anual de Salud Preventiva Femenina con Mastografía Digital y Check-up"
+        ];
+    });
     const [newOffer, setNewOffer] = useState("");
+    const [editingOfferIndex, setEditingOfferIndex] = useState<number | null>(null);
+    const [editingOfferText, setEditingOfferText] = useState("");
     const [isAcquisitionLoading, setIsAcquisitionLoading] = useState(false);
+
+    // Persist working stimulus lists in localStorage so user edits survive page refresh (F5)
+    useEffect(() => {
+        try {
+            localStorage.setItem('chopo_fg_acquisition_offers', JSON.stringify(acquisitionOffers));
+        } catch {}
+    }, [acquisitionOffers]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('chopo_fg_marketing_messages', JSON.stringify(marketingMessages));
+        } catch {}
+    }, [marketingMessages]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('chopo_fg_simulation_products', JSON.stringify(simulationProducts));
+        } catch {}
+    }, [simulationProducts]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('chopo_fg_email_drafts', JSON.stringify(emailDrafts));
+        } catch {}
+    }, [emailDrafts]);
+
+    const isBusy =
+        isMemberLoading ||
+        isGeneratingEmails ||
+        isABTestingLoading ||
+        isCreativeLoading ||
+        isAcquisitionLoading ||
+        isGeneratingWildcard ||
+        isUploadingCreative ||
+        isUploadingEmailDraftImage ||
+        isSavingPersonas ||
+        isSavingRubrics;
+
+    const openEmailEditorForDraft = (idx: number, draft: EmailDraftItem) => {
+        setEditingEmailIndex(idx);
+        setEditingEmailSubject(draft.subject || "");
+        setEditingEmailBannerHeadline(draft.bannerHeadline || draft.subject || "");
+        setEditingEmailBannerSubheadline(draft.bannerSubheadline || brief?.productName || "Laboratorios Chopo");
+        setEditingEmailBody((draft.body || "").replace(/\s*Incluye pie legal:[\s\S]*$/i, '').trim());
+        setEditingEmailImage(draft.image || activeCreativeAssets?.image || "");
+        setIsEmailEditorOpen(true);
+    };
+
+    const handleUploadEmailDraftImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setIsUploadingEmailDraftImage(true);
+        try {
+            const base64DataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = (err) => reject(err);
+                reader.readAsDataURL(file);
+            });
+
+            let uploadedUrl = base64DataUrl;
+            try {
+                const safeFilename = `fg_email_banner_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+                const res = await fetch('/api/save-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: base64DataUrl, filename: safeFilename })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.url) {
+                        uploadedUrl = data.url;
+                    }
+                }
+            } catch (uploadErr) {
+                console.warn("Backend email draft image upload failed, falling back to base64:", uploadErr);
+            }
+
+            setEditingEmailImage(uploadedUrl);
+        } catch (err) {
+            console.error("Failed to read email draft image:", err);
+            alert(t("No se pudo cargar la imagen del correo.", "Could not load email image."));
+        } finally {
+            setIsUploadingEmailDraftImage(false);
+            if (emailDraftImageInputRef.current) {
+                emailDraftImageInputRef.current.value = "";
+            }
+        }
+    };
 
     // Chat
     // Chat state is mostly internal to SyntheticChat, but duplicate saving logic might be needed if SyntheticChat doesn't export it.
     // For this V1 Hub, we will render SyntheticChat directly.
 
     const EMAIL_HEADLINES = [
-        `Welcome to ${name}`,
-        "Understanding Your Benefits & Features",
-        "Maximize Your Experience Today",
-        "Exclusive Offers Just for You",
-        "Join Our Community Program"
+        `Bienvenido a ${name}: Tu salud diagnóstica en manos expertas`,
+        "Guía rápida de preparación y ayuno para tus estudios de laboratorio",
+        "Monitorea tu glucosa y HbA1c con precisión clínica acreditada",
+        "Beneficios exclusivos en línea al agendar tu Check-up en chopo.com.mx",
+        "Boletín clínico para médicos: Precisión analítica en el control de Diabetes"
     ];
 
-    const refreshBriefData = async () => {
+    const syncStimuliFromBrief = (loadedBrief: MarketingBriefData) => {
+        if (!loadedBrief) return;
+
+        // 1. Sync Key Marketing Messages (BRIEF tab)
+        const candidateMessages: string[] = [
+            loadedBrief.messaging?.primaryHook?.es || loadedBrief.messaging?.primaryHook?.en || '',
+            loadedBrief.messaging?.supporting1?.content?.es || loadedBrief.messaging?.supporting1?.content?.en || '',
+            loadedBrief.messaging?.supporting2?.content?.es || loadedBrief.messaging?.supporting2?.content?.en || '',
+            loadedBrief.valueProp?.main?.es || loadedBrief.valueProp?.main?.en || '',
+            ...((loadedBrief.audiences || []).map((a: any) => a?.messagingAngle?.es || a?.messagingAngle?.en || ''))
+        ]
+            .map(s => String(s || '').trim())
+            .filter(Boolean);
+
+        const uniqueMessages = Array.from(new Set(candidateMessages));
+        if (uniqueMessages.length > 0) {
+            setMarketingMessages(uniqueMessages);
+        }
+
+        // 2. Sync Email Drafts (EMAIL tab)
+        const briefEmails: EmailDraftItem[] = [];
+        const seenSubjects = new Set<string>();
+        const assetsMap = loadedBrief.campaignAssetsMap || {};
+        Object.entries(assetsMap).forEach(([audName, assets]: [string, any]) => {
+            const subj = assets?.email?.subject?.trim();
+            const rawBody = assets?.email?.body?.trim();
+            if (subj && rawBody && !seenSubjects.has(subj)) {
+                seenSubjects.add(subj);
+                briefEmails.push({
+                    subject: subj,
+                    preheader: assets.email?.preheader || '',
+                    bannerHeadline: assets.email?.bannerHeadline || assets.search?.headline || loadedBrief.productName || subj,
+                    bannerSubheadline: assets.email?.bannerSubheadline || loadedBrief.productName || 'Laboratorios Chopo',
+                    body: rawBody.replace(/\s*Incluye pie legal:[\s\S]*$/i, '').trim(),
+                    image: assets.email?.image || assets.image || undefined,
+                    ctaText: assets.email?.ctaText || 'Agendar Estudio en Línea',
+                    legalFooter: assets.email?.legalFooter || 'Consulte a su médico. Permiso de Publicidad COFEPRIS No. 2609152002A00518.'
+                });
+            }
+        });
+        if (loadedBrief.campaignAssets?.email?.subject && loadedBrief.campaignAssets?.email?.body) {
+            const assets: any = loadedBrief.campaignAssets;
+            const subj = assets.email.subject.trim();
+            const rawBody = assets.email.body.trim();
+            if (subj && rawBody && !seenSubjects.has(subj)) {
+                seenSubjects.add(subj);
+                briefEmails.push({
+                    subject: subj,
+                    preheader: assets.email?.preheader || '',
+                    bannerHeadline: assets.email?.bannerHeadline || assets.search?.headline || loadedBrief.productName || subj,
+                    bannerSubheadline: assets.email?.bannerSubheadline || loadedBrief.productName || 'Laboratorios Chopo',
+                    body: rawBody.replace(/\s*Incluye pie legal:[\s\S]*$/i, '').trim(),
+                    image: assets.email?.image || assets.image || undefined,
+                    ctaText: assets.email?.ctaText || 'Agendar Estudio en Línea',
+                    legalFooter: assets.email?.legalFooter || 'Consulte a su médico. Permiso de Publicidad COFEPRIS No. 2609152002A00518.'
+                });
+            }
+        }
+        if (briefEmails.length > 0) {
+            updateEmailDrafts(briefEmails);
+        }
+
+        // 3. Sync Acquisition / Promotional Offers (ACQUISITION tab)
+        const studyName = (loadedBrief.productName || (loadedBrief as any).studyName || '').trim();
+        const isImagingStudy = /mastograf|rayos x|ultrasonido|resonancia|tomograf|imagen|densitometr|colposcop|electrocardiogram/i.test(studyName);
+        const candidateOffers: string[] = [];
+        if (studyName) {
+            candidateOffers.push(`Precio especial exclusivo en línea para ${studyName} al agendar en chopo.com.mx o App Chopo`);
+            candidateOffers.push(`Entrega de resultados 100% digitales en App Chopo y WhatsApp para ${studyName}`);
+            candidateOffers.push(
+                isImagingStudy
+                    ? `Cita programada sin filas en sucursal especializada para ${studyName}`
+                    : `Toma de muestra a domicilio o en sucursal con cita programada para ${studyName}`
+            );
+        }
+        const mainValProp = (loadedBrief.valueProp?.main?.es || loadedBrief.valueProp?.main?.en || '').trim();
+        if (mainValProp) candidateOffers.push(mainValProp);
+        const primaryHook = (loadedBrief.messaging?.primaryHook?.es || loadedBrief.messaging?.primaryHook?.en || '').trim();
+        if (primaryHook) candidateOffers.push(primaryHook);
+
+        const uniqueOffers = Array.from(new Set(candidateOffers.filter(Boolean)));
+        if (uniqueOffers.length > 0) {
+            setAcquisitionOffers(uniqueOffers);
+        }
+
+        // 4. Sync Diagnostic Studies Catalog (PURCHASE tab)
+        const briefProducts: string[] = [];
+        const seenTitles = new Set<string>();
+        const addStudyIfUnique = (rawOrFormatted: string) => {
+            const parsed = parseSimulationProduct(rawOrFormatted);
+            const norm = parsed.title.toLowerCase();
+            if (!seenTitles.has(norm)) {
+                seenTitles.add(norm);
+                briefProducts.push(formatSimulationProduct(parsed.title, parsed.modality, parsed.description));
+            }
+        };
+
+        if (studyName) {
+            const modality = parseSimulationProduct(studyName).modality;
+            addStudyIfUnique(formatSimulationProduct(studyName, modality, 'Estudio principal del Brief de Marketing'));
+        }
+
+        const firstAssets: any = Object.values(assetsMap)[0] || loadedBrief.campaignAssets;
+        const recs = firstAssets?.website?.recommendations;
+        if (Array.isArray(recs)) {
+            recs.forEach((rec: any) => {
+                if (rec?.name) {
+                    const recModality = parseSimulationProduct(rec.name).modality;
+                    addStudyIfUnique(formatSimulationProduct(rec.name, recModality, rec.price ? `Complementario sugerido (${rec.price})` : 'Estudio complementario sugerido en Brief'));
+                }
+            });
+        }
+
+        SIMULATION_PRODUCTS.forEach(stdProd => addStudyIfUnique(stdProd));
+        if (briefProducts.length > 0) {
+            setSimulationProducts(briefProducts);
+        }
+
+        const briefSig = `${(loadedBrief as any).timestamp || ''}|${loadedBrief.title || ''}|${loadedBrief.productName || ''}`;
+        try {
+            localStorage.setItem('chopo_fg_synced_brief_ts', briefSig);
+        } catch {}
+    };
+
+    const refreshBriefData = async (forceSync: boolean = false) => {
+        const shouldAutoSync = (loadedBrief: any) => {
+            if (forceSync) return true;
+            try {
+                const briefSig = `${loadedBrief?.timestamp || ''}|${loadedBrief?.title || ''}|${loadedBrief?.productName || ''}`;
+                const lastSig = localStorage.getItem('chopo_fg_synced_brief_ts');
+                const hasSavedOffers = Boolean(localStorage.getItem('chopo_fg_acquisition_offers'));
+                return !lastSig || briefSig !== lastSig || !hasSavedOffers;
+            } catch {
+                return true;
+            }
+        };
+
         try {
             // Try Server First
             const res = await fetch('/api/load-run/marketing_brief');
@@ -110,6 +510,9 @@ export const SyntheticTesting: React.FC = () => {
             if (data && data.title) {
                 console.log("Refreshed Brief Data:", data);
                 setBrief(data);
+                if (shouldAutoSync(data)) {
+                    syncStimuliFromBrief(data);
+                }
 
                 if (data.campaignAssetsMap) {
                     const keys = Object.keys(data.campaignAssetsMap);
@@ -117,7 +520,6 @@ export const SyntheticTesting: React.FC = () => {
                         setSelectedCreativeAudience(prev => prev || keys[0]);
                     }
                 }
-                // localStorage.setItem('cc_marketing_brief', JSON.stringify(data)); // Skipped to avoid quota
                 return;
             }
         } catch (e) { console.error("Server refresh failed", e); }
@@ -126,25 +528,84 @@ export const SyntheticTesting: React.FC = () => {
         const saved = localStorage.getItem('cc_marketing_brief');
         if (saved) {
             console.log("Loaded Brief from Local Storage");
-            setBrief(JSON.parse(saved));
+            const parsed = JSON.parse(saved);
+            setBrief(parsed);
+            if (shouldAutoSync(parsed)) {
+                syncStimuliFromBrief(parsed);
+            }
         }
     };
 
     useEffect(() => {
         refreshBriefData();
-        fetch('/api/load-run/audience_generator')
-            .then(res => res.json())
-            .then(data => {
-                if (data && data.personas) {
-                    setPersonas(data.personas);
-                } else if (Array.isArray(data) && data.length > 0) {
-                    // Backwards compatibility if data is just the array
-                    setPersonas(data);
+
+        // Load Rubrics from Firestore / Seed
+        fetchRubrics()
+            .then(loadedRubrics => {
+                if (Array.isArray(loadedRubrics) && loadedRubrics.length > 0) {
+                    setRubrics(loadedRubrics);
                 }
             })
-            .catch(() => {
-                console.warn("Could not load personas from server.");
-            });
+            .catch(err => console.warn("Could not load rubrics from server, using DEFAULT_CHOPO_RUBRICS:", err));
+
+        // Load Catalog Personas + Synthetic Users and synchronize Contexto de Audiencias with selected/generated audiences
+        const loadPersonasAndSyntheticUsers = async () => {
+            let catalog: any[] = STANDARD_AUDIENCES;
+            try {
+                const loadedPersonas = await fetchPersonas();
+                if (Array.isArray(loadedPersonas) && loadedPersonas.length > 0) {
+                    catalog = loadedPersonas;
+                } else {
+                    const audRes = await fetch('/api/load-run/audience_generator');
+                    if (audRes.ok) {
+                        const audData = await audRes.json();
+                        if (audData && Array.isArray(audData.personas) && audData.personas.length > 0) {
+                            catalog = audData.personas;
+                        } else if (Array.isArray(audData) && audData.length > 0) {
+                            catalog = audData;
+                        }
+                    }
+                }
+            } catch {
+                catalog = STANDARD_AUDIENCES;
+            }
+
+            // Merge with STANDARD_AUDIENCES and deduplicate by name so full catalog is always available
+            const mergedCatalog = Array.from(
+                new Map([...catalog, ...STANDARD_AUDIENCES].map(p => [p.name, p])).values()
+            );
+            setAllCatalogPersonas(mergedCatalog);
+
+            try {
+                const synRes = await fetch('/api/load-run/synthetic_users');
+                if (synRes.ok) {
+                    const synData = await synRes.json();
+                    const generated: any[] = Array.isArray(synData?.generatedUsers) ? synData.generatedUsers : [];
+                    const selectedNames: string[] = Array.isArray(synData?.selectedPersonaNames) ? synData.selectedPersonaNames : [];
+
+                    if (generated.length > 0) {
+                        setSyntheticUsers(generated);
+                        const activeBaseNames = new Set<string>(
+                            selectedNames.length > 0
+                                ? selectedNames
+                                : generated.map((u: any) => u.baseAudienceName || u.personaName || u.name).filter(Boolean)
+                        );
+                        const activePersonas = mergedCatalog.filter(
+                            p => activeBaseNames.has(p.name) || activeBaseNames.has(p.personaName)
+                        );
+                        setPersonas(activePersonas.length > 0 ? activePersonas : mergedCatalog);
+                        return;
+                    }
+                }
+            } catch {
+                console.log("No synthetic users run found, using standard clinical seeds");
+            }
+
+            setPersonas(mergedCatalog);
+            setSyntheticUsers(mergedCatalog);
+        };
+
+        loadPersonasAndSyntheticUsers();
 
         // Load History (Server Only)
         fetch('/api/load-run/synthetic_focus_group')
@@ -155,26 +616,274 @@ export const SyntheticTesting: React.FC = () => {
                 }
             })
             .catch(e => console.log("No server history found"));
-
-        // Load Synthetic Users
-        fetch('/api/load-run/synthetic_users')
-            .then(res => res.json())
-            .then(data => {
-                if (data && data.generatedUsers) {
-                    setSyntheticUsers(data.generatedUsers);
-                }
-            })
-            .catch(e => console.log("No synthetic users found"));
     }, []);
 
-    // Auto-refresh when switching to Creative tab
+    // --- Dynamic Rubrics Management & Rollback ---
+    const loadRubricVersions = async () => {
+        try {
+            const versions = await fetchConfigVersions('rubrics');
+            if (Array.isArray(versions)) {
+                setRubricVersions(versions);
+            }
+        } catch (err) {
+            console.warn("Failed to load rubric versions:", err);
+        }
+    };
+
+    const openRubricsModal = async () => {
+        setEditingRubric(rubrics[0] ? { ...rubrics[0], scoringAnchors: { ...rubrics[0].scoringAnchors } } : null);
+        setIsRubricsModalOpen(true);
+        await loadRubricVersions();
+    };
+
+    const handleStartNewRubric = () => {
+        const blankRubric: FocusGroupRubric = {
+            id: `rubric_custom_${Date.now()}`,
+            key: `custom_criterion_${Date.now()}`,
+            name: '',
+            track: 'both',
+            weight: 15,
+            evaluationQuestion: '',
+            scoringAnchors: {
+                low_0_to_40: 'El mensaje o imagen es confuso o poco relevante para el perfil.',
+                mid_41_to_79: 'El mensaje se entiende parcialmente pero le falta fuerza comercial o clínica.',
+                high_80_to_100: 'Comunicación clara, confiable y accionable en menos de 3 segundos.'
+            }
+        };
+        setEditingRubric(blankRubric);
+    };
+
+    const handleSaveRubricsToServer = async (updatedList: FocusGroupRubric[], customLabel?: string) => {
+        setIsSavingRubrics(true);
+        try {
+            const label = customLabel || rubricVersionLabel.trim() || `Actualización de Rúbricas (${updatedList.length} criterios)`;
+            const saved = await saveRubrics(updatedList, label);
+            const finalRubrics = Array.isArray(saved) && saved.length > 0 ? saved : updatedList;
+            setRubrics(finalRubrics);
+            setRubricVersionLabel("");
+            await loadRubricVersions();
+        } catch (err) {
+            console.error("Failed to save rubrics:", err);
+            alert(t("Error al guardar los criterios de evaluación.", "Failed to save evaluation rubrics."));
+        } finally {
+            setIsSavingRubrics(false);
+        }
+    };
+
+    const handleApplyEditingRubric = async () => {
+        if (!editingRubric || !editingRubric.name.trim()) {
+            alert(t("Ingresa un nombre para el criterio de evaluación.", "Please enter a name for the evaluation rubric."));
+            return;
+        }
+        const normalized: FocusGroupRubric = {
+            ...editingRubric,
+            name: editingRubric.name.trim(),
+            weight: Number(editingRubric.weight) || 15
+        };
+        const exists = rubrics.some(r => r.id === normalized.id);
+        const updatedList = exists
+            ? rubrics.map(r => (r.id === normalized.id ? normalized : r))
+            : [...rubrics, normalized];
+        setEditingRubric(normalized);
+        await handleSaveRubricsToServer(updatedList, rubricVersionLabel.trim() || `${exists ? 'Edición' : 'Nuevo criterio'}: ${normalized.name}`);
+    };
+
+    const handleDeleteRubric = async (rubricId: string) => {
+        const updatedList = rubrics.filter(r => r.id !== rubricId);
+        if (editingRubric?.id === rubricId) {
+            setEditingRubric(updatedList[0] || null);
+        }
+        await handleSaveRubricsToServer(updatedList, 'Eliminación de criterio de evaluación');
+    };
+
+    const handleRestoreRubrics = async (versionId: string) => {
+        setIsSavingRubrics(true);
+        try {
+            const restored = await restoreConfigVersion('rubrics', versionId);
+            const finalRubrics = Array.isArray(restored) && restored.length > 0 ? restored : DEFAULT_CHOPO_RUBRICS;
+            setRubrics(finalRubrics);
+            setEditingRubric(finalRubrics[0] || null);
+            await loadRubricVersions();
+        } catch (err) {
+            console.error("Failed to restore rubrics:", err);
+            alert(t("Error al restaurar versión de criterios.", "Failed to restore rubrics version."));
+        } finally {
+            setIsSavingRubrics(false);
+        }
+    };
+
+    // --- Fixed-Schema Persona Persistence & Rollback ---
+    const loadPersonaVersions = async () => {
+        try {
+            const versions = await fetchConfigVersions('personas');
+            if (Array.isArray(versions)) {
+                setPersonaVersions(versions);
+            }
+        } catch (err) {
+            console.warn("Failed to load persona versions:", err);
+        }
+    };
+
+    const persistPersonasAllChannels = async (updatedPersonas: any[], label: string) => {
+        setPersonas(updatedPersonas);
+        setIsSavingPersonas(true);
+        try {
+            await savePersonas(updatedPersonas, label);
+            await fetch('/api/save-run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ featureId: 'audience_generator', data: { personas: updatedPersonas } })
+            });
+            await loadPersonaVersions();
+        } catch (err) {
+            console.error("Failed to persist personas:", err);
+        } finally {
+            setIsSavingPersonas(false);
+        }
+    };
+
+    const handleRestorePersonas = async (versionId: string) => {
+        setIsSavingPersonas(true);
+        try {
+            const restored = await restoreConfigVersion('personas', versionId);
+            const finalPersonas = Array.isArray(restored) && restored.length > 0 ? restored : STANDARD_AUDIENCES;
+            setPersonas(finalPersonas);
+            setSyntheticUsers(finalPersonas);
+            await loadPersonaVersions();
+        } catch (err) {
+            console.error("Failed to restore personas:", err);
+            alert(t("Error al restaurar versión de perfiles.", "Failed to restore personas version."));
+        } finally {
+            setIsSavingPersonas(false);
+        }
+    };
+
+    const handleCreateManualPersona = async () => {
+        if (!newManualPersona.name.trim() || !newManualPersona.personaName.trim()) {
+            alert(t("Completa al menos el Nombre del Segmento y el Nombre de la Persona.", "Please fill in at least Segment Name and Persona Name."));
+            return;
+        }
+        const painPoints = newManualPersona.pain_points_text
+            .split(/\n|,/)
+            .map(s => s.trim())
+            .filter(Boolean);
+        const goals = newManualPersona.goals_text
+            .split(/\n|,/)
+            .map(s => s.trim())
+            .filter(Boolean);
+        const created = {
+            id: `aud_custom_${Date.now()}`,
+            track: newManualPersona.track,
+            name: newManualPersona.name.trim(),
+            personaName: newManualPersona.personaName.trim(),
+            age: Number(newManualPersona.age) || 40,
+            job_title: newManualPersona.job_title.trim() || (newManualPersona.track === 'physician' ? 'Médico Especialista' : 'Paciente'),
+            demographics: newManualPersona.demographics.trim() || `${newManualPersona.age} años, México`,
+            bio: newManualPersona.bio.trim() || 'Perfil sintético clínico configurado para evaluación en Focus Group.',
+            pain_points: painPoints.length > 0 ? painPoints : ['Busca claridad en precios e indicaciones de laboratorio'],
+            goals: goals.length > 0 ? goals : ['Resultados digitales confiables en App Chopo'],
+            imageUrl: newManualPersona.track === 'physician' ? '/images/audiences/physicians.png' : '/images/audiences/chronic_patients.png',
+            details: {
+                age: `${newManualPersona.age} años`,
+                job_title: newManualPersona.job_title.trim(),
+                bio: newManualPersona.bio.trim(),
+                pain_points: painPoints,
+                goals: goals,
+                lifestyle_tags: [newManualPersona.track === 'physician' ? 'Pista Médico B2B' : 'Pista Paciente B2C', 'Salud Digital']
+            }
+        };
+        const updated = [...personas, created];
+        await persistPersonasAllChannels(updated, personaVersionLabel.trim() || `Nuevo perfil fijo: ${created.personaName}`);
+        setPersonaVersionLabel("");
+        setShowManualPersonaForm(false);
+        setIsAddAudienceModalOpen(false);
+    };
+
+    const handleSaveSelectedAudienceEdits = async () => {
+        if (!editAudienceForm || !selectedAudience) return;
+        const painPoints = (editAudienceForm.pain_points_text || '')
+            .split(/\n|,/)
+            .map((s: string) => s.trim())
+            .filter(Boolean);
+        const goals = (editAudienceForm.goals_text || '')
+            .split(/\n|,/)
+            .map((s: string) => s.trim())
+            .filter(Boolean);
+        const updatedAudience = {
+            ...selectedAudience,
+            name: editAudienceForm.name,
+            personaName: editAudienceForm.personaName,
+            track: editAudienceForm.track,
+            age: Number(editAudienceForm.age) || 40,
+            job_title: editAudienceForm.job_title,
+            demographics: editAudienceForm.demographics,
+            bio: editAudienceForm.bio,
+            pain_points: painPoints,
+            goals: goals,
+            details: {
+                ...(selectedAudience.details || {}),
+                age: `${Number(editAudienceForm.age) || 40} años`,
+                job_title: editAudienceForm.job_title,
+                bio: editAudienceForm.bio,
+                pain_points: painPoints,
+                goals: goals
+            }
+        };
+        const updatedList = personas.map(p => (p.id === selectedAudience.id || p.name === selectedAudience.name ? updatedAudience : p));
+        setSelectedAudience(updatedAudience);
+        setIsEditingSelectedAudience(false);
+        await persistPersonasAllChannels(updatedList, `Edición de perfil: ${updatedAudience.personaName}`);
+    };
+
+    // Auto-refresh when switching to Creative tab and close tab-specific modals on tab change
     useEffect(() => {
+        setIsEmailEditorOpen(false);
+        setShowProducts(false);
         if (activeTab === 'CREATIVE') {
             refreshBriefData();
         }
     }, [activeTab]);
 
     // --- Persistence Helper ---
+    const formatHistoryRunTitle = (run: SavedSimulation): string => {
+        const raw = run.name || '';
+        return raw
+            .replace(/^Member Sim\s*-\s*/i, t('Simulación de Campaña — ', 'Campaign Sim — '))
+            .replace(/^Acquisition Test\s*-\s*/i, t('Simulación de Promociones — ', 'Promotions Sim — '))
+            .replace(/^Creative Test\s*(\([^)]*\))?\s*-\s*/i, t('Evaluación de Imagen / Banner — ', 'Creative Sim — '))
+            .replace(/^A\/B Test\s*-\s*/i, t('Prueba A/B — ', 'A/B Test — '));
+    };
+
+    const getHistoryRunBadge = (type: SavedSimulation['type']) => {
+        switch (type) {
+            case 'ACQUISITION_SIMULATION':
+                return {
+                    label: t('Promociones', 'Promotions'),
+                    className: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                };
+            case 'MEMBER_SIMULATION':
+                return {
+                    label: t('Brief / Email / Estudios', 'Brief / Email / Studies'),
+                    className: 'bg-[#EFF6FF] text-[#0066FF] border-blue-200'
+                };
+            case 'CREATIVE_SIMULATION':
+                return {
+                    label: t('Imagen / Banner', 'Image / Banner'),
+                    className: 'bg-purple-50 text-purple-700 border-purple-200'
+                };
+            case 'AB_TEST_SIMULATION':
+                return {
+                    label: t('A/B Test', 'A/B Test'),
+                    className: 'bg-amber-50 text-amber-700 border-amber-200'
+                };
+            default:
+                return {
+                    label: t('Simulación', 'Simulation'),
+                    className: 'bg-slate-100 text-slate-700 border-slate-200'
+                };
+        }
+    };
+
     const autoSaveRun = (run: SavedSimulation) => {
         const newHistory = [run, ...savedHistory];
         setSavedHistory(newHistory);
@@ -193,21 +902,75 @@ export const SyntheticTesting: React.FC = () => {
             if (run.emailBodies) {
                 setEmailBodies(run.emailBodies);
             }
+            if (Array.isArray(run.marketingMessages) && run.marketingMessages.length > 0) {
+                setMarketingMessages(run.marketingMessages);
+            } else {
+                const inferredMsgs = Array.from(
+                    new Set(
+                        (run.results || [])
+                            .flatMap((r: any) => (r.messageReactions || []).map((mr: any) => mr?.message))
+                            .filter(Boolean)
+                    )
+                );
+                if (inferredMsgs.length > 0) setMarketingMessages(inferredMsgs);
+            }
+
+            if (Array.isArray(run.simulationProducts) && run.simulationProducts.length > 0) {
+                setSimulationProducts(run.simulationProducts);
+            } else {
+                const inferredProds = Array.from(
+                    new Set(
+                        (run.results || [])
+                            .flatMap((r: any) => (r.cart || []).map((c: any) => c?.productName))
+                            .filter(Boolean)
+                    )
+                );
+                if (inferredProds.length > 0) setSimulationProducts(inferredProds);
+            }
+
+            if (Array.isArray(run.emailDrafts) && run.emailDrafts.length > 0) {
+                setEmailDrafts(run.emailDrafts);
+            } else if (run.emailBodies && Object.keys(run.emailBodies).length > 0) {
+                const inferredDrafts = Object.entries(run.emailBodies).map(([subject, body]) => ({
+                    subject,
+                    body: String(body || '')
+                }));
+                if (inferredDrafts.length > 0) setEmailDrafts(inferredDrafts);
+            }
+
+            if (activeTab !== 'BRIEF' && activeTab !== 'EMAIL' && activeTab !== 'PURCHASE') {
+                setActiveTab('BRIEF');
+            }
         } else if (run.type === 'ACQUISITION_SIMULATION') {
             setAcquisitionResults(run.results);
+            if (Array.isArray(run.offers) && run.offers.length > 0) {
+                setAcquisitionOffers(run.offers);
+            } else {
+                const inferredOffers = Array.from(
+                    new Set(
+                        (run.results || [])
+                            .map((r: any) => r?.winningOffer)
+                            .filter((o: any) => o && o !== 'None' && o !== 'Ninguna')
+                    )
+                );
+                if (inferredOffers.length > 0) {
+                    setAcquisitionOffers(inferredOffers);
+                }
+            }
+            setActiveTab('ACQUISITION');
         } else if (run.type === 'CREATIVE_SIMULATION') {
             setCreativeResults(run.results);
+            setActiveTab('CREATIVE');
         } else if (run.type === 'AB_TEST_SIMULATION') {
             setAbTestResults(run.results);
             setRegionalVariants(run.variants as any);
+            setActiveTab('AB_TEST');
         }
-        // Chat sessions loading implies switching context, which we might handle if chat history was unified.
-        // For now, we just restore the sim tabs.
     };
 
     const handleClearHistory = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!window.confirm("Are you sure you want to clear all simulation history? This cannot be undone.")) return;
+        if (!window.confirm(t("¿Estás seguro de que deseas borrar todo el historial de simulaciones? Esta acción no se puede deshacer.", "Are you sure you want to clear all simulation history? This cannot be undone."))) return;
 
         setSavedHistory([]);
         try {
@@ -218,7 +981,7 @@ export const SyntheticTesting: React.FC = () => {
             });
         } catch (err) {
             console.error("Failed to clear history:", err);
-            alert("Failed to clear history on server.");
+            alert(t("Error al borrar el historial en el servidor.", "Failed to clear history on server."));
         }
     };
 
@@ -227,7 +990,7 @@ export const SyntheticTesting: React.FC = () => {
         if (lastRun) {
             loadRun(lastRun);
         } else {
-            alert("No previous run found for this type.");
+            alert(t("No se encontró ninguna ejecución previa para este tipo de simulación.", "No previous run found for this type."));
         }
     };
 
@@ -235,7 +998,7 @@ export const SyntheticTesting: React.FC = () => {
     const handleAddAudience = async (criteria?: string) => {
         setIsAddAudienceModalOpen(false); // Close modal if open
         setIsGeneratingWildcard(true);
-        setStatus(criteria ? "Generating audience from your criteria..." : "Brainstorming a completely new 'Wildcard' audience...");
+        setStatus(criteria ? t("Generando perfil a partir de tus criterios...", "Generating audience from your criteria...") : t("Creando un nuevo Perfil Exploratorio...", "Brainstorming a completely new 'Wildcard' audience..."));
 
         try {
             let seedAudience;
@@ -247,71 +1010,74 @@ export const SyntheticTesting: React.FC = () => {
             }
 
             if (seedAudience) {
-                setStatus(`Developing profile for: ${seedAudience.name}...`);
+                setStatus(t(`Desarrollando perfil para: ${seedAudience.name}...`, `Developing profile for: ${seedAudience.name}...`));
                 const details = await generateSyntheticPersona(seedAudience.personaName, seedAudience.name, `${brandConfig.companyName} - ${seedAudience.bio || ""}`);
                 let imageUrl = "";
                 try {
                     imageUrl = await generateImageFromPrompt(seedAudience.imagePrompt + " professional portrait, high quality, studio lighting");
                 } catch (e) { console.error(e); }
 
-                const newPersona = { ...seedAudience, details, imageUrl, isWildcard: !criteria }; // If criteria provided, it's specific, not wildcard
+                const newPersona = {
+                    ...seedAudience,
+                    track: seedAudience.track || (seedAudience.name?.toLowerCase().includes('médico') ? 'physician' : 'patient'),
+                    age: details?.age || 40,
+                    job_title: details?.job_title || 'Paciente / Profesional',
+                    pain_points: details?.pain_points || ['Busca atención rápida y precios transparentes en línea'],
+                    goals: details?.goals || ['Resultados digitales confiables en App Chopo'],
+                    details,
+                    imageUrl,
+                    isWildcard: !criteria
+                };
                 const updated = [...personas, newPersona];
-                setPersonas(updated);
-                fetch('/api/save-run', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ featureId: 'audience_generator', data: { personas: updated } })
-                }).catch(err => console.error("Failed to save updated personas to server:", err));
+                await persistPersonasAllChannels(updated, `Perfil IA generado: ${newPersona.personaName || newPersona.name}`);
             }
-        } catch (error) { console.error(error); alert("Failed to generate audience."); }
+        } catch (error) { console.error(error); alert(t("Error al generar el perfil de audiencia.", "Failed to generate audience.")); }
         finally { setIsGeneratingWildcard(false); setStatus(""); }
     };
 
     const deletePersona = (index: number) => {
+        const removed = personas[index];
         const updated = personas.filter((_, i) => i !== index);
-        setPersonas(updated);
-        fetch('/api/save-run', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ featureId: 'audience_generator', data: { personas: updated } })
-        }).catch(err => console.error("Failed to save updated personas to server:", err));
+        persistPersonasAllChannels(updated, `Eliminación de perfil: ${removed?.personaName || removed?.name || index}`);
     };
 
     // --- Acquisition Logic ---
     const handleRunAcquisition = async () => {
         setIsAcquisitionLoading(true);
-        setStatus("Simulating Net-New Acquisition...");
+        setStatus(t("Simulando promociones y captación de nuevos pacientes...", "Simulating Net-New Acquisition..."));
         try {
             let pool = [...syntheticUsers];
             const results = await simulateAcquisitionFocusGroup(pool, acquisitionOffers, name, description);
             setAcquisitionResults(results);
 
             // Auto Save
+            const studyLabel = brief?.productName || t('Campaña Chopo', 'Chopo Campaign');
             autoSaveRun({
                 type: 'ACQUISITION_SIMULATION',
                 id: `acq_${Date.now()}`,
-                name: `Acquisition Test - ${new Date().toLocaleTimeString()}`,
+                name: `${studyLabel} (${acquisitionOffers.length} promociones)`,
                 timestamp: new Date().toISOString(),
                 results: results,
-                stats: {} // Calculate stats if needed for summary
+                stats: {}, // Calculate stats if needed for summary
+                offers: [...acquisitionOffers]
             });
         } catch (e) { console.error(e); }
         finally { setIsAcquisitionLoading(false); setStatus(""); }
     };
 
-    // Load saved campaigns on mount
+    // Load saved campaigns on mount only if Brief has not already populated emailDrafts
     useEffect(() => {
         fetch('/api/load-email-campaigns')
             .then(res => res.json())
             .then(data => {
                 if (Array.isArray(data) && data.length > 0) {
-                    setEmailDrafts(data);
+                    setEmailDrafts(prev => (prev.length > 0 ? prev : data));
                 }
             })
             .catch(err => console.error("Failed to load email campaigns:", err));
     }, []);
 
-    const updateEmailDrafts = (newDrafts: { subject: string, body: string }[]) => {
+    const updateEmailDrafts = (newDrafts: EmailDraftItem[]) => {
         setEmailDrafts(newDrafts);
         fetch('/api/save-email-campaigns', {
             method: 'POST',
@@ -324,13 +1090,13 @@ export const SyntheticTesting: React.FC = () => {
     const handleRunMemberSim = async () => {
         if (!brief || personas.length === 0) return;
         setIsMemberLoading(true);
-        setStatus("Preparing Member Simulation...");
+        setStatus(t("Preparando simulación de campaña...", "Preparing Member Simulation..."));
         try {
             const { generateEmailBodies } = await import('../services/geminiService');
             let bodies = emailBodies;
             let campaigns = emailDrafts;
 
-            // Generate initial drafts if empty
+            // Generate initial drafts only if emailDrafts is completely empty
             if (campaigns.length === 0) {
                 if (Object.keys(bodies).length === 0) {
                     bodies = await generateEmailBodies(EMAIL_HEADLINES, brief);
@@ -344,85 +1110,212 @@ export const SyntheticTesting: React.FC = () => {
 
             let pool = [...syntheticUsers];
 
-            setStatus(`Simulating ${pool.length} members...`);
+            setStatus(t(`Simulando respuestas de ${pool.length} participantes...`, `Simulating ${pool.length} members...`));
             const results = await simulateMarketingFocusGroup(pool, brief, simulationProducts, emailCampaigns, marketingMessages);
             setMemberResults(results);
 
             // Auto Save
+            const studyLabel = brief?.productName || t('Campaña Chopo', 'Chopo Campaign');
             autoSaveRun({
                 type: 'MEMBER_SIMULATION',
                 id: `mem_${Date.now()}`,
-                name: `Member Sim - ${new Date().toLocaleTimeString()}`,
+                name: `${studyLabel} (${emailCampaigns.length} emails, ${simulationProducts.length} estudios)`,
                 timestamp: new Date().toISOString(),
                 results: results,
-                emailBodies: bodies
+                emailBodies: bodies,
+                marketingMessages: [...marketingMessages],
+                simulationProducts: [...simulationProducts],
+                emailDrafts: [...emailCampaigns]
             });
         } catch (e) { console.error(e); }
         finally { setIsMemberLoading(false); setStatus(""); }
     };
 
+    // --- Custom Creative Upload & Sync ---
+    const handleUploadCustomCreative = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploadingCreative(true);
+        setStatus(t("Subiendo imagen / banner propio...", "Uploading custom creative image..."));
+
+        try {
+            const base64DataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = (err) => reject(err);
+                reader.readAsDataURL(file);
+            });
+
+            let uploadedUrl = base64DataUrl;
+            try {
+                const safeFilename = `custom_creative_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+                const res = await fetch('/api/save-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: base64DataUrl, filename: safeFilename })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.url) {
+                        uploadedUrl = data.url;
+                    }
+                }
+            } catch (uploadErr) {
+                console.warn("Backend image upload failed, falling back to local base64 data URL:", uploadErr);
+            }
+
+            const headlineText = customCreativeHeadline.trim() || "Chopo Clinical Diagnostics — Precision You Can Trust";
+            const captionText = customCreativeCaption.trim() || "Take care of your health with Chopo Diagnostics. Book your study online and receive fast digital results.";
+
+            const customAsset = {
+                image: uploadedUrl,
+                social: {
+                    caption: captionText,
+                    hashtags: ["#ChopoDiagnostics", "#PreventiveHealth", "#ClinicalPrecision"]
+                },
+                search: {
+                    headline: headlineText,
+                    description: captionText,
+                    url: "chopo.com.mx"
+                },
+                email: {
+                    subject: headlineText,
+                    preheader: "Accredited clinical laboratory diagnostics",
+                    body: captionText
+                },
+                youtube: {
+                    title: headlineText,
+                    script: captionText
+                },
+                website: {
+                    recommendations: ["Online appointment booking", "WhatsApp results delivery"]
+                }
+            };
+
+            const targetKey = (selectedCreativeAudience && customCreativesMap[selectedCreativeAudience])
+                ? selectedCreativeAudience
+                : (Object.keys(customCreativesMap).length === 0
+                    ? "Custom Creative"
+                    : `Custom Creative ${Object.keys(customCreativesMap).length + 1}`);
+
+            setCustomCreativesMap(prev => ({
+                ...prev,
+                [targetKey]: customAsset
+            }));
+            setSelectedCreativeAudience(targetKey);
+        } catch (err) {
+            console.error("Failed to read custom creative file:", err);
+            alert(t("No se pudo cargar el archivo de imagen seleccionado.", "Could not load the selected image file."));
+        } finally {
+            setIsUploadingCreative(false);
+            setStatus("");
+            if (customCreativeInputRef.current) {
+                customCreativeInputRef.current.value = "";
+            }
+        }
+    };
+
+    const handleCustomCopyChange = (newHeadline: string, newCaption: string) => {
+        setCustomCreativeHeadline(newHeadline);
+        setCustomCreativeCaption(newCaption);
+
+        const activeCustomKey = (selectedCreativeAudience && customCreativesMap[selectedCreativeAudience])
+            ? selectedCreativeAudience
+            : Object.keys(customCreativesMap)[0];
+
+        if (activeCustomKey && customCreativesMap[activeCustomKey]) {
+            const headlineText = newHeadline.trim() || "Chopo Clinical Diagnostics — Precision You Can Trust";
+            const captionText = newCaption.trim() || "Take care of your health with Chopo Diagnostics. Book your study online and receive fast digital results.";
+
+            setCustomCreativesMap(prev => ({
+                ...prev,
+                [activeCustomKey]: {
+                    ...prev[activeCustomKey],
+                    social: {
+                        ...prev[activeCustomKey].social,
+                        caption: captionText
+                    },
+                    search: {
+                        ...prev[activeCustomKey].search,
+                        headline: headlineText,
+                        description: captionText
+                    },
+                    email: {
+                        ...prev[activeCustomKey].email,
+                        subject: headlineText,
+                        body: captionText
+                    }
+                }
+            }));
+        }
+    };
+
     // --- Creative Simulation Logic ---
     const handleRunCreativeSim = async () => {
         console.log("handleRunCreativeSim clicked");
-        if (!brief) { console.error("No brief found"); return; }
-        if (!brief.campaignAssetsMap && !brief.campaignAssets) { console.error("No campaign assets found"); alert("No campaign assets found. Go back to Marketing Brief to generate them."); return; }
-        if (personas.length === 0) { console.error("No personas found"); alert("No personas found. Please go to Audience Generator first."); return; }
+        const hasCustomCreatives = Object.keys(customCreativesMap).length > 0;
+        const hasBriefAssets = Boolean(brief?.campaignAssetsMap && Object.keys(brief.campaignAssetsMap).length > 0) || Boolean(brief?.campaignAssets);
 
-        if (!activeCreativeAssets) {
-            console.error("No specific assets found for selected audience");
+        if (!hasCustomCreatives && !brief) {
+            alert(t("Por favor sube una imagen o banner propio, o genera un Brief de Marketing primero.", "Please upload a custom creative image or generate a Marketing Brief first."));
             return;
         }
 
-        setIsCreativeLoading(true);
-        setStatus("Preparing campaign assets...");
-        try {
-            // Check if we need to generate assets first (if they weren't passed or saved)
-            let currentAssets = brief.campaignAssets;
+        const effectivePersonas = personas.length > 0 ? personas : STANDARD_AUDIENCES;
+        const effectiveUsers = syntheticUsers.length > 0 ? syntheticUsers : effectivePersonas;
 
-            if (!currentAssets) {
-                setStatus("Generating new campaign assets...");
-                const productName = brief.productName || "Product";
-                const targetAudience = brief.audiences[0]?.name || "General Audience";
+        setIsCreativeLoading(true);
+        setStatus(t("Preparando materiales de campaña...", "Preparing campaign assets..."));
+        try {
+            let testQueue: { name: string | null, assets: any }[] = [];
+
+            if (Object.keys(combinedCreativeAssetsMap).length > 0) {
+                Object.entries(combinedCreativeAssetsMap).forEach(([variantName, assets]) => {
+                    testQueue.push({ name: variantName, assets });
+                });
+            } else if (brief?.campaignAssets) {
+                testQueue.push({ name: 'Default', assets: brief.campaignAssets });
+            } else if (brief) {
+                setStatus(t("Generando nuevos materiales de campaña...", "Generating new campaign assets..."));
+                const productName = brief.productName || "Diabetes Control Panel (HbA1c)";
+                const targetAudience = brief.audiences?.[0]?.name || "General Audience";
                 const combinedGoal = `Goal: ${brief.campaignGoal}. Persona: ${targetAudience}. Context: ${description}`;
 
-                currentAssets = await generateMarketingCampaignAssets(productName, combinedGoal, combinedGoal);
+                const generatedAssets = await generateMarketingCampaignAssets(productName, combinedGoal, combinedGoal);
+                if (!generatedAssets) throw new Error("Failed to generate assets");
 
-                // Update local state and storage with new assets
-                const updatedBrief = { ...brief, campaignAssets: currentAssets };
+                const updatedBrief = { ...brief, campaignAssets: generatedAssets };
                 setBrief(updatedBrief);
-                // localStorage.setItem('cc_marketing_brief', JSON.stringify(updatedBrief)); // Skipped to avoid quota
-                // localStorage.setItem('coca_cola_marketing_brief', JSON.stringify(updatedBrief));
+                testQueue.push({ name: 'Default', assets: generatedAssets });
             }
 
-            if (!currentAssets) throw new Error("Failed to generate assets");
+            if (testQueue.length === 0) {
+                throw new Error("No creative assets available to test");
+            }
 
-            setStatus("Simulating focus group reactions...");
+            setStatus(t("Simulando reacciones del focus group...", "Simulating focus group reactions..."));
 
             let allResults: any[] = [];
 
-            // Determine which assets to test (List of { name: string | null, assets: MarketingAssets })
-            let testQueue: { name: string | null, assets: any }[] = [];
-
-            if (brief.campaignAssetsMap) {
-                Object.entries(brief.campaignAssetsMap).forEach(([name, assets]) => {
-                    testQueue.push({ name, assets });
-                });
-            } else if (brief.campaignAssets) {
-                testQueue.push({ name: null, assets: brief.campaignAssets });
-            }
-
             // Loop through each creative variant
-            for (const { name, assets } of testQueue) {
-                const variantName = name || 'Default';
-                setStatus(`Testing variant for: ${variantName}...`);
+            for (const { name: variantKey, assets } of testQueue) {
+                const variantName = variantKey || 'Default';
+                setStatus(t(`Evaluando variante para: ${variantName}...`, `Testing variant for: ${variantName}...`));
 
-                let pool = syntheticUsers.map((u, i) => ({
+                let pool = effectiveUsers.map((u, i) => ({
                     ...u,
                     id: `${u.id}_creative_${variantName}_${i}`
                 }));
 
-                // Run Sim
-                const results = await simulateCreativeFocusGroup(pool, assets);
+                // Run Sim with Dynamic Rubrics
+                const results = await simulateCreativeFocusGroup(
+                    pool,
+                    assets,
+                    name,
+                    rubrics,
+                    brief?.productName || "Check-up Control Diabetes"
+                );
 
                 // Tag results with the audience group
                 const taggedResults = results.map(r => ({ ...r, audienceGroup: variantName }));
@@ -432,16 +1325,17 @@ export const SyntheticTesting: React.FC = () => {
             setCreativeResults(allResults);
 
             // Auto Save
+            const studyLabel = brief?.productName || t('Imagen / Banner Personalizado', 'Custom Creative');
             autoSaveRun({
                 type: 'CREATIVE_SIMULATION',
                 id: `creative_${Date.now()}`,
-                name: `Creative Test (${testQueue.length} variants) - ${new Date().toLocaleTimeString()}`,
+                name: `${studyLabel} (${testQueue.length} variantes)`,
                 timestamp: new Date().toISOString(),
                 results: allResults
             });
         } catch (error) {
             console.error("Creative sim failed:", error);
-            alert("Failed to run campaign image testing.");
+            alert(t("Error al ejecutar la evaluación de imágenes de campaña.", "Failed to run campaign image testing."));
         } finally {
             setIsCreativeLoading(false);
             setStatus("");
@@ -450,24 +1344,27 @@ export const SyntheticTesting: React.FC = () => {
 
     // --- A/B Test Logic ---
     const handleRunABTestSim = async () => {
-        if (!brief) { alert("No brief found. Generate marketing brief first."); return; }
-        if (!activeCreativeAssets || !activeCreativeAssets.image) { alert("No base image found in current campaign assets. Generate assets in Brief Tab first."); return; }
-        if (personas.length === 0) { alert("No audiences found."); return; }
+        if (!activeCreativeAssets || !activeCreativeAssets.image) { alert(t("No se encontró una imagen base. Sube una imagen en la pestaña Imagen / Banner o genera materiales en el Brief primero.", "No base image found. Upload a custom creative in the Creative Tab or generate assets in the Brief Tab first.")); return; }
+
+        const effectiveUsers = syntheticUsers.length > 0 ? syntheticUsers : (personas.length > 0 ? personas : STANDARD_AUDIENCES);
 
         setIsABTestingLoading(true);
-        setStatus("Generating 5 Strategic Ad Variants. This will take a moment...");
+        setStatus(t("Generando 5 variantes visuales estratégicas. Esto tomará unos segundos...", "Generating 5 Strategic Ad Variants. This will take a moment..."));
         try {
             const { generateRegionalVariants, simulateABTestFocusGroup } = await import('../services/geminiService');
 
-            // Generate Variants based on the current brief and campaign goals
-            const basePrompt = `Product: ${brief.productName}. Goal: ${brief.campaignGoal}. Value Prop: ${brief.valueProp?.main?.en || 'Premium Quality'}. Asset Context: ${activeCreativeAssets?.social?.caption || ''}`;
+            // Generate Variants based on the current brief or custom creative
+            const productName = brief?.productName || activeCreativeAssets?.search?.headline || "Chopo Clinical Study";
+            const campaignGoal = brief?.campaignGoal || activeCreativeAssets?.social?.caption || "Drive online appointments and diagnostic awareness";
+            const valueProp = brief?.valueProp?.main?.en || "Accredited clinical precision and fast digital delivery";
+            const basePrompt = `Product: ${productName}. Goal: ${campaignGoal}. Value Prop: ${valueProp}. Asset Context: ${activeCreativeAssets?.social?.caption || ''}`;
 
             const variants = await generateRegionalVariants(basePrompt, name, description);
             setRegionalVariants(variants);
 
-            setStatus("Simulating A/B Test focus group...");
+            setStatus(t("Simulando evaluación A/B en focus group...", "Simulating A/B Test focus group..."));
 
-            let pool = syntheticUsers.map((u, i) => ({
+            let pool = effectiveUsers.map((u, i) => ({
                 ...u,
                 id: `${u.id}_ab_${i}`
             }));
@@ -477,10 +1374,11 @@ export const SyntheticTesting: React.FC = () => {
             setAbTestResults(results);
 
             // Auto Save
+            const studyLabel = brief?.productName || productName || t('Campaña Chopo', 'Chopo Campaign');
             autoSaveRun({
                 type: 'AB_TEST_SIMULATION',
                 id: `ab_${Date.now()}`,
-                name: `A/B Test - ${new Date().toLocaleTimeString()}`,
+                name: `${studyLabel} (5 variantes A/B)`,
                 timestamp: new Date().toISOString(),
                 results: results,
                 variants: variants.map(v => ({ region: v.region, image: v.image || "" }))
@@ -488,7 +1386,7 @@ export const SyntheticTesting: React.FC = () => {
 
         } catch (error) {
             console.error(error);
-            alert("A/B test simulation failed.");
+            alert(t("Error al ejecutar la simulación de prueba A/B.", "A/B test simulation failed."));
         } finally {
             setIsABTestingLoading(false);
             setStatus("");
@@ -496,8 +1394,6 @@ export const SyntheticTesting: React.FC = () => {
     };
 
     // Filter results for display based on selection
-    // If no selection, we might default to the first group found in results, or show all? 
-    // Usually showing stats for mixed variants is confusing. Let's filter to selection, or first available if selection is empty/invalid.
     const getFilteredCreativeResults = () => {
         if (!creativeResults.length) return [];
 
@@ -507,9 +1403,10 @@ export const SyntheticTesting: React.FC = () => {
             if (filtered.length > 0) return filtered;
         }
 
-        // Fallback: If map exists, try first key
-        if (brief?.campaignAssetsMap) {
-            const firstKey = Object.keys(brief.campaignAssetsMap)[0];
+        // Fallback: If combined map exists, try first key
+        const combinedKeys = Object.keys(combinedCreativeAssetsMap);
+        if (combinedKeys.length > 0) {
+            const firstKey = combinedKeys[0];
             const filtered = creativeResults.filter(r => r.audienceGroup === firstKey);
             if (filtered.length > 0) return filtered;
         }
@@ -551,6 +1448,7 @@ export const SyntheticTesting: React.FC = () => {
             });
         });
 
+        const fallbackAssets: any = (brief?.campaignAssetsMap && Object.values(brief.campaignAssetsMap)[0]) || brief?.campaignAssets;
         return Object.entries(stats).map(([subject, counts]) => {
             const draft = emailDrafts.find(d => d.subject === subject);
             const bodies = emailBodies[subject];
@@ -558,7 +1456,12 @@ export const SyntheticTesting: React.FC = () => {
                 subject,
                 openRate: Math.round((counts.opens / total) * 100),
                 clickRate: Math.round((counts.clicks / total) * 100),
-                body: draft?.body || bodies || "Loading..."
+                body: (draft?.body || bodies || "Loading...").replace(/\s*Incluye pie legal:[\s\S]*$/i, '').trim(),
+                bannerHeadline: draft?.bannerHeadline || fallbackAssets?.email?.bannerHeadline || fallbackAssets?.search?.headline || subject,
+                bannerSubheadline: draft?.bannerSubheadline || brief?.productName || "Laboratorios Chopo",
+                image: draft?.image || fallbackAssets?.email?.image || fallbackAssets?.image || undefined,
+                ctaText: draft?.ctaText || "Agendar Estudio en Línea",
+                legalFooter: draft?.legalFooter || "Consulte a su médico. Permiso de Publicidad COFEPRIS No. 2609152002A00518."
             };
         }).sort((a, b) => b.openRate - a.openRate);
     };
@@ -584,47 +1487,90 @@ export const SyntheticTesting: React.FC = () => {
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
             {/* --- Top Section: Audience & Context Manager --- */}
-            {/* --- Top Section: Audience & Context Manager --- */}
             <div className="page-header">
                 <div className="max-w-7xl mx-auto px-6 w-full">
                     <div className="flex justify-between items-center mb-4">
                         <div className="flex items-center gap-3">
-                            <Users className="text-[#0077C8]" />
-                            <h1 className="page-title">Synthetic Focus Group Hub</h1>
+                            <Users className="text-[#0066FF]" />
+                            <h1 className="page-title">{t('Centro de Focus Group Sintético', 'Synthetic Focus Group Hub')}</h1>
                         </div>
                         <div className="flex gap-2">
+                            {/* Dynamic Rubrics Button */}
+                            <button
+                                disabled={isBusy}
+                                onClick={openRubricsModal}
+                                className="flex items-center gap-2 px-3 py-2 text-sm font-bold rounded-lg transition-colors bg-blue-50 text-[#003B7A] border border-blue-200 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <ClipboardList size={16} className="text-[#0066FF]" />
+                                {t('📋 Criterios de Evaluación (Rúbricas)', '📋 Evaluation Rubrics')}
+                                <span className="px-1.5 py-0.5 rounded-full bg-white text-[#0066FF] text-[10px] font-black">
+                                    {rubrics.length}
+                                </span>
+                            </button>
+
                             {/* History Dropdown */}
                             <div className="relative" ref={historyDropdownRef}>
                                 <button
+                                    disabled={isBusy}
                                     onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-                                    className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${isHistoryOpen ? 'bg-gray-100 text-heading' : 'text-subtext hover:bg-gray-50 hover:text-heading'}`}
+                                    className={`flex items-center gap-2 px-3.5 py-2 text-sm font-bold rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isHistoryOpen ? 'bg-[#EFF6FF] text-[#0066FF] border-blue-200' : 'bg-white border-slate-200 text-[#003B7A] hover:bg-slate-50'}`}
                                 >
-                                    <History size={16} /> History
+                                    <History size={16} className="text-[#0066FF]" /> {t('Historial', 'History')}
+                                    {savedHistory.length > 0 && (
+                                        <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-[#003B7A] text-[10px] font-black">
+                                            {savedHistory.length}
+                                        </span>
+                                    )}
                                 </button>
-                                {isHistoryOpen && (
-                                    <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-200 p-2 max-h-96 overflow-y-auto z-50">
-                                        <div className="flex justify-between items-center px-2 mb-2">
-                                            <div className="text-xs font-bold text-gray-500 uppercase">Recent Runs</div>
+                                {isHistoryOpen && !isBusy && (
+                                    <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 p-3 max-h-[28rem] overflow-y-auto z-50 space-y-2">
+                                        <div className="flex justify-between items-center px-2 pb-2 border-b border-slate-100">
+                                            <div>
+                                                <div className="text-xs font-bold text-[#003B7A] uppercase tracking-wider">{t('Ejecuciones Guardadas', 'Saved Runs')}</div>
+                                                <div className="text-[10px] text-slate-500">{t('Haz clic para abrir los resultados en su pestaña', 'Click to open results in their corresponding tab')}</div>
+                                            </div>
                                             {savedHistory.length > 0 && (
                                                 <button
                                                     onClick={handleClearHistory}
-                                                    className="text-xs text-red-500 hover:text-red-400 font-bold flex items-center gap-1"
+                                                    className="text-xs text-red-600 hover:text-red-700 font-bold flex items-center gap-1 px-2 py-1 rounded hover:bg-red-50"
                                                 >
-                                                    <Trash2 size={10} /> Clear All
+                                                    <Trash2 size={12} /> {t('Limpiar Todo', 'Clear All')}
                                                 </button>
                                             )}
                                         </div>
-                                        {savedHistory.length === 0 && <div className="text-xs text-gray-500 px-2">No history yet</div>}
-                                        {savedHistory.map((run, i) => (
-                                            <button
-                                                key={i}
-                                                onClick={() => { loadRun(run); setIsHistoryOpen(false); }}
-                                                className="w-full text-left p-2 hover:bg-gray-50 rounded text-sm flex items-center gap-2 text-gray-600 hover:text-gray-900"
-                                            >
-                                                {run.type === 'MEMBER_SIMULATION' ? <Users size={12} className="text-blue-500" /> : run.type === 'ACQUISITION_SIMULATION' ? <UserPlus size={12} className="text-green-500" /> : <MessageCircle size={12} />}
-                                                <div className="truncate flex-1">{run.name}</div>
-                                            </button>
-                                        ))}
+                                        {savedHistory.length === 0 && (
+                                            <div className="text-xs text-slate-500 py-6 text-center italic">
+                                                {t('Sin simulaciones guardadas aún.', 'No saved simulation runs yet.')}
+                                            </div>
+                                        )}
+                                        {savedHistory.map((run, i) => {
+                                            const badge = getHistoryRunBadge(run.type);
+                                            const formattedTitle = formatHistoryRunTitle(run);
+                                            const formattedDate = run.timestamp
+                                                ? new Date(run.timestamp).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })
+                                                : '';
+                                            return (
+                                                <button
+                                                    key={run.id || i}
+                                                    onClick={() => { loadRun(run); setIsHistoryOpen(false); }}
+                                                    className="w-full text-left p-3 hover:bg-[#F8FAFC] rounded-xl border border-slate-100 hover:border-[#0066FF]/40 transition-all flex flex-col gap-1.5"
+                                                >
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badge.className}`}>
+                                                            {badge.label}
+                                                        </span>
+                                                        {formattedDate && (
+                                                            <span className="text-[10px] font-medium text-slate-400">
+                                                                {formattedDate}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-xs font-bold text-[#003B7A] line-clamp-1">
+                                                        {formattedTitle}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
@@ -633,49 +1579,82 @@ export const SyntheticTesting: React.FC = () => {
 
 
                     {/* Tabs */}
-                    <div className="tab-scroll-container">
-                        <button onClick={() => setActiveTab('CHAT')} className={`tab-button ${activeTab === 'CHAT' ? 'active' : 'inactive'}`}>
-                            <MessageSquare size={18} className={activeTab === 'CHAT' ? 'text-[#0077C8]' : ''} /> Chat
+                    <div className={`tab-scroll-container ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
+                        <button disabled={isBusy} onClick={() => setActiveTab('CHAT')} className={`tab-button ${activeTab === 'CHAT' ? 'active' : 'inactive'}`}>
+                            <MessageSquare size={18} className={activeTab === 'CHAT' ? 'text-[#0066FF]' : ''} /> {t('Chat', 'Chat')}
                         </button>
-                        <button onClick={() => setActiveTab('BRIEF')} className={`tab-button ${activeTab === 'BRIEF' ? 'active' : 'inactive'}`}>
-                            <MessageCircle size={18} className={activeTab === 'BRIEF' ? 'text-[#0077C8]' : ''} /> Test Brief
+                        <button disabled={isBusy} onClick={() => setActiveTab('BRIEF')} className={`tab-button ${activeTab === 'BRIEF' ? 'active' : 'inactive'}`}>
+                            <MessageCircle size={18} className={activeTab === 'BRIEF' ? 'text-[#0066FF]' : ''} /> {t('Mensajes Clave', 'Key Messages')}
                         </button>
-                        <button onClick={() => setActiveTab('ACQUISITION')} className={`tab-button ${activeTab === 'ACQUISITION' ? 'active' : 'inactive'}`}>
-                            <UserPlus size={18} className={activeTab === 'ACQUISITION' ? 'text-[#0077C8]' : ''} /> Acquisition
+                        <button disabled={isBusy} onClick={() => setActiveTab('ACQUISITION')} className={`tab-button ${activeTab === 'ACQUISITION' ? 'active' : 'inactive'}`}>
+                            <UserPlus size={18} className={activeTab === 'ACQUISITION' ? 'text-[#0066FF]' : ''} /> {t('Promociones', 'Acquisition')}
                         </button>
-                        <button onClick={() => setActiveTab('EMAIL')} className={`tab-button ${activeTab === 'EMAIL' ? 'active' : 'inactive'}`}>
-                            <Mail size={18} className={activeTab === 'EMAIL' ? 'text-[#0077C8]' : ''} /> Email
+                        <button disabled={isBusy} onClick={() => setActiveTab('EMAIL')} className={`tab-button ${activeTab === 'EMAIL' ? 'active' : 'inactive'}`}>
+                            <Mail size={18} className={activeTab === 'EMAIL' ? 'text-[#0066FF]' : ''} /> Email
                         </button>
-                        <button onClick={() => setActiveTab('PURCHASE')} className={`tab-button ${activeTab === 'PURCHASE' ? 'active' : 'inactive'}`}>
-                            <ShoppingBag size={18} className={activeTab === 'PURCHASE' ? 'text-[#0077C8]' : ''} /> Purchase
+                        <button disabled={isBusy} onClick={() => setActiveTab('PURCHASE')} className={`tab-button ${activeTab === 'PURCHASE' ? 'active' : 'inactive'}`}>
+                            <ShoppingBag size={18} className={activeTab === 'PURCHASE' ? 'text-[#0066FF]' : ''} /> {t('Compra de Estudios', 'Purchase')}
                         </button>
-                        <button onClick={() => setActiveTab('CREATIVE')} className={`tab-button ${activeTab === 'CREATIVE' ? 'active' : 'inactive'}`}>
-                            <Sparkles size={18} className={activeTab === 'CREATIVE' ? 'text-[#0077C8]' : ''} /> Creative
+                        <button disabled={isBusy} onClick={() => setActiveTab('CREATIVE')} className={`tab-button ${activeTab === 'CREATIVE' ? 'active' : 'inactive'}`}>
+                            <Sparkles size={18} className={activeTab === 'CREATIVE' ? 'text-[#0066FF]' : ''} /> {t('Imagen / Banner', 'Creative')}
                         </button>
-                        <button onClick={() => setActiveTab('AB_TEST')} className={`tab-button ${activeTab === 'AB_TEST' ? 'active' : 'inactive'}`}>
-                            <BarChart2 size={18} className={activeTab === 'AB_TEST' ? 'text-[#0077C8]' : ''} /> A/B Test
+                        <button disabled={isBusy} onClick={() => setActiveTab('AB_TEST')} className={`tab-button ${activeTab === 'AB_TEST' ? 'active' : 'inactive'}`}>
+                            <BarChart2 size={18} className={activeTab === 'AB_TEST' ? 'text-[#0066FF]' : ''} /> A/B Test
                         </button>
                     </div>
 
                     {/* Audience List (Inside Header for Context) */}
-                    <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-gray-100 mt-2">
-                        <div className="flex-shrink-0 text-xs font-bold text-subtext uppercase tracking-wider mr-2">Audience Context</div>
-                        {personas.map((p, i) => (
-                            <div key={i} onClick={() => setSelectedAudience(p)} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm cursor-pointer hover:shadow-md transition-shadow ${p.isWildcard ? 'bg-blue-50 border-blue-100 text-[#0077C8]' : 'bg-white border-gray-100 text-subtext hover:text-heading'}`}>
-                                <div className="w-5 h-5 rounded-full bg-gray-50 overflow-hidden flex-shrink-0 border border-gray-100">
-                                    {p.imageUrl ? <img src={p.imageUrl} className="w-full h-full object-cover" /> : <Users size={12} />}
+                    <div className={`flex flex-wrap items-center gap-3 pt-4 border-t border-gray-100 mt-2 ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
+                        <div className="flex-shrink-0 text-xs font-bold text-subtext uppercase tracking-wider mr-2">{t('Contexto de Audiencias', 'Audience Context')}</div>
+                        {personas.map((p, i) => {
+                            const userCountForPersona = syntheticUsers.filter(
+                                (u: any) => (u.baseAudienceName || u.name) === p.name || u.personaName === p.personaName
+                            ).length;
+                            return (
+                                <div
+                                    key={i}
+                                    onClick={() => {
+                                        if (isBusy) return;
+                                        setSelectedAudience(p);
+                                        setIsEditingSelectedAudience(false);
+                                        setEditAudienceForm({
+                                            name: p.name || '',
+                                            personaName: p.personaName || '',
+                                            track: p.track || (p.name?.toLowerCase().includes('médico') ? 'physician' : 'patient'),
+                                            age: p.age || parseInt(String(p.details?.age || '42'), 10) || 42,
+                                            job_title: p.job_title || p.details?.job_title || '',
+                                            demographics: p.demographics || '',
+                                            bio: p.bio || p.details?.bio || '',
+                                            pain_points_text: (p.pain_points || p.details?.pain_points || []).join('\n'),
+                                            goals_text: (p.goals || p.details?.goals || []).join('\n')
+                                        });
+                                    }}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-full border bg-white border-slate-200 text-[#003B7A] text-sm cursor-pointer hover:border-[#0066FF] hover:shadow-sm transition-all"
+                                    title={t('Ver detalles del perfil clínico', 'View clinical profile details')}
+                                >
+                                    <div className="w-5 h-5 rounded-full bg-gray-50 overflow-hidden flex-shrink-0 border border-gray-100">
+                                        {p.imageUrl ? <img src={p.imageUrl} className="w-full h-full object-cover" /> : <Users size={12} />}
+                                    </div>
+                                    <span className="font-bold text-xs">{localizePersonaLabel(p.name, language)}</span>
+                                    {userCountForPersona > 0 && (
+                                        <span className="px-1.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#0066FF] text-[10px] font-black border border-blue-200">
+                                            {userCountForPersona}
+                                        </span>
+                                    )}
                                 </div>
-                                <span className="font-bold">{p.name}</span>
-                                <button onClick={(e) => { e.stopPropagation(); deletePersona(i); }} className="text-gray-400 hover:text-red-500 transition-colors"><X size={12} /></button>
-                            </div>
-                        ))}
-                        <button
-                            onClick={() => setIsAddAudienceModalOpen(true)}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-dashed border-gray-200 text-subtext hover:bg-white hover:text-heading text-sm whitespace-nowrap transition-colors"
-                        >
-                            <Plus size={12} />
-                            <span className="font-bold">Add Audience</span>
-                        </button>
+                            );
+                        })}
+                        {activeTab === 'CHAT' && (
+                            <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => setIsSyntheticUsersModalOpen(true)}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#EFF6FF] border border-blue-200 text-[#003B7A] hover:bg-blue-100 text-xs font-bold whitespace-nowrap transition-colors"
+                                title={t('Ver e inspeccionar los participantes sintéticos evaluados en esta sesión', 'View and inspect the synthetic participants evaluated in this session')}
+                            >
+                                <span>{t(`👥 Ver / Inspeccionar Participantes Evaluados (${syntheticUsers.length})`, `👥 View / Inspect Evaluated Participants (${syntheticUsers.length})`)}</span>
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -686,35 +1665,62 @@ export const SyntheticTesting: React.FC = () => {
             {/* --- Content Area --- */}
             <div className={`flex-1 bg-gray-50 p-6 ${activeTab === 'CHAT' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'}`}>
                 <div className="max-w-7xl mx-auto">
-                    {activeTab === 'ACQUISITION' && (
-                        <div className="space-y-6">
-                            {/* Acquisition Controls - Top */}
-                            <div className="content-card flex justify-between items-center">
+                    {isBusy && (
+                        <div className="mb-6 p-4 rounded-xl bg-[#EFF6FF] border border-[#0066FF]/30 flex items-center justify-between gap-4 shadow-sm animate-fadeIn">
+                            <div className="flex items-center gap-3">
+                                <Loader2 className="animate-spin text-[#0066FF] shrink-0" size={20} />
                                 <div>
-                                    <h3 className="text-lg font-bold text-heading">Acquisition Simulation</h3>
-                                    <p className="text-sm text-subtext">Test offers against {syntheticUsers.length} non-member prospects.</p>
+                                    <p className="text-sm font-bold text-[#003B7A]">
+                                        {status || t('Ejecutando simulación y análisis con IA...', 'Running AI simulation and analysis...')}
+                                    </p>
+                                    <p className="text-xs text-slate-600">
+                                        {t(
+                                            'Los campos de edición, pestañas y selectores de audiencia están bloqueados temporalmente hasta finalizar el proceso.',
+                                            'Editing fields, tabs, and audience selectors are temporarily locked until processing completes.'
+                                        )}
+                                    </p>
                                 </div>
-                                <div className="flex items-center gap-4">
-                                    <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100">
-                                        <span className="text-xs font-bold text-subtext uppercase">Users Tested</span>
-                                        <span className="bg-transparent font-bold text-heading">{syntheticUsers.length}</span>
-                                    </div>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-md bg-white border border-blue-200 text-[11px] font-bold text-[#0066FF] shrink-0">
+                                {t('Edición Bloqueada', 'Editing Locked')}
+                            </span>
+                        </div>
+                    )}
+                    {activeTab === 'ACQUISITION' && (
+                        <div className={`space-y-6 ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
+                            {/* Acquisition Controls - Top */}
+                            <div className="content-card flex flex-wrap justify-between items-center gap-4">
+                                <div>
+                                    <h3 className="text-lg font-bold text-heading">{t('Simulación de Promociones y Captación', 'Acquisition Simulation')}</h3>
+                                    <p className="text-sm text-subtext">{t(`Evalúa ofertas de captación con ${syntheticUsers.length} prospectos sintéticos.`, `Test offers against ${syntheticUsers.length} non-member prospects.`)}</p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3">
                                     <button
-                                        onClick={() => handleLoadLast('ACQUISITION_SIMULATION')}
-                                        disabled={isAcquisitionLoading}
-                                        className="btn-secondary flex items-center gap-2"
-                                        title="Load Last Run"
+                                        type="button"
+                                        disabled={isBusy}
+                                        onClick={() => setIsSyntheticUsersModalOpen(true)}
+                                        title={t("Ver e inspeccionar la lista de participantes sintéticos activos", "View and inspect the list of active synthetic participants")}
+                                        className="flex items-center gap-2 bg-[#EFF6FF] hover:bg-blue-100 px-3.5 py-2 rounded-xl border border-blue-200 text-xs font-bold text-[#003B7A] transition-colors cursor-pointer disabled:opacity-50"
                                     >
-                                        <History size={18} />
+                                        <span>{t(`👥 Ver / Inspeccionar Participantes Evaluados (${syntheticUsers.length})`, `👥 View / Inspect Evaluated Participants (${syntheticUsers.length})`)}</span>
+                                    </button>
+                                    <button
+                                        onClick={() => refreshBriefData(true)}
+                                        disabled={isBusy}
+                                        className="btn-secondary flex items-center gap-2 text-xs font-bold"
+                                        title={t("Recupera las promociones, mensajes clave, correos, estudios e imágenes generados en el último Brief de Marketing", "Loads the promotions, key messages, emails, studies, and images generated in the latest Marketing Brief")}
+                                    >
+                                        <RotateCcw size={16} />
+                                        {t('Traer datos del último Brief', 'Load from latest Brief')}
                                     </button>
                                     <button
                                         onClick={handleRunAcquisition}
-                                        disabled={isAcquisitionLoading || syntheticUsers.length === 0}
+                                        disabled={isBusy || syntheticUsers.length === 0}
                                         className="btn-primary flex items-center gap-2"
-                                        title={syntheticUsers.length === 0 ? "You must generate users in the Synthetic Users tab first." : ""}
+                                        title={syntheticUsers.length === 0 ? t("Primero debes generar usuarios en la pestaña Usuarios Sintéticos.", "You must generate users in the Synthetic Users tab first.") : ""}
                                     >
                                         {isAcquisitionLoading ? <div className="animate-spin h-5 w-5 border-b-2 border-white rounded-full" /> : <Play size={20} />}
-                                        Run Simulation
+                                        {t('Ejecutar Simulación', 'Run Simulation')}
                                     </button>
                                 </div>
                             </div>
@@ -723,17 +1729,110 @@ export const SyntheticTesting: React.FC = () => {
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 {/* Left: Config */}
                                 <div className="content-card">
-                                    <h3 className="text-lg font-bold text-heading mb-4 flex items-center gap-2"><Zap size={20} className="text-yellow-500" /> Acquisition Offers</h3>
+                                    <h3 className="text-lg font-bold text-heading mb-4 flex items-center gap-2"><Zap size={20} className="text-yellow-500" /> {t('Promociones y Beneficios de Captación', 'Acquisition Offers')}</h3>
                                     <div className="space-y-4 mb-6">
                                         <div className="flex gap-2">
-                                            <input className="flex-1 border border-gray-100 bg-gray-50 text-heading rounded px-3 py-2 text-sm placeholder-subtext outline-none focus:border-[#0077C8] transition-colors" placeholder="e.g. Free Shipping" value={newOffer} onChange={e => setNewOffer(e.target.value)} />
-                                            <button onClick={() => { setAcquisitionOffers([...acquisitionOffers, newOffer]); setNewOffer("") }} className="bg-heading text-white px-4 py-2 rounded font-bold text-sm hover:opacity-90 transition-opacity">Add</button>
+                                            <input
+                                                disabled={isBusy}
+                                                className="flex-1 border border-slate-200 bg-white text-heading rounded-xl px-3.5 py-2.5 text-sm placeholder-subtext outline-none focus:ring-2 focus:ring-[#0066FF] focus:border-transparent transition-all disabled:opacity-60"
+                                                placeholder={t("ej. Toma a domicilio sin costo", "e.g. Free Home Blood Draw")}
+                                                value={newOffer}
+                                                onChange={e => setNewOffer(e.target.value)}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter' && newOffer.trim()) {
+                                                        e.preventDefault();
+                                                        setAcquisitionOffers([...acquisitionOffers, newOffer.trim()]);
+                                                        setNewOffer("");
+                                                    }
+                                                }}
+                                            />
+                                            <button
+                                                type="button"
+                                                disabled={isBusy || !newOffer.trim()}
+                                                onClick={() => {
+                                                    if (newOffer.trim()) {
+                                                        setAcquisitionOffers([...acquisitionOffers, newOffer.trim()]);
+                                                        setNewOffer("");
+                                                    }
+                                                }}
+                                                className="bg-[#0066FF] hover:bg-[#004ECC] text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50 shrink-0"
+                                            >
+                                                <Plus size={16} />
+                                                {t('Agregar', 'Add')}
+                                            </button>
                                         </div>
                                         <div className="space-y-2">
                                             {acquisitionOffers.map((o, i) => (
-                                                <div key={i} className="flex justify-between p-2 bg-gray-50 rounded border border-gray-100 text-sm text-heading">
-                                                    <span>{o}</span>
-                                                    <button onClick={() => setAcquisitionOffers(acquisitionOffers.filter(x => x !== o))} className="text-subtext hover:text-red-500 transition-colors"><X size={14} /></button>
+                                                <div key={i} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm text-heading">
+                                                    {editingOfferIndex === i ? (
+                                                        <div className="space-y-2">
+                                                            <input
+                                                                type="text"
+                                                                disabled={isBusy}
+                                                                value={editingOfferText}
+                                                                onChange={e => setEditingOfferText(e.target.value)}
+                                                                onKeyDown={e => {
+                                                                    if (e.key === 'Enter' && editingOfferText.trim()) {
+                                                                        const updated = [...acquisitionOffers];
+                                                                        updated[i] = editingOfferText.trim();
+                                                                        setAcquisitionOffers(updated);
+                                                                        setEditingOfferIndex(null);
+                                                                    }
+                                                                }}
+                                                                className="w-full px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-sm font-medium text-[#003B7A] focus:outline-none focus:ring-2 focus:ring-[#0066FF]"
+                                                            />
+                                                            <div className="flex justify-end gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={isBusy}
+                                                                    onClick={() => setEditingOfferIndex(null)}
+                                                                    className="px-2.5 py-1 rounded-md border border-slate-200 bg-white text-slate-600 text-xs font-bold hover:bg-slate-100"
+                                                                >
+                                                                    {t('Cancelar', 'Cancel')}
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={isBusy || !editingOfferText.trim()}
+                                                                    onClick={() => {
+                                                                        const updated = [...acquisitionOffers];
+                                                                        updated[i] = editingOfferText.trim();
+                                                                        setAcquisitionOffers(updated);
+                                                                        setEditingOfferIndex(null);
+                                                                    }}
+                                                                    className="px-3 py-1 rounded-md bg-[#0066FF] text-white text-xs font-bold hover:bg-[#004ECC]"
+                                                                >
+                                                                    {t('Guardar', 'Save')}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <span className="leading-snug flex-1">{o}</span>
+                                                            <div className="flex items-center gap-1 shrink-0">
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={isBusy}
+                                                                    onClick={() => {
+                                                                        setEditingOfferIndex(i);
+                                                                        setEditingOfferText(o);
+                                                                    }}
+                                                                    className="p-1 rounded text-slate-400 hover:text-[#0066FF] hover:bg-blue-50 transition-colors disabled:opacity-50"
+                                                                    title={t('Editar Promoción', 'Edit Offer')}
+                                                                >
+                                                                    <Edit2 size={13} />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={isBusy}
+                                                                    onClick={() => setAcquisitionOffers(acquisitionOffers.filter((_, idx) => idx !== i))}
+                                                                    className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                                                                    title={t('Eliminar Promoción', 'Delete Offer')}
+                                                                >
+                                                                    <X size={14} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
@@ -746,25 +1845,25 @@ export const SyntheticTesting: React.FC = () => {
                                         <div className="grid grid-cols-3 gap-4">
                                             <div className="content-card text-center">
                                                 <div className="text-4xl font-bold text-heading mb-1">{Math.round(acqStats.conversion)}%</div>
-                                                <div className="text-xs font-bold text-subtext uppercase">Conversion Rate</div>
+                                                <div className="text-xs font-bold text-subtext uppercase">{t('Tasa de Conversión', 'Conversion Rate')}</div>
                                             </div>
                                             <div className="content-card text-center relative group cursor-help">
                                                 <div className="text-4xl font-bold text-heading mb-1">{Math.round(acqStats.avgValue)}</div>
                                                 <div className="text-xs font-bold text-subtext uppercase flex items-center justify-center gap-1">
-                                                    Perceived Value <Info size={12} />
+                                                    {t('Valor Percibido', 'Perceived Value')} <Info size={12} />
                                                 </div>
                                                 <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 w-56 bg-heading text-white text-xs font-medium p-2 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                                                    The average monetary value the audience assigns to this offer based on psychological benefits and utility.
+                                                    {t('El valor promedio que la audiencia asigna a esta oferta según sus beneficios clínicos y utilidad.', 'The average monetary value the audience assigns to this offer based on psychological benefits and utility.')}
                                                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-b-heading"></div>
                                                 </div>
                                             </div>
                                             <div className="content-card text-center">
                                                 {acqStats.topOffer ? (
                                                     <>
-                                                        <div className="text-lg font-bold text-[#0077C8] mb-1 truncate px-2" title={acqStats.topOffer[0]}>"{acqStats.topOffer[0]}"</div>
-                                                        <div className="text-xs font-bold text-yellow-500 uppercase">Winning Offer</div>
+                                                        <div className="text-lg font-bold text-[#0066FF] mb-1 truncate px-2" title={acqStats.topOffer[0]}>"{acqStats.topOffer[0]}"</div>
+                                                        <div className="text-xs font-bold text-yellow-500 uppercase">{t('Oferta Ganadora', 'Winning Offer')}</div>
                                                     </>
-                                                ) : <div className="text-subtext py-4">No Data</div>}
+                                                ) : <div className="text-subtext py-4">{t('Sin Datos', 'No Data')}</div>}
                                             </div>
                                         </div>
                                     )}
@@ -774,14 +1873,14 @@ export const SyntheticTesting: React.FC = () => {
                                             <div className="p-6 border-b border-gray-100 bg-white flex justify-between items-center">
                                                 <div className="flex items-center gap-3">
                                                     <div className="p-2 bg-blue-50 rounded-lg">
-                                                        <MessageSquare className="text-[#0077C8]" size={20} />
+                                                        <MessageSquare className="text-[#0066FF]" size={20} />
                                                     </div>
                                                     <div>
-                                                        <h3 className="font-black text-heading uppercase tracking-widest text-sm">Prospect Feedback Loop</h3>
-                                                        <p className="text-[10px] text-subtext font-bold">In-depth sentiment analysis from {acquisitionResults.length} simulated interactions</p>
+                                                        <h3 className="font-black text-heading uppercase tracking-widest text-sm">{t('Retroalimentación de Prospectos', 'Prospect Feedback Loop')}</h3>
+                                                        <p className="text-[10px] text-subtext font-bold">{t(`Análisis de sentimiento profundo de ${acquisitionResults.length} interacciones simuladas`, `In-depth sentiment analysis from ${acquisitionResults.length} simulated interactions`)}</p>
                                                     </div>
                                                 </div>
-                                                <div className="badge badge-blue">{acquisitionResults.length} participants</div>
+                                                <div className="badge badge-blue">{acquisitionResults.length} {t('participantes', 'participants')}</div>
                                             </div>
                                             <div className="max-h-[600px] overflow-y-auto p-6 space-y-4 custom-scrollbar bg-gray-50/30">
                                                 {acquisitionResults.map((r, i) => (
@@ -790,12 +1889,12 @@ export const SyntheticTesting: React.FC = () => {
                                                         <div className="flex-1">
                                                             <div className="flex justify-between items-start mb-2">
                                                                 <div>
-                                                                    <div className="font-black text-heading text-sm uppercase tracking-wider">{r.personaName}</div>
-                                                                    <div className="text-[10px] font-bold text-subtext opacity-60">Gen-Z / Millennial Prospect</div>
+                                                                    <div className="font-black text-heading text-sm uppercase tracking-wider">{localizePersonaLabel(r.personaName, language)}</div>
+                                                                    <div className="text-[10px] font-bold text-subtext opacity-60">{t('Prospecto Clínico', 'Clinical Prospect')}</div>
                                                                 </div>
                                                                 <div className="text-right">
                                                                     <div className="text-lg font-black text-heading leading-none">{r.likelihoodToJoin}%</div>
-                                                                    <div className="text-[8px] font-black text-subtext uppercase tracking-widest">Likelihood</div>
+                                                                    <div className="text-[8px] font-black text-subtext uppercase tracking-widest">{t('Probabilidad', 'Likelihood')}</div>
                                                                 </div>
                                                             </div>
                                                             <p className="text-sm text-heading italic font-medium leading-relaxed mb-4 border-l-2 border-gray-100 pl-3">"{r.feedback}"</p>
@@ -807,7 +1906,7 @@ export const SyntheticTesting: React.FC = () => {
                                                                 )}
                                                                 {r.winningOffer && r.winningOffer !== "None" && (
                                                                     <span className="px-3 py-1.5 bg-green-50 text-green-700 rounded-xl text-[10px] font-black border border-green-100 flex items-center gap-1 shadow-sm">
-                                                                        <CheckCircle2 size={12} /> Won by: {r.winningOffer}
+                                                                        <CheckCircle2 size={12} /> {t('Oferta elegida:', 'Won by:')} {r.winningOffer}
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -830,104 +1929,230 @@ export const SyntheticTesting: React.FC = () => {
 
                     {/* SHARED CONTROLS FOR EMAIL, BRIEF, PURCHASE */}
                     {(activeTab === 'EMAIL' || activeTab === 'BRIEF' || activeTab === 'PURCHASE') && (
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex justify-between items-center mb-6">
+                        <div className={`bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex flex-wrap justify-between items-center gap-4 mb-6 ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
                             <div className="">
                                 <h3 className="text-lg font-black text-heading">
-                                    {activeTab === 'EMAIL' ? 'Email Campaign Simulation' :
-                                        activeTab === 'BRIEF' ? 'Marketing Brief Feedback' :
-                                            'Purchase Behavior & Product Mix'}
+                                    {activeTab === 'EMAIL' ? t('Simulación de Campaña de Email', 'Email Campaign Simulation') :
+                                        activeTab === 'BRIEF' ? t('Evaluación de Mensajes Clave de Campaña', 'Key Campaign Messages Evaluation') :
+                                            t('Comportamiento de Compra y Mix de Estudios', 'Purchase Behavior & Product Mix')}
                                 </h3>
-                                <p className="text-sm text-subtext font-medium outline-none">Test brief against {syntheticUsers.length} synthetic users.</p>
+                                <p className="text-sm text-subtext font-medium outline-none">
+                                    {activeTab === 'BRIEF'
+                                        ? t(`Evalúa el impacto y claridad de tus mensajes clave con ${syntheticUsers.length} usuarios sintéticos.`, `Evaluate the impact and clarity of your key messages with ${syntheticUsers.length} synthetic users.`)
+                                        : activeTab === 'EMAIL'
+                                            ? t(`Simula la tasa de apertura, clics (CTR) y opiniones de tus correos con ${syntheticUsers.length} usuarios sintéticos.`, `Simulate open rates, click-through rates (CTR), and feedback for your emails with ${syntheticUsers.length} synthetic users.`)
+                                            : t('Descubre qué estudios clínicos agendaría cada perfil en sucursal o a domicilio.', 'Discover which clinical studies each persona would book at a branch or at home.')}
+                                </p>
                             </div>
-                            <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100">
-                                    <span className="text-xs font-black text-subtext uppercase tracking-widest">Users Tested</span>
-                                    <span className="bg-transparent font-black text-heading">{syntheticUsers.length}</span>
-                                </div>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => setIsSyntheticUsersModalOpen(true)}
+                                    title={t("Ver e inspeccionar la lista de participantes sintéticos activos", "View and inspect the list of active synthetic participants")}
+                                    className="flex items-center gap-2 bg-[#EFF6FF] hover:bg-blue-100 px-3.5 py-2 rounded-xl border border-blue-200 text-xs font-bold text-[#003B7A] transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                    <span>{t(`👥 Ver / Inspeccionar Participantes Evaluados (${syntheticUsers.length})`, `👥 View / Inspect Evaluated Participants (${syntheticUsers.length})`)}</span>
+                                </button>
                                 {activeTab === 'EMAIL' && (
                                     <button
+                                        disabled={isBusy}
                                         onClick={() => setIsEmailEditorOpen(true)}
                                         className="btn-secondary flex items-center gap-2"
                                     >
-                                        <Edit2 size={16} /> Create/Edit Emails
+                                        <Edit2 size={16} /> {t('Crear/Editar Emails', 'Create/Edit Emails')}
                                     </button>
                                 )}
                                 {activeTab === 'PURCHASE' && (
                                     <button
+                                        disabled={isBusy}
                                         onClick={() => setShowProducts(true)}
                                         className="btn-secondary flex items-center gap-2"
                                     >
-                                        <Edit2 size={16} /> Create/Edit Products
+                                        <Edit2 size={16} /> {t('Crear/Editar Estudios', 'Create/Edit Products')}
                                     </button>
                                 )}
                                 <button
-                                    onClick={() => handleLoadLast('MEMBER_SIMULATION')}
-                                    disabled={isMemberLoading}
-                                    className="btn-secondary flex items-center gap-2"
-                                    title="Load Last Run"
+                                    onClick={() => refreshBriefData(true)}
+                                    disabled={isBusy}
+                                    className="btn-secondary flex items-center gap-2 text-xs font-bold"
+                                    title={t("Recupera las promociones, mensajes clave, correos, estudios e imágenes generados en el último Brief de Marketing", "Loads the promotions, key messages, emails, studies, and images generated in the latest Marketing Brief")}
                                 >
-                                    <History size={18} />
+                                    <RotateCcw size={16} />
+                                    {t('Traer datos del último Brief', 'Load from latest Brief')}
                                 </button>
                                 <button
                                     onClick={() => handleRunMemberSim()}
-                                    disabled={isMemberLoading || syntheticUsers.length === 0}
-                                    title={syntheticUsers.length === 0 ? "You must generate users in the Synthetic Users tab first." : ""}
+                                    disabled={isBusy || syntheticUsers.length === 0}
+                                    title={syntheticUsers.length === 0 ? t("Primero debes generar usuarios en la pestaña Usuarios Sintéticos.", "You must generate users in the Synthetic Users tab first.") : ""}
                                     className="btn-primary px-6 py-3 flex items-center gap-2"
                                 >
                                     {isMemberLoading ? <div className="animate-spin h-5 w-5 border-b-2 border-white rounded-full" /> : <Play size={20} />}
-                                    Run Simulation
+                                    {t('Ejecutar Simulación', 'Run Simulation')}
                                 </button>
                             </div>
                         </div>
                     )}
 
                     {/* Email Editor Modal */}
-                    {isEmailEditorOpen && (
-                        <div className="modal-overlay">
-                            <div className="modal-content max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
-                                <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-white">
-                                    <h3 className="font-bold text-xl text-heading flex items-center gap-2">
-                                        <Mail className="text-[#0077C8]" />
-                                        Email Campaign Editor
-                                    </h3>
-                                    <button onClick={() => setIsEmailEditorOpen(false)} className="text-subtext hover:text-heading transition-colors"><X /></button>
+                    {isEmailEditorOpen && activeTab === 'EMAIL' && (
+                        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden border border-slate-200">
+                                <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-white">
+                                    <div>
+                                        <h3 className="font-bold text-xl text-[#003B7A] flex items-center gap-2">
+                                            <Mail className="text-[#0066FF]" />
+                                            {t('Editor de Campañas de Email (Banner Visual)', 'Visual Banner Email Campaign Editor')}
+                                        </h3>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            {t('Personaliza la imagen del banner, el titular no invasivo sobre la imagen y el mensaje corto de 2 a 3 líneas.', 'Customize the banner image, non-invasive overlay headline, and concise 2-3 line companion message.')}
+                                        </p>
+                                    </div>
+                                    <button disabled={isBusy} onClick={() => setIsEmailEditorOpen(false)} className="text-subtext hover:text-heading transition-colors disabled:opacity-50"><X /></button>
                                 </div>
-                                <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
+                                <div className={`flex-1 overflow-y-auto p-6 bg-[#F8FAFC] ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
                                     {editingEmailIndex !== null ? (
-                                        <div className="space-y-4">
+                                        <div className="space-y-5">
+                                            {/* Live Visual Banner Preview + Image Upload */}
                                             <div>
-                                                <label className="block text-xs font-bold text-subtext uppercase mb-1">Subject Line</label>
+                                                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                                    <label className="block text-xs font-bold text-[#003B7A] uppercase">
+                                                        {t('Vista Previa en Vivo del Banner del Correo', 'Live Email Banner Preview')}
+                                                    </label>
+                                                    <div>
+                                                        <input
+                                                            ref={emailDraftImageInputRef}
+                                                            type="file"
+                                                            accept="image/*"
+                                                            onChange={handleUploadEmailDraftImage}
+                                                            className="hidden"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            disabled={isBusy}
+                                                            onClick={() => emailDraftImageInputRef.current?.click()}
+                                                            className="px-3.5 py-1.5 rounded-lg bg-[#EFF6FF] hover:bg-blue-100 text-[#0066FF] border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                                                        >
+                                                            <Upload size={14} />
+                                                            {isUploadingEmailDraftImage
+                                                                ? t('Subiendo imagen...', 'Uploading image...')
+                                                                : t('Subir / Cambiar Imagen del Correo', 'Upload / Change Email Image')}
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-100 aspect-[16/9] max-h-64 w-full shadow-sm">
+                                                    {editingEmailImage ? (
+                                                        <img
+                                                            src={editingEmailImage}
+                                                            alt={editingEmailSubject}
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-2 bg-gradient-to-br from-slate-100 to-blue-50/50">
+                                                            <Image size={32} className="text-[#0066FF]/50" />
+                                                            <span className="text-xs font-semibold text-slate-500">
+                                                                {t('Haz clic en "Subir / Cambiar Imagen del Correo" para agregar tu arte o banner', 'Click "Upload / Change Email Image" to add your banner artwork')}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#003B7A]/90 via-[#003B7A]/45 to-transparent p-4 flex flex-col justify-end">
+                                                        <span className="bg-white/95 text-[#003B7A] text-[11px] font-bold px-2.5 py-0.5 rounded-full w-fit mb-1 shadow-sm">
+                                                            {editingEmailBannerSubheadline || brief?.productName || 'Laboratorios Chopo'}
+                                                        </span>
+                                                        <h4 className="text-white font-bold text-base sm:text-lg leading-snug drop-shadow">
+                                                            {editingEmailBannerHeadline || editingEmailSubject || t('Titular del Banner', 'Banner Headline')}
+                                                        </h4>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
+                                                        {t('Asunto del Correo (Subject Line)', 'Email Subject Line')}
+                                                    </label>
+                                                    <input
+                                                        disabled={isBusy}
+                                                        value={editingEmailSubject}
+                                                        onChange={e => setEditingEmailSubject(e.target.value)}
+                                                        placeholder={t('ej. Tu salud no espera: agenda tu estudio hoy', 'e.g. Your health cannot wait: book your study today')}
+                                                        className="w-full border border-slate-200 bg-white rounded-lg p-2.5 text-sm font-bold text-[#003B7A] focus:ring-2 focus:ring-[#0066FF] shadow-sm outline-none transition-all"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
+                                                        {t('Subtítulo / Cintillo del Banner', 'Banner Subheadline / Pill Badge')}
+                                                    </label>
+                                                    <input
+                                                        disabled={isBusy}
+                                                        value={editingEmailBannerSubheadline}
+                                                        onChange={e => setEditingEmailBannerSubheadline(e.target.value)}
+                                                        placeholder={t('ej. Precio Especial en Línea • App Chopo', 'e.g. Online Special Price • Chopo App')}
+                                                        className="w-full border border-slate-200 bg-white rounded-lg p-2.5 text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-[#0066FF] shadow-sm outline-none transition-all"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
+                                                    {t('Titular en el Banner (Texto corto no invasivo sobre la imagen)', 'Banner Headline (Short non-invasive overlay text on image)')}
+                                                </label>
                                                 <input
-                                                    value={editingEmailSubject}
-                                                    onChange={e => setEditingEmailSubject(e.target.value)}
-                                                    className="w-full border border-gray-100 bg-white rounded-lg p-3 font-bold text-heading focus:ring-2 focus:ring-[#0077C8] shadow-sm outline-none transition-all"
+                                                    disabled={isBusy}
+                                                    value={editingEmailBannerHeadline}
+                                                    onChange={e => setEditingEmailBannerHeadline(e.target.value)}
+                                                    placeholder={t('ej. Tranquilidad y precisión diagnóstica en tus manos', 'e.g. Peace of mind and diagnostic precision in your hands')}
+                                                    className="w-full border border-slate-200 bg-white rounded-lg p-2.5 text-sm font-bold text-[#003B7A] focus:ring-2 focus:ring-[#0066FF] shadow-sm outline-none transition-all"
                                                 />
                                             </div>
+
                                             <div>
-                                                <label className="block text-xs font-bold text-subtext uppercase mb-1">Email Body</label>
+                                                <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
+                                                    {t('Mensaje Corto de Acompañamiento (2 a 3 líneas)', 'Short Companion Copy (2 to 3 lines)')}
+                                                </label>
                                                 <textarea
+                                                    rows={3}
+                                                    disabled={isBusy}
                                                     value={editingEmailBody}
                                                     onChange={e => setEditingEmailBody(e.target.value)}
-                                                    className="w-full h-96 border border-gray-100 bg-white rounded-lg p-4 text-sm leading-relaxed focus:ring-2 focus:ring-[#0077C8] shadow-sm outline-none resize-none font-mono text-heading transition-all"
+                                                    placeholder={t('Mensaje breve, empático y directo que invita a agendar en chopo.com.mx o App Chopo...', 'Short, empathetic message inviting the user to book on chopo.com.mx or Chopo App...')}
+                                                    className="w-full border border-slate-200 bg-white rounded-lg p-3 text-sm leading-relaxed focus:ring-2 focus:ring-[#0066FF] shadow-sm outline-none resize-none text-slate-800 transition-all"
                                                 />
                                             </div>
-                                            <div className="flex justify-end gap-3">
+
+                                            <div className="flex justify-end gap-3 pt-2">
                                                 <button
+                                                    type="button"
+                                                    disabled={isBusy}
                                                     onClick={() => setEditingEmailIndex(null)}
                                                     className="btn-secondary"
                                                 >
-                                                    Cancel
+                                                    {t('Cancelar', 'Cancel')}
                                                 </button>
                                                 <button
+                                                    type="button"
+                                                    disabled={isBusy || !editingEmailSubject.trim()}
                                                     onClick={() => {
                                                         const updated = [...emailDrafts];
-                                                        updated[editingEmailIndex] = { subject: editingEmailSubject, body: editingEmailBody };
+                                                        const prev = updated[editingEmailIndex] || { subject: '', body: '' };
+                                                        updated[editingEmailIndex] = {
+                                                            ...prev,
+                                                            subject: editingEmailSubject.trim(),
+                                                            bannerHeadline: editingEmailBannerHeadline.trim() || editingEmailSubject.trim(),
+                                                            bannerSubheadline: editingEmailBannerSubheadline.trim() || brief?.productName || 'Laboratorios Chopo',
+                                                            body: editingEmailBody.trim(),
+                                                            image: editingEmailImage || prev.image || activeCreativeAssets?.image || undefined,
+                                                            ctaText: prev.ctaText || 'Agendar Estudio en Línea',
+                                                            legalFooter: prev.legalFooter || 'Consulte a su médico. Permiso de Publicidad COFEPRIS No. 2609152002A00518.'
+                                                        };
                                                         updateEmailDrafts(updated);
                                                         setEditingEmailIndex(null);
                                                     }}
-                                                    className="btn-primary"
+                                                    className="btn-primary flex items-center gap-2"
                                                 >
-                                                    Save Changes
+                                                    <CheckCircle2 size={16} />
+                                                    {t('Guardar Cambios', 'Save Changes')}
                                                 </button>
                                             </div>
                                         </div>
@@ -935,98 +2160,131 @@ export const SyntheticTesting: React.FC = () => {
                                         <div className="grid grid-cols-1 gap-4">
                                             {emailDrafts.length === 0 && (
                                                 <div className="text-center py-10">
-                                                    <p className="text-gray-500 mb-4">No drafts yet.</p>
-
-
-                                                    {/* ... (rest of state) */}
-
-                                                    {/* ... inside render ... */}
-
+                                                    <p className="text-slate-500 mb-4">{t('Aún no hay borradores.', 'No drafts yet.')}</p>
                                                     <button
                                                         onClick={async () => {
                                                             setIsGeneratingEmails(true);
                                                             try {
                                                                 const { generateEmailBodies } = await import('../services/geminiService');
                                                                 const bodies = await generateEmailBodies(EMAIL_HEADLINES, brief!);
-                                                                const campaigns = EMAIL_HEADLINES.map(h => ({ subject: h, body: bodies[h] || "Loading..." }));
+                                                                const campaigns: EmailDraftItem[] = EMAIL_HEADLINES.map(h => ({
+                                                                    subject: h,
+                                                                    bannerHeadline: h,
+                                                                    bannerSubheadline: brief?.productName || 'Laboratorios Chopo',
+                                                                    body: bodies[h] || "Loading...",
+                                                                    image: activeCreativeAssets?.image || undefined,
+                                                                    ctaText: 'Agendar Estudio en Línea'
+                                                                }));
                                                                 updateEmailDrafts(campaigns);
                                                             } catch (e) {
                                                                 console.error(e);
-                                                                alert("Failed to generate emails.");
+                                                                alert(t("Error al generar los correos.", "Failed to generate emails."));
                                                             } finally {
                                                                 setIsGeneratingEmails(false);
                                                             }
                                                         }}
-                                                        disabled={isGeneratingEmails}
-                                                        className="text-[#0077C8] font-bold underline disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 justify-center hover:opacity-80 transition-opacity"
+                                                        disabled={isBusy}
+                                                        className="text-[#0066FF] font-bold underline disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 justify-center hover:opacity-80 transition-opacity mx-auto"
                                                     >
                                                         {isGeneratingEmails ? (
                                                             <>
-                                                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-[#0077C8] border-t-transparent" />
-                                                                Generating...
+                                                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-[#0066FF] border-t-transparent" />
+                                                                {t('Generando...', 'Generating...')}
                                                             </>
                                                         ) : (
-                                                            "Generate Defaults"
+                                                            t("Generar Borradores Base", "Generate Defaults")
                                                         )}
                                                     </button>
                                                 </div>
                                             )}
-                                            {emailDrafts.map((draft, i) => (
-                                                <div key={i} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center group hover:border-[#0077C8] transition-all">
-                                                    <div>
-                                                        <div className="font-bold text-heading mb-1">{draft.subject}</div>
-                                                        <div className="text-xs text-subtext line-clamp-1">{draft.body.substring(0, 100)}...</div>
+                                            {emailDrafts.map((draft, i) => {
+                                                const bannerImg = draft.image || activeCreativeAssets?.image;
+                                                return (
+                                                    <div key={i} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 group hover:border-[#0066FF] transition-all">
+                                                        <div className="flex items-center gap-4 min-w-0 flex-1">
+                                                            <div className="w-28 h-16 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0 relative">
+                                                                {bannerImg ? (
+                                                                    <img src={bannerImg} alt={draft.subject} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                                                        <Image size={18} />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="font-bold text-[#003B7A] text-sm truncate">{draft.subject}</div>
+                                                                <div className="text-[11px] font-semibold text-[#0066FF] truncate mt-0.5">
+                                                                    {t('Banner:', 'Banner:')} {draft.bannerHeadline || draft.subject}
+                                                                </div>
+                                                                <div className="text-xs text-subtext line-clamp-1 mt-0.5">{draft.body}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-2 shrink-0">
+                                                            <button
+                                                                type="button"
+                                                                disabled={isBusy}
+                                                                onClick={() => openEmailEditorForDraft(i, draft)}
+                                                                className="px-3 py-1.5 bg-[#EFF6FF] hover:bg-blue-100 rounded-lg text-[#0066FF] text-xs font-bold flex items-center gap-1.5 transition-colors"
+                                                            >
+                                                                <Edit2 size={14} />
+                                                                {t('Editar / Imagen', 'Edit / Image')}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                disabled={isBusy}
+                                                                onClick={() => updateEmailDrafts(emailDrafts.filter((_, idx) => idx !== i))}
+                                                                className="p-2 hover:bg-red-50 rounded-lg text-red-500 transition-colors"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button
-                                                            onClick={() => {
-                                                                setEditingEmailIndex(i);
-                                                                setEditingEmailSubject(draft.subject);
-                                                                setEditingEmailBody(draft.body);
-                                                            }}
-                                                            className="p-2 hover:bg-gray-50 rounded-lg text-subtext hover:text-heading transition-colors"
-                                                        >
-                                                            <Edit2 size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => updateEmailDrafts(emailDrafts.filter((_, idx) => idx !== i))}
-                                                            className="p-2 hover:bg-red-50 rounded-lg text-red-500 transition-colors"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                             <button
+                                                type="button"
+                                                disabled={isBusy}
                                                 onClick={() => {
-                                                    updateEmailDrafts([...emailDrafts, { subject: "New Campaign", body: "Write your email content here..." }]);
-                                                    setEditingEmailIndex(emailDrafts.length);
-                                                    setEditingEmailSubject("New Campaign");
-                                                    setEditingEmailBody("Write your email content here...");
+                                                    const defaultSubj = t("Nueva Campaña de Email", "New Email Campaign");
+                                                    const defaultHeadline = brief?.productName || t("Prevención y precisión diagnóstica en tus manos", "Prevention and diagnostic precision in your hands");
+                                                    const defaultSubhead = brief?.productName || "Laboratorios Chopo";
+                                                    const defaultBody = t("Agenda tu estudio en línea en chopo.com.mx o desde la App Chopo con precio especial y consulta tus resultados digitales.", "Schedule your study online at chopo.com.mx or in the Chopo App with special online pricing and digital results.");
+                                                    const newDraft: EmailDraftItem = {
+                                                        subject: defaultSubj,
+                                                        bannerHeadline: defaultHeadline,
+                                                        bannerSubheadline: defaultSubhead,
+                                                        body: defaultBody,
+                                                        image: activeCreativeAssets?.image || undefined,
+                                                        ctaText: 'Agendar Estudio en Línea'
+                                                    };
+                                                    const newIdx = emailDrafts.length;
+                                                    updateEmailDrafts([...emailDrafts, newDraft]);
+                                                    openEmailEditorForDraft(newIdx, newDraft);
                                                 }}
-                                                className="w-full py-4 border-2 border-dashed border-gray-100 rounded-xl text-subtext font-bold hover:border-gray-200 hover:text-heading transition-colors flex items-center justify-center gap-2"
+                                                className="w-full py-4 border-2 border-dashed border-slate-200 rounded-xl text-subtext font-bold hover:border-[#0066FF]/50 hover:text-heading transition-colors flex items-center justify-center gap-2 bg-white"
                                             >
-                                                <Plus size={20} /> Add New Email
+                                                <Plus size={20} /> {t('Agregar Nuevo Correo con Banner', 'Add New Visual Banner Email')}
                                             </button>
                                         </div>
                                     )}
                                 </div>
-                                <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+                                <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
                                     <button
+                                        disabled={isBusy}
                                         onClick={() => setIsEmailEditorOpen(false)}
-                                        className="btn-secondary"
+                                        className="btn-secondary disabled:opacity-50"
                                     >
-                                        Close
+                                        {t('Cerrar', 'Close')}
                                     </button>
                                     <button
                                         onClick={() => {
                                             setIsEmailEditorOpen(false);
                                             handleRunMemberSim();
                                         }}
-                                        disabled={emailDrafts.length === 0}
-                                        className="btn-primary flex items-center gap-2"
+                                        disabled={isBusy || emailDrafts.length === 0}
+                                        className="btn-primary flex items-center gap-2 disabled:opacity-50"
                                     >
-                                        <Play size={18} /> Run Test with {emailDrafts.length} Emails
+                                        <Play size={18} /> {t(`Evaluar ${emailDrafts.length} Correos`, `Run Test with ${emailDrafts.length} Emails`)}
                                     </button>
                                 </div>
                             </div>
@@ -1035,20 +2293,148 @@ export const SyntheticTesting: React.FC = () => {
 
                     {activeTab === 'EMAIL' && (
                         <div className="space-y-6 animate-fadeIn">
+                            {/* Active Email Drafts Preview & Quick Edit/Delete */}
+                            <div className={`content-card ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
+                                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                                    <div>
+                                        <h3 className="font-bold text-[#003B7A] flex items-center gap-2">
+                                            <Mail size={18} className="text-[#0066FF]" />
+                                            {t('Correos a Evaluar en la Simulación (Formato Banner Visual)', 'Visual Banner Emails Queued for Simulation')} ({emailDrafts.length})
+                                        </h3>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            {t('Cada correo combina una imagen con titular corto no invasivo + mensaje de 2 a 3 líneas. Puedes subir/cambiar la imagen, editar o eliminar cualquier correo.', 'Each email combines a banner image with a short non-invasive headline + 2-3 line message. You can upload/change the image, edit, or delete any email.')}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        disabled={isBusy}
+                                        onClick={() => {
+                                            const defaultSubj = t("Nueva Campaña de Email", "New Email Campaign");
+                                            const defaultHeadline = brief?.productName || t("Prevención y precisión diagnóstica en tus manos", "Prevention and diagnostic precision in your hands");
+                                            const defaultSubhead = brief?.productName || "Laboratorios Chopo";
+                                            const defaultBody = t("Agenda tu estudio en línea en chopo.com.mx o desde la App Chopo con precio especial y consulta tus resultados digitales.", "Schedule your study online at chopo.com.mx or in the Chopo App with special online pricing and digital results.");
+                                            const newDraft: EmailDraftItem = {
+                                                subject: defaultSubj,
+                                                bannerHeadline: defaultHeadline,
+                                                bannerSubheadline: defaultSubhead,
+                                                body: defaultBody,
+                                                image: activeCreativeAssets?.image || undefined,
+                                                ctaText: 'Agendar Estudio en Línea'
+                                            };
+                                            const newIndex = emailDrafts.length;
+                                            updateEmailDrafts([...emailDrafts, newDraft]);
+                                            openEmailEditorForDraft(newIndex, newDraft);
+                                        }}
+                                        className="px-3.5 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#004ECC] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50"
+                                    >
+                                        <Plus size={14} />
+                                        {t('Agregar Correo', 'Add Email')}
+                                    </button>
+                                </div>
+
+                                {emailDrafts.length === 0 ? (
+                                    <div className="p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-500">
+                                        {t('No hay correos cargados. Haz clic en "Sincronizar con Brief" o en "Agregar Correo" para configurar tus campañas.', 'No emails loaded. Click "Sync with Brief" or "Add Email" to configure your campaigns.')}
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {emailDrafts.map((draft, i) => {
+                                            const bannerImage = draft.image || activeCreativeAssets?.image;
+                                            const cleanBody = (draft.body || '').replace(/\s*Incluye pie legal:[\s\S]*$/i, '').trim();
+                                            return (
+                                                <div key={i} className="rounded-xl bg-white border border-slate-200 hover:border-[#0066FF]/60 shadow-sm overflow-hidden transition-all flex flex-col justify-between">
+                                                    {/* Visual Banner Preview */}
+                                                    <div className="relative aspect-[16/9] bg-slate-100 border-b border-slate-100 overflow-hidden group">
+                                                        {bannerImage ? (
+                                                            <img
+                                                                src={bannerImage}
+                                                                alt={draft.subject}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-1.5 bg-gradient-to-br from-slate-100 to-blue-50/40">
+                                                                <Image size={24} className="text-[#0066FF]/50" />
+                                                                <span className="text-[11px] font-medium">{t('Sin imagen de banner', 'No banner image')}</span>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Quick Upload / Edit Image Button on Banner */}
+                                                        <button
+                                                            type="button"
+                                                            disabled={isBusy}
+                                                            onClick={() => openEmailEditorForDraft(i, draft)}
+                                                            className="absolute top-2.5 right-2.5 z-10 px-2.5 py-1 rounded-lg bg-white/95 hover:bg-white text-[#003B7A] border border-slate-200 text-[11px] font-bold shadow-sm flex items-center gap-1 transition-all"
+                                                        >
+                                                            <Upload size={12} className="text-[#0066FF]" />
+                                                            {t('Imagen / Editar', 'Image / Edit')}
+                                                        </button>
+
+                                                        {/* Non-invasive overlay headline */}
+                                                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#003B7A]/90 via-[#003B7A]/45 to-transparent p-3.5 flex flex-col justify-end">
+                                                            <span className="bg-white/95 text-[#003B7A] text-[10px] font-bold px-2 py-0.5 rounded-full w-fit mb-1 shadow-sm">
+                                                                {draft.bannerSubheadline || brief?.productName || 'Laboratorios Chopo'}
+                                                            </span>
+                                                            <div className="text-white font-bold text-sm leading-snug line-clamp-2 drop-shadow">
+                                                                {draft.bannerHeadline || draft.subject}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Subject + Short Companion Copy + Actions */}
+                                                    <div className="p-3.5 flex items-start justify-between gap-3 bg-[#F8FAFC] flex-1">
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="text-[10px] font-bold uppercase tracking-wider text-[#0066FF]">
+                                                                {t('Asunto:', 'Subject:')}
+                                                            </div>
+                                                            <div className="text-sm font-bold text-[#003B7A] truncate" title={draft.subject}>
+                                                                {draft.subject}
+                                                            </div>
+                                                            <p className="text-xs text-slate-600 line-clamp-2 mt-1.5 leading-relaxed">
+                                                                {cleanBody}
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                            <button
+                                                                type="button"
+                                                                disabled={isBusy}
+                                                                onClick={() => openEmailEditorForDraft(i, draft)}
+                                                                className="p-1.5 rounded-lg text-slate-500 hover:text-[#0066FF] hover:bg-blue-50 transition-colors"
+                                                                title={t('Editar Correo e Imagen', 'Edit Email & Image')}
+                                                            >
+                                                                <Edit2 size={15} />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                disabled={isBusy}
+                                                                onClick={() => updateEmailDrafts(emailDrafts.filter((_, idx) => idx !== i))}
+                                                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                                                title={t('Eliminar Correo', 'Delete Email')}
+                                                            >
+                                                                <Trash2 size={15} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Email Performance Analytics */}
                             <div className="content-card">
                                 <h3 className="font-bold text-heading mb-4 flex items-center gap-2">
-                                    <Mail size={18} className="text-[#0077C8]" /> Campaign Performance
+                                    <Mail size={18} className="text-[#0066FF]" /> {t('Desempeño de Campaña de Email', 'Campaign Performance')}
                                 </h3>
                                 <div className="space-y-4 h-[75vh] overflow-y-auto pr-2 custom-scrollbar">
                                     {emailStats.length > 0 ? emailStats.map((stat, i) => (
                                         <div
                                             key={i}
                                             onClick={() => setSelectedEmailStats(selectedEmailStats?.subject === stat.subject ? null : stat)}
-                                            className="group border border-gray-100 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer bg-white hover:border-[#0077C8]"
+                                            className="group border border-gray-100 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer bg-white hover:border-[#0066FF]"
                                         >
                                             <div className="flex justify-between items-start mb-3">
-                                                <div className="font-bold text-heading group-hover:text-[#0077C8] transition-colors line-clamp-1">
+                                                <div className="font-bold text-heading group-hover:text-[#0066FF] transition-colors line-clamp-1">
                                                     {stat.subject}
                                                 </div>
                                                 <ChevronDown size={16} className={`text-subtext transform transition-transform ${selectedEmailStats?.subject === stat.subject ? 'rotate-180' : ''}`} />
@@ -1058,16 +2444,16 @@ export const SyntheticTesting: React.FC = () => {
                                             <div className="space-y-3">
                                                 <div>
                                                     <div className="flex justify-between text-xs mb-1.5">
-                                                        <span className="font-medium text-subtext uppercase tracking-wider">Open Rate</span>
+                                                        <span className="font-medium text-subtext uppercase tracking-wider">{t('Tasa de Apertura', 'Open Rate')}</span>
                                                         <span className="font-bold text-heading">{stat.openRate}%</span>
                                                     </div>
                                                     <div className="h-2 w-full bg-gray-50 rounded-full overflow-hidden border border-gray-100">
-                                                        <div className="h-full bg-[#0077C8] rounded-full transition-all duration-500" style={{ width: `${stat.openRate}%` }} />
+                                                        <div className="h-full bg-[#0066FF] rounded-full transition-all duration-500" style={{ width: `${stat.openRate}%` }} />
                                                     </div>
                                                 </div>
                                                 <div>
                                                     <div className="flex justify-between text-xs mb-1.5">
-                                                        <span className="font-medium text-subtext uppercase tracking-wider">Click-Through</span>
+                                                        <span className="font-medium text-subtext uppercase tracking-wider">{t('Tasa de Clics (CTR)', 'Click-Through Rate')}</span>
                                                         <span className="font-bold text-green-600">{stat.clickRate}%</span>
                                                     </div>
                                                     <div className="h-2 w-full bg-gray-50 rounded-full overflow-hidden border border-gray-100">
@@ -1080,11 +2466,44 @@ export const SyntheticTesting: React.FC = () => {
                                             {/* Audience Breakdown */}
                                             {selectedEmailStats?.subject === stat.subject && (
                                                 <div className="mt-4 pt-4 border-t border-gray-100 animate-fadeIn cursor-default" onClick={(e) => e.stopPropagation()}>
-                                                    <div className="mb-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
-                                                        <h4 className="text-xs font-bold text-subtext uppercase mb-2 tracking-wider">Email Body</h4>
-                                                        <p className="text-xs text-heading whitespace-pre-wrap font-mono max-h-40 overflow-y-auto custom-scrollbar leading-relaxed">{stat.body}</p>
+                                                    {/* Visual Banner Email Preview inside Performance Breakdown */}
+                                                    <div className="mb-5 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm max-w-xl mx-auto">
+                                                        <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 text-xs text-slate-600 flex justify-between items-center">
+                                                            <span className="font-bold text-[#003B7A]">{t('Vista Previa del Correo Evaluado', 'Evaluated Email Preview')}</span>
+                                                            <span className="text-[11px] text-slate-400">{brandConfig.companyName}</span>
+                                                        </div>
+                                                        <div className="p-4">
+                                                            <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-100 aspect-[16/9] mb-3.5">
+                                                                {stat.image ? (
+                                                                    <img src={stat.image} alt={stat.subject} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <div className="w-full h-full flex items-center justify-center text-slate-400 bg-gradient-to-br from-slate-100 to-blue-50/40">
+                                                                        <Image size={28} className="text-[#0066FF]/40" />
+                                                                    </div>
+                                                                )}
+                                                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#003B7A]/90 via-[#003B7A]/45 to-transparent p-3.5 flex flex-col justify-end">
+                                                                    <span className="bg-white/95 text-[#003B7A] text-[10px] font-bold px-2.5 py-0.5 rounded-full w-fit mb-1 shadow-sm">
+                                                                        {stat.bannerSubheadline || brief?.productName || 'Laboratorios Chopo'}
+                                                                    </span>
+                                                                    <h5 className="text-white font-bold text-sm sm:text-base leading-snug drop-shadow">
+                                                                        {stat.bannerHeadline || stat.subject}
+                                                                    </h5>
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-xs sm:text-sm text-slate-700 leading-relaxed mb-3">
+                                                                {stat.body}
+                                                            </p>
+                                                            <div className="w-full py-2 rounded-full bg-[#0066FF] text-white text-center text-xs font-bold">
+                                                                {stat.ctaText || t('Agendar Estudio en Línea', 'Book Lab Study Online')}
+                                                            </div>
+                                                            {stat.legalFooter && (
+                                                                <p className="text-[10px] text-slate-400 border-t border-slate-100 pt-2 mt-3">
+                                                                    {stat.legalFooter}
+                                                                </p>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                    <h4 className="text-xs font-bold text-heading uppercase mb-3 tracking-wider">Audience Insights</h4>
+                                                    <h4 className="text-xs font-bold text-heading uppercase mb-3 tracking-wider">{t('Resultados por Perfil', 'Audience Insights')}</h4>
                                                     <div className="space-y-4">
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                             {Object.entries(memberResults.reduce((acc, r) => {
@@ -1095,32 +2514,74 @@ export const SyntheticTesting: React.FC = () => {
                                                                 acc[groupName].sent++;
                                                                 if (engage.opened) acc[groupName].opened++;
                                                                 if (engage.clicked) acc[groupName].clicked++;
+                                                                const specificFeedback =
+                                                                    engage.feedback ||
+                                                                    (engage.clicked
+                                                                        ? r.briefMetrics?.feedback
+                                                                        : (r.briefMetrics?.negativeFeedback || r.briefMetrics?.feedback));
+                                                                if (specificFeedback && !acc[groupName].feedback.some(f => f.text === specificFeedback)) {
+                                                                    acc[groupName].feedback.push({
+                                                                        text: specificFeedback,
+                                                                        clicked: engage.clicked,
+                                                                        opened: engage.opened
+                                                                    });
+                                                                }
                                                                 return acc;
-                                                            }, {} as Record<string, { sent: number, opened: number, clicked: number, feedback: string[] }>)).map(([name, s], idx) => (
+                                                            }, {} as Record<string, { sent: number, opened: number, clicked: number, feedback: { text: string; clicked: boolean; opened: boolean }[] }>)).map(([name, s], idx) => (
                                                                 <div key={idx} className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                                                                    <div className="font-bold text-heading mb-3 border-b border-gray-50 pb-2">{name}</div>
+                                                                    <div className="font-bold text-heading mb-3 border-b border-gray-50 pb-2">{localizePersonaLabel(name, language)}</div>
                                                                     <div className="grid grid-cols-2 gap-4 mb-4">
                                                                         <div>
-                                                                            <div className="text-[10px] text-subtext uppercase font-bold tracking-tight">Open Rate</div>
+                                                                            <div className="text-[10px] text-subtext uppercase font-bold tracking-tight">{t('Tasa de Apertura', 'Open Rate')}</div>
                                                                             <div className="text-lg font-bold text-heading">{Math.round((s.opened / s.sent) * 100)}%</div>
                                                                         </div>
                                                                         <div>
-                                                                            <div className="text-[10px] text-subtext uppercase font-bold tracking-tight">Click Rate</div>
+                                                                            <div className="text-[10px] text-subtext uppercase font-bold tracking-tight">{t('Tasa de Clics (CTR)', 'Click-Through Rate')}</div>
                                                                             <div className={`text-lg font-bold ${s.clicked > 0 ? 'text-green-600' : 'text-subtext'}`}>{Math.round((s.clicked / s.sent) * 100)}%</div>
                                                                         </div>
                                                                     </div>
 
                                                                     {/* Feedback snippets */}
                                                                     <div className="space-y-2">
-                                                                        {s.clicked > 0 ? (
-                                                                            <div className="flex gap-2 items-start p-2 bg-green-50 rounded-lg border border-green-100">
-                                                                                <div className="bg-green-600 text-white px-1.5 py-0.5 rounded text-[10px] font-bold mt-0.5 shadow-sm">POS</div>
-                                                                                <span className="text-xs text-green-800 italic">"The subject line really spoke to my needs."</span>
-                                                                            </div>
+                                                                        {s.feedback.length > 0 ? (
+                                                                            s.feedback.map((f, fIdx) => (
+                                                                                <div
+                                                                                    key={fIdx}
+                                                                                    className={`flex gap-2 items-start p-2.5 rounded-lg border ${
+                                                                                        f.clicked
+                                                                                            ? 'bg-green-50 border-green-100'
+                                                                                            : f.opened
+                                                                                                ? 'bg-[#EFF6FF] border-blue-200'
+                                                                                                : 'bg-red-50 border-red-100'
+                                                                                    }`}
+                                                                                >
+                                                                                    <div
+                                                                                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold mt-0.5 shadow-sm shrink-0 text-white ${
+                                                                                            f.clicked
+                                                                                                ? 'bg-green-600'
+                                                                                                : f.opened
+                                                                                                    ? 'bg-[#0066FF]'
+                                                                                                    : 'bg-red-500'
+                                                                                        }`}
+                                                                                    >
+                                                                                        {f.clicked ? t('CLIC', 'CLICK') : f.opened ? t('ABIERTO', 'OPENED') : t('OMITIDO', 'SKIPPED')}
+                                                                                    </div>
+                                                                                    <span
+                                                                                        className={`text-xs italic leading-relaxed ${
+                                                                                            f.clicked
+                                                                                                ? 'text-green-800'
+                                                                                                : f.opened
+                                                                                                    ? 'text-[#003B7A]'
+                                                                                                    : 'text-red-800'
+                                                                                        }`}
+                                                                                    >
+                                                                                        "{f.text}"
+                                                                                    </span>
+                                                                                </div>
+                                                                            ))
                                                                         ) : (
-                                                                            <div className="flex gap-2 items-start p-2 bg-red-50 rounded-lg border border-red-100">
-                                                                                <div className="bg-red-500 text-white px-1.5 py-0.5 rounded text-[10px] font-bold mt-0.5 shadow-sm">NEG</div>
-                                                                                <span className="text-xs text-red-800 italic">"I didn't feel this was relevant to me right now."</span>
+                                                                            <div className="text-xs text-slate-400 italic">
+                                                                                {t('Sin comentario específico.', 'No specific feedback recorded.')}
                                                                             </div>
                                                                         )}
                                                                     </div>
@@ -1133,7 +2594,7 @@ export const SyntheticTesting: React.FC = () => {
                                         </div>
                                     )) : (
                                         <div className="text-subtext italic text-sm text-center py-12 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
-                                            Run simulation to see email performance metrics.
+                                            {t('Ejecuta la simulación para ver las métricas de desempeño de email.', 'Run simulation to see email performance metrics.')}
                                         </div>
                                     )}
                                 </div>
@@ -1150,11 +2611,11 @@ export const SyntheticTesting: React.FC = () => {
                                     {(() => {
                                         const interest = memberResults.reduce((a, b) => a + b.briefMetrics.interestScore, 0) / memberResults.length;
                                         return (
-                                            <div className="content-card text-center relative group cursor-help p-6 border-t-4 border-[#0077C8]">
+                                            <div className="content-card text-center relative group cursor-help p-6 border-t-4 border-[#0066FF]">
                                                 <div className="text-5xl font-bold text-heading mb-2">{Math.round(interest)}</div>
-                                                <div className="text-xs font-bold text-subtext uppercase tracking-widest">Interest Score</div>
+                                                <div className="text-xs font-bold text-subtext uppercase tracking-widest">{t('Nivel de Interés', 'Interest Score')}</div>
                                                 <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 w-48 bg-gray-900 text-white text-xs font-medium p-3 rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                                                    Measures how engaging and appealing the brief is to the target audience.
+                                                    {t('Mide qué tan atractivo e interesante resulta el brief para la audiencia objetivo.', 'Measures how engaging and appealing the brief is to the target audience.')}
                                                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-b-gray-900"></div>
                                                 </div>
                                             </div>
@@ -1165,9 +2626,9 @@ export const SyntheticTesting: React.FC = () => {
                                         return (
                                             <div className="content-card text-center relative group cursor-help p-6 border-t-4 border-green-500">
                                                 <div className="text-5xl font-bold text-green-500 mb-2">{Math.round(clarity)}</div>
-                                                <div className="text-xs font-bold text-subtext uppercase tracking-widest">Clarity Score</div>
+                                                <div className="text-xs font-bold text-subtext uppercase tracking-widest">{t('Claridad del Mensaje', 'Clarity Score')}</div>
                                                 <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 w-48 bg-gray-900 text-white text-xs font-medium p-3 rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                                                    Evaluates how easily the key message is understood by the audience.
+                                                    {t('Evalúa qué tan fácil se comprende el mensaje principal por parte de la audiencia.', 'Evaluates how easily the key message is understood by the audience.')}
                                                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-b-gray-900"></div>
                                                 </div>
                                             </div>
@@ -1178,9 +2639,9 @@ export const SyntheticTesting: React.FC = () => {
                                         return (
                                             <div className="content-card text-center relative group cursor-help p-6 border-t-4 border-red-500">
                                                 <div className="text-5xl font-bold text-red-500 mb-2">{Math.round(rel)}</div>
-                                                <div className="text-xs font-bold text-subtext uppercase tracking-widest">Relevance Score</div>
+                                                <div className="text-xs font-bold text-subtext uppercase tracking-widest">{t('Relevancia Clínica', 'Relevance Score')}</div>
                                                 <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 w-48 bg-gray-900 text-white text-xs font-medium p-3 rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                                                    Assess how well the brief addresses the audience's specific needs and pain points.
+                                                    {t('Evalúa qué tan bien responde el brief a las necesidades clínicas y puntos de dolor del perfil.', "Assess how well the brief addresses the audience's specific needs and pain points.")}
                                                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-b-gray-900"></div>
                                                 </div>
                                             </div>
@@ -1190,49 +2651,142 @@ export const SyntheticTesting: React.FC = () => {
                             )}
 
                             {/* Key Messages Config */}
-                            <div className="content-card">
-                                <div className="text-sm font-bold text-heading mb-4 flex items-center gap-2">
-                                    <MessageCircle size={18} className="text-[#0077C8]" />
-                                    Key Marketing Messages (Tested in Simulation)
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    {marketingMessages.map((msg, i) => (
-                                        <span key={i} className="text-sm px-3 py-1.5 bg-white text-heading rounded-lg border border-gray-100 flex items-center gap-2 shadow-sm">
-                                            {msg}
-                                            <button onClick={() => setMarketingMessages(marketingMessages.filter(m => m !== msg))} className="text-subtext hover:text-red-500 transition-colors"><X size={12} /></button>
-                                        </span>
-                                    ))}
-                                    <div className="flex items-center gap-1">
-                                        <input
-                                            className="text-sm px-3 py-1.5 border border-gray-100 bg-gray-50 text-heading rounded-lg outline-none focus:border-[#0077C8] transition-colors"
-                                            placeholder="Add message..."
-                                            value={newMessage}
-                                            onChange={e => setNewMessage(e.target.value)}
-                                            onKeyDown={e => e.key === 'Enter' && (setMarketingMessages([...marketingMessages, newMessage]), setNewMessage(""))}
-                                        />
+                            <div className={`content-card ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
+                                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                                    <div className="text-sm font-bold text-[#003B7A] flex items-center gap-2">
+                                        <MessageCircle size={18} className="text-[#0066FF]" />
+                                        {t('Mensajes Clave de Campaña (Evaluados en Simulación)', 'Key Marketing Messages (Tested in Simulation)')} ({marketingMessages.length})
                                     </div>
+                                    <span className="text-xs text-slate-500">
+                                        {t('Sincronizados del Brief. Puedes editar, eliminar o agregar mensajes.', 'Synced from Brief. You can edit, delete, or add messages.')}
+                                    </span>
+                                </div>
+                                <div className="space-y-2 mb-4">
+                                    {marketingMessages.map((msg, i) => (
+                                        <div key={i} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm text-heading">
+                                            {editingMessageIndex === i ? (
+                                                <div className="space-y-2">
+                                                    <input
+                                                        type="text"
+                                                        disabled={isBusy}
+                                                        value={editingMessageText}
+                                                        onChange={e => setEditingMessageText(e.target.value)}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter' && editingMessageText.trim()) {
+                                                                const updated = [...marketingMessages];
+                                                                updated[i] = editingMessageText.trim();
+                                                                setMarketingMessages(updated);
+                                                                setEditingMessageIndex(null);
+                                                            }
+                                                        }}
+                                                        className="w-full px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-sm font-medium text-[#003B7A] focus:outline-none focus:ring-2 focus:ring-[#0066FF]"
+                                                    />
+                                                    <div className="flex justify-end gap-2">
+                                                        <button
+                                                            type="button"
+                                                            disabled={isBusy}
+                                                            onClick={() => setEditingMessageIndex(null)}
+                                                            className="px-2.5 py-1 rounded-md border border-slate-200 bg-white text-slate-600 text-xs font-bold hover:bg-slate-100"
+                                                        >
+                                                            {t('Cancelar', 'Cancel')}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            disabled={isBusy || !editingMessageText.trim()}
+                                                            onClick={() => {
+                                                                const updated = [...marketingMessages];
+                                                                updated[i] = editingMessageText.trim();
+                                                                setMarketingMessages(updated);
+                                                                setEditingMessageIndex(null);
+                                                            }}
+                                                            className="px-3 py-1 rounded-md bg-[#0066FF] text-white text-xs font-bold hover:bg-[#004ECC]"
+                                                        >
+                                                            {t('Guardar', 'Save')}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <span className="leading-snug flex-1">{msg}</span>
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        <button
+                                                            type="button"
+                                                            disabled={isBusy}
+                                                            onClick={() => {
+                                                                setEditingMessageIndex(i);
+                                                                setEditingMessageText(msg);
+                                                            }}
+                                                            className="p-1 rounded text-slate-400 hover:text-[#0066FF] hover:bg-blue-50 transition-colors disabled:opacity-50"
+                                                            title={t('Editar Mensaje', 'Edit Message')}
+                                                        >
+                                                            <Edit2 size={13} />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            disabled={isBusy}
+                                                            onClick={() => setMarketingMessages(marketingMessages.filter((_, idx) => idx !== i))}
+                                                            className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                                                            title={t('Eliminar Mensaje', 'Delete Message')}
+                                                        >
+                                                            <X size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        disabled={isBusy}
+                                        className="flex-1 text-sm px-3.5 py-2 border border-slate-200 bg-white text-heading rounded-xl outline-none focus:ring-2 focus:ring-[#0066FF] transition-all disabled:opacity-60"
+                                        placeholder={t('Agregar nuevo mensaje clave...', 'Add new key message...')}
+                                        value={newMessage}
+                                        onChange={e => setNewMessage(e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter' && newMessage.trim()) {
+                                                e.preventDefault();
+                                                setMarketingMessages([...marketingMessages, newMessage.trim()]);
+                                                setNewMessage("");
+                                            }
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        disabled={isBusy || !newMessage.trim()}
+                                        onClick={() => {
+                                            if (newMessage.trim()) {
+                                                setMarketingMessages([...marketingMessages, newMessage.trim()]);
+                                                setNewMessage("");
+                                            }
+                                        }}
+                                        className="bg-[#0066FF] hover:bg-[#004ECC] text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
+                                    >
+                                        <Plus size={15} />
+                                        {t('Agregar', 'Add')}
+                                    </button>
                                 </div>
                             </div>
 
                             {/* Detailed Feedback */}
                             {memberResults.length > 0 && (
                                 <div className="content-card max-h-[600px] overflow-y-auto custom-scrollbar">
-                                    <h3 className="font-bold text-heading mb-4">Detailed Feedback</h3>
+                                    <h3 className="font-bold text-heading mb-4">{t('Comentarios Detallados por Perfil', 'Detailed Feedback')}</h3>
                                     <div className="grid grid-cols-1 gap-4">
                                         {memberResults.slice(0, 50).map((r, i) => (
                                             <div key={i} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                                                 <div className="flex justify-between font-bold text-sm mb-2">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-heading">{r.personaName}</span>
+                                                        <span className="text-heading">{localizePersonaLabel(r.personaName, language)}</span>
                                                         <span className="text-[10px] text-subtext font-black uppercase tracking-widest bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
                                                             {(() => {
                                                                 const user = syntheticUsers.find(u => r.personaId.includes(u.id)) || 
                                                                              syntheticUsers.find(u => u.name === r.personaName);
-                                                                return user?.baseAudienceName || 'Standard Audience';
+                                                                return localizePersonaLabel(user?.baseAudienceName, language) || t('Audiencia Estándar', 'Standard Audience');
                                                             })()}
                                                         </span>
                                                     </div>
-                                                    <span className="text-[#0077C8] flex items-center gap-1">Interest: {r.briefMetrics.interestScore}/10</span>
+                                                    <span className="text-[#0066FF] flex items-center gap-1">{t('Interés', 'Interest')}: {r.briefMetrics.interestScore}/10</span>
                                                 </div>
                                                 <div className="text-sm text-subtext leading-relaxed">"{r.briefMetrics.feedback}"</div>
                                             </div>
@@ -1249,24 +2803,76 @@ export const SyntheticTesting: React.FC = () => {
                             <div className="content-card">
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="font-bold text-heading flex items-center gap-2">
-                                        <ShoppingCart size={18} className="text-[#0077C8]" /> Target Products
+                                        <ShoppingCart size={18} className="text-[#0066FF]" /> {t('Catálogo de Estudios a Evaluar', 'Target Diagnostic Studies')}
                                     </h3>
-                                    <button onClick={() => setShowProducts(true)} className="text-xs font-bold text-[#0077C8] hover:opacity-80 transition-opacity uppercase tracking-wider">
-                                        View All {simulationProducts.length}
+                                    <button disabled={isBusy} onClick={() => setShowProducts(true)} className="text-xs font-bold text-[#0066FF] hover:opacity-80 transition-opacity uppercase tracking-wider disabled:opacity-50">
+                                        {t('Ver Todos / Editar', 'View All / Edit')} ({simulationProducts.length})
                                     </button>
                                 </div>
-                                <div className="space-y-3">
-                                    {simulationProducts.slice(0, 6).map((p, i) => (
-                                        <div key={i} className="flex gap-4 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:bg-white hover:shadow-sm transition-all">
-                                            <div className="w-12 h-12 rounded-lg bg-white flex items-center justify-center border border-gray-100 text-subtext shadow-sm">
-                                                <ShoppingCart size={20} />
+                                <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
+                                    {simulationProducts.map((p, i) => {
+                                        const parsed = parseSimulationProduct(p);
+                                        const badgeClass =
+                                            parsed.modality === 'Disponible solo en Sucursal'
+                                                ? 'bg-indigo-50 text-[#003B7A] border-indigo-100'
+                                                : parsed.modality === 'Disponible solo a Domicilio'
+                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                    : 'bg-[#EFF6FF] text-[#0066FF] border-blue-100';
+                                        const badgeLabel =
+                                            parsed.modality === 'Disponible solo en Sucursal'
+                                                ? t('Disponible solo en Sucursal', 'Branch Only')
+                                                : parsed.modality === 'Disponible solo a Domicilio'
+                                                    ? t('Disponible solo a Domicilio', 'Home Draw Only')
+                                                    : t('Disponible en Sucursal y Domicilio', 'Branch & Home Service');
+                                        return (
+                                            <div key={i} className="flex items-center justify-between gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:bg-white hover:shadow-sm transition-all">
+                                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                    <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center border border-gray-100 text-[#0066FF] shadow-sm shrink-0">
+                                                        <ShoppingCart size={18} />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+                                                        <div className="text-sm font-bold text-heading truncate" title={parsed.title}>{parsed.title}</div>
+                                                        <div className="flex flex-wrap items-center gap-1.5">
+                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border ${badgeClass}`}>
+                                                                {badgeLabel}
+                                                            </span>
+                                                            {parsed.description && (
+                                                                <span className="text-[11px] text-slate-500 truncate max-w-[200px]" title={parsed.description}>
+                                                                    • {parsed.description}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        disabled={isBusy}
+                                                        onClick={() => {
+                                                            setEditingProductIndex(i);
+                                                            setEditingProductTitle(parsed.title);
+                                                            setEditingProductDescription(parsed.description);
+                                                            setEditingProductModality(parsed.modality);
+                                                            setShowProducts(true);
+                                                        }}
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-[#0066FF] hover:bg-blue-50 transition-colors"
+                                                        title={t('Editar Estudio', 'Edit Study')}
+                                                    >
+                                                        <Edit2 size={14} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={isBusy}
+                                                        onClick={() => setSimulationProducts(simulationProducts.filter((_, idx) => idx !== i))}
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                                        title={t('Eliminar Estudio', 'Remove Study')}
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                                <div className="text-sm font-bold text-heading truncate" title={p}>{p.split(':')[0]}</div>
-                                                <div className="text-xs text-subtext font-medium">In Stock</div>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
 
@@ -1274,9 +2880,9 @@ export const SyntheticTesting: React.FC = () => {
                             <div className="content-card">
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="font-bold text-heading flex items-center gap-2">
-                                        <ShoppingBag size={18} className="text-green-500" /> Purchased Summary
+                                        <ShoppingBag size={18} className="text-green-500" /> {t('Resumen de Estudios Seleccionados', 'Purchased Summary')}
                                     </h3>
-                                    {purchasedStats.length > 0 && <span className="badge badge-green">{memberResults.reduce((acc, r) => acc + r.cart.filter(c => c.purchased).length, 0)} Total Sales</span>}
+                                    {purchasedStats.length > 0 && <span className="badge badge-green">{memberResults.reduce((acc, r) => acc + r.cart.filter(c => c.purchased).length, 0)} {t('Estudios Agendados', 'Total Bookings')}</span>}
                                 </div>
                                 <div className="space-y-3">
                                     {purchasedStats.length > 0 ? purchasedStats.map(([product, count], i) => (
@@ -1285,12 +2891,12 @@ export const SyntheticTesting: React.FC = () => {
                                                 {count}x
                                             </div>
                                             <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                                <div className="text-sm font-bold text-heading truncate" title={product}>{product.split(':')[0]}</div>
+                                                <div className="text-sm font-bold text-heading truncate" title={product}>{product.split(':')[0].replace(/\s*\[.*?\]\s*/g, '').trim()}</div>
                                             </div>
                                         </div>
                                     )) : (
                                         <div className="text-subtext italic text-sm text-center py-12 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
-                                            Run simulation to see purchase data.
+                                            {t('Ejecuta la simulación para ver la intención de compra de estudios.', 'Run simulation to see purchase data.')}
                                         </div>
                                     )}
                                 </div>
@@ -1301,7 +2907,7 @@ export const SyntheticTesting: React.FC = () => {
                     {activeTab === 'PURCHASE' && memberResults.length > 0 && (
                         <div className="mt-8 space-y-6 animate-fadeIn">
                             <h3 className="text-xl font-bold text-heading flex items-center gap-2">
-                                <Users size={24} className="text-[#0077C8]" /> Audience Insights & Growth Opportunities
+                                <Users size={24} className="text-[#0066FF]" /> {t('Insights por Perfil y Oportunidades de Crecimiento', 'Audience Insights & Growth Opportunities')}
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {Object.entries(memberResults.reduce((acc, r) => {
@@ -1328,41 +2934,41 @@ export const SyntheticTesting: React.FC = () => {
                                     return (
                                         <div key={i} className="content-card p-0 overflow-hidden flex flex-col bg-white">
                                             <div className="p-4 bg-blue-50 border-b border-blue-100 flex justify-between items-center">
-                                                <h4 className="font-bold text-[#0077C8]">{personaName}</h4>
+                                                <h4 className="font-bold text-[#0066FF]">{localizePersonaLabel(personaName, language)}</h4>
                                                 <span className="badge badge-blue">
-                                                    {purchasedItems.length} Purchases
+                                                    {purchasedItems.length} {t('Agendamientos', 'Purchases')}
                                                 </span>
                                             </div>
 
                                             <div className="p-4 flex-1 space-y-4">
                                                 {/* Top Product */}
                                                 <div>
-                                                    <div className="text-xs font-bold text-subtext uppercase mb-1 tracking-wider">Top Choice</div>
+                                                    <div className="text-xs font-bold text-subtext uppercase mb-1 tracking-wider">{t('Estudio Más Solicitado', 'Top Choice')}</div>
                                                     <div className="font-bold text-heading text-sm">
-                                                        {topProduct ? `${topProduct[0]} (${topProduct[1]}x)` : <span className="text-subtext italic">No purchases yet</span>}
+                                                        {topProduct ? `${topProduct[0]} (${topProduct[1]}x)` : <span className="text-subtext italic">{t('Sin estudios seleccionados aún', 'No purchases yet')}</span>}
                                                     </div>
                                                 </div>
 
                                                 {/* Why They Buy */}
                                                 {positiveReason && (
                                                     <div className="p-3 bg-green-50 rounded-xl border border-green-100">
-                                                        <div className="text-xs font-bold text-green-700 uppercase mb-1.5 flex items-center gap-1"><CheckCircle2 size={12} /> Why They Buy</div>
+                                                        <div className="text-xs font-bold text-green-700 uppercase mb-1.5 flex items-center gap-1"><CheckCircle2 size={12} /> {t('Motivo de Elección', 'Why They Buy')}</div>
                                                         <p className="text-xs text-green-800 italic leading-relaxed">"{positiveReason}"</p>
                                                     </div>
                                                 )}
 
                                                 {/* Barrier / Missed Opp */}
                                                 <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-                                                    <div className="text-xs font-bold text-red-700 uppercase mb-1.5 flex items-center gap-1"><XCircle size={12} /> Growth Opportunity</div>
+                                                    <div className="text-xs font-bold text-red-700 uppercase mb-1.5 flex items-center gap-1"><XCircle size={12} /> {t('Barrera / Oportunidad de Mejora', 'Growth Opportunity')}</div>
                                                     <p className="text-xs text-red-800 leading-relaxed italic">
-                                                        {barrier || "Increase brief relevance to unlock this segment."}
+                                                        {barrier || t("Aumenta la relevancia clínica del mensaje para activar este segmento.", "Increase brief relevance to unlock this segment.")}
                                                     </p>
                                                 </div>
 
                                                 {/* Potential Upsell - Random non-purchased item with reason */}
                                                 {notPurchasedItems.length > 0 && notPurchasedItems[0].reason && (
                                                     <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 mt-2">
-                                                        <div className="text-[10px] font-bold text-subtext uppercase mb-1 tracking-tight">Missed Sale: {notPurchasedItems[0].productName}</div>
+                                                        <div className="text-[10px] font-bold text-subtext uppercase mb-1 tracking-tight">{t('Estudio Descartado:', 'Missed Sale:')} {notPurchasedItems[0].productName}</div>
                                                         <div className="text-[11px] text-subtext italic leading-snug">"{notPurchasedItems[0].reason}"</div>
                                                     </div>
                                                 )}
@@ -1375,85 +2981,177 @@ export const SyntheticTesting: React.FC = () => {
                     )}
 
                     {activeTab === 'CREATIVE' && (
-                        <div className="space-y-6">
+                        <div className={`space-y-6 ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
                             {/* Creative Controls */}
                             <div className="content-card flex justify-between items-center">
                                 <div>
-                                    <h3 className="text-lg font-bold text-heading">Campaign Images Focus Group</h3>
-                                    <p className="text-sm text-subtext">Test generated assets against {syntheticUsers.length} synthetic users.</p>
+                                    <h3 className="text-lg font-bold text-[#003B7A]">{t('Evaluación de Banners y Materiales Visuales', 'Campaign Images Focus Group')}</h3>
+                                    <p className="text-sm text-subtext">{t(`Evalúa materiales visuales generados o subidos manualmente con ${syntheticUsers.length} usuarios sintéticos.`, `Test generated or custom uploaded assets against ${syntheticUsers.length} synthetic users.`)}</p>
                                 </div>
-                                <div className="flex items-center gap-4">
-                                    <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100">
-                                        <span className="text-xs font-bold text-subtext uppercase">Users Tested</span>
-                                        <span className="bg-transparent text-heading font-bold text-sm">{syntheticUsers.length}</span>
-                                    </div>
+                                <div className="flex flex-wrap items-center gap-3">
                                     <button
-                                        onClick={() => handleLoadLast('CREATIVE_SIMULATION')}
-                                        disabled={isCreativeLoading}
-                                        className="btn-secondary flex items-center gap-2"
-                                        title="Load Last Run"
+                                        type="button"
+                                        disabled={isBusy}
+                                        onClick={() => setIsSyntheticUsersModalOpen(true)}
+                                        title={t("Ver e inspeccionar la lista de participantes sintéticos activos", "View and inspect the list of active synthetic participants")}
+                                        className="flex items-center gap-2 bg-[#EFF6FF] hover:bg-blue-100 px-3.5 py-2 rounded-xl border border-blue-200 text-xs font-bold text-[#003B7A] transition-colors cursor-pointer disabled:opacity-50"
                                     >
-                                        <History size={18} />
+                                        <span>{t(`👥 Ver / Inspeccionar Participantes Evaluados (${syntheticUsers.length})`, `👥 View / Inspect Evaluated Participants (${syntheticUsers.length})`)}</span>
+                                    </button>
+                                    <button
+                                        disabled={isBusy}
+                                        onClick={openRubricsModal}
+                                        className="btn-secondary flex items-center gap-2 text-xs font-bold border-blue-200 text-[#003B7A] hover:bg-blue-50 disabled:opacity-50"
+                                    >
+                                        <ClipboardList size={16} className="text-[#0066FF]" />
+                                        {t('📋 Criterios de Evaluación (Rúbricas)', '📋 Evaluation Rubrics')}
+                                    </button>
+                                    <button
+                                        onClick={() => refreshBriefData(true)}
+                                        disabled={isBusy}
+                                        className="btn-secondary flex items-center gap-2 text-xs font-bold"
+                                        title={t("Recupera las promociones, mensajes clave, correos, estudios e imágenes generados en el último Brief de Marketing", "Loads the promotions, key messages, emails, studies, and images generated in the latest Marketing Brief")}
+                                    >
+                                        <RotateCcw size={16} />
+                                        {t('Traer datos del último Brief', 'Load from latest Brief')}
                                     </button>
                                     <button
                                         onClick={handleRunCreativeSim}
-                                        disabled={isCreativeLoading || syntheticUsers.length === 0}
-                                        title={syntheticUsers.length === 0 ? "You must generate users in the Synthetic Users tab first." : ""}
+                                        disabled={isBusy || (Object.keys(combinedCreativeAssetsMap).length === 0 && !brief)}
+                                        title={(Object.keys(combinedCreativeAssetsMap).length === 0 && !brief) ? t("Sube una imagen o banner propio abajo o genera un Brief de Marketing primero.", "Upload a custom creative image below or generate a Marketing Brief first.") : ""}
                                         className="btn-primary px-6 py-3 flex items-center gap-2"
                                     >
                                         {isCreativeLoading ? <div className="animate-spin h-5 w-5 border-b-2 border-white rounded-full" /> : <Play size={20} />}
-                                        Run Simulation
+                                        {t('Evaluar Imagen / Banner', 'Run Creative Simulation')}
                                     </button>
+                                </div>
+                            </div>
+
+                            {/* Upload Custom Creative Card */}
+                            <div className="content-card border-l-4 border-l-[#78D600]">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-[#78D600]" />
+                                            <h3 className="font-bold text-[#003B7A] text-base">{t('Subir Imagen / Banner Propio', 'Upload Custom Creative')}</h3>
+                                        </div>
+                                        <p className="text-xs text-subtext mt-0.5">
+                                            {t(
+                                                'Sube tu propio post de redes sociales, banner clínico o arte promocional desde tu computadora para evaluarlo directamente con el focus group sintético — incluso sin haber generado un Brief de Marketing antes.',
+                                                'Upload your own social media post, clinical banner, or promotional artwork from your computer to evaluate it directly with the synthetic focus group — even without generating a Marketing Brief first.'
+                                            )}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        <input
+                                            ref={customCreativeInputRef}
+                                            type="file"
+                                            disabled={isBusy}
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={handleUploadCustomCreative}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => customCreativeInputRef.current?.click()}
+                                            disabled={isBusy}
+                                            className="btn-secondary px-4 py-2.5 flex items-center gap-2 text-xs font-bold border-[#0066FF] text-[#0066FF] hover:bg-blue-50 disabled:opacity-50"
+                                        >
+                                            {isUploadingCreative ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
+                                            {isUploadingCreative ? t("Subiendo...", "Uploading...") : t("Cargar Imagen / Banner", "Upload Custom Image")}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-gray-100">
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-[#003B7A] uppercase tracking-wider mb-1">
+                                            {t('Titular / Encabezado (Opcional)', 'Custom Headline / Title (Optional)')}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            disabled={isBusy}
+                                            value={customCreativeHeadline}
+                                            onChange={(e) => handleCustomCopyChange(e.target.value, customCreativeCaption)}
+                                            placeholder={t("ej. Controla tu diabetes a tiempo — Resultados de HbA1c el mismo día", "e.g., Control your diabetes on time — Same-day HbA1c results")}
+                                            className="input-field text-sm py-2 disabled:opacity-60"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-[#003B7A] uppercase tracking-wider mb-1">
+                                            {t('Copy / Pie de Publicación (Opcional)', 'Social Copy / Caption (Optional)')}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            disabled={isBusy}
+                                            value={customCreativeCaption}
+                                            onChange={(e) => handleCustomCopyChange(customCreativeHeadline, e.target.value)}
+                                            placeholder={t("ej. Agenda tu Perfil Control Diabetes en chopo.com.mx y recibe resultados por WhatsApp.", "e.g., Book your Diabetes Control Panel at chopo.com.mx and receive results via WhatsApp.")}
+                                            className="input-field text-sm py-2 disabled:opacity-60"
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
                             {/* Creative Assets Preview */}
                             <div className="content-card">
-                                <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-4">
-                                    <h3 className="font-bold text-heading">Assets being Tested</h3>
-                                    {brief?.campaignAssetsMap && (
-                                        <div className="flex bg-gray-50 rounded-full p-1 border border-gray-100">
-                                            {Object.keys(brief.campaignAssetsMap).map(aud => (
+                                <div className="flex flex-wrap items-center justify-between gap-3 mb-4 border-b border-gray-100 pb-4">
+                                    <h3 className="font-bold text-[#003B7A]">{t('Materiales Visuales a Evaluar', 'Assets being Tested')}</h3>
+                                    {Object.keys(combinedCreativeAssetsMap).length > 0 && (
+                                        <div className="flex flex-wrap bg-gray-50 rounded-full p-1 border border-gray-100 gap-1">
+                                            {Object.keys(combinedCreativeAssetsMap).map(aud => (
                                                 <button
                                                     key={aud}
+                                                    disabled={isBusy}
                                                     onClick={() => setSelectedCreativeAudience(aud)}
-                                                    className={`px-4 py-1.5 rounded-full text-xs font-black transition-all ${selectedCreativeAudience === aud
-                                                        ? 'bg-white text-[#0077C8] shadow-sm'
+                                                    className={`px-4 py-1.5 rounded-full text-xs font-black transition-all disabled:opacity-50 ${selectedCreativeAudience === aud || (!selectedCreativeAudience && Object.keys(combinedCreativeAssetsMap)[0] === aud)
+                                                        ? 'bg-white text-[#0066FF] shadow-sm'
                                                         : 'text-subtext hover:text-heading'
                                                         }`}
                                                 >
-                                                    {aud}
+                                                    {localizePersonaLabel(aud, language)}
                                                 </button>
                                             ))}
                                         </div>
                                     )}
                                 </div>
-                                {(!brief?.campaignAssetsMap && !brief?.campaignAssets) ? (
+                                {(Object.keys(combinedCreativeAssetsMap).length === 0 && !brief?.campaignAssets) ? (
                                     <div className="text-center py-12 bg-gray-50/50 rounded-xl border-2 border-dashed border-gray-200">
                                         <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-100">
-                                            <Sparkles className="text-[#0077C8]" size={32} />
+                                            <Sparkles className="text-[#0066FF]" size={32} />
                                         </div>
-                                        <h4 className="text-lg font-black text-heading mb-2">No Campaign Assets Found</h4>
-                                        <p className="text-subtext mb-6 max-w-sm mx-auto font-medium">
-                                            We couldn't find any generated assets linked to this brief. Try refreshing if you just generated them.
+                                        <h4 className="text-lg font-black text-[#003B7A] mb-2">{t('Aún no hay imágenes o banners cargados', 'No Campaign Assets Loaded Yet')}</h4>
+                                        <p className="text-subtext mb-6 max-w-md mx-auto font-medium">
+                                            {t(
+                                                'Sube un banner o imagen arriba para evaluarlo de inmediato, o carga los materiales desde tu Brief de Marketing.',
+                                                'Upload a custom creative image above to test it immediately, or refresh/generate assets from your Marketing Brief.'
+                                            )}
                                         </p>
-                                        <div className="flex gap-4 justify-center">
+                                        <div className="flex flex-wrap gap-4 justify-center">
+                                            <button
+                                                type="button"
+                                                onClick={() => customCreativeInputRef.current?.click()}
+                                                className="btn-primary flex items-center gap-2"
+                                            >
+                                                <Upload size={18} />
+                                                {t('Cargar Imagen / Banner', 'Upload Custom Image')}
+                                            </button>
                                             <button
                                                 onClick={refreshBriefData}
                                                 className="btn-secondary flex items-center gap-2"
                                             >
                                                 <History size={20} />
-                                                Refresh Data
+                                                {t('Actualizar Datos del Brief', 'Refresh Brief Data')}
                                             </button>
-                                            <button
-                                                onClick={handleRunCreativeSim}
-                                                disabled={isCreativeLoading || syntheticUsers.length === 0}
-                                                title={syntheticUsers.length === 0 ? "You must generate users in the Synthetic Users tab first." : ""}
-                                                className="btn-primary flex items-center gap-2"
-                                            >
-                                                {isCreativeLoading ? <Loader2 className="animate-spin" size={20} /> : <Play size={20} />}
-                                                Generate Assets & Run Test
-                                            </button>
+                                            {brief && (
+                                                <button
+                                                    onClick={handleRunCreativeSim}
+                                                    disabled={isCreativeLoading}
+                                                    className="btn-secondary flex items-center gap-2"
+                                                >
+                                                    {isCreativeLoading ? <Loader2 className="animate-spin" size={20} /> : <Play size={20} />}
+                                                    {t('Generar Materiales del Brief y Evaluar', 'Generate Brief Assets & Run Test')}
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 ) : (
@@ -1461,21 +3159,21 @@ export const SyntheticTesting: React.FC = () => {
                                         {activeCreativeAssets?.image && (
                                                 <div className="w-full md:w-1/3 flex-shrink-0">
                                                     <img src={activeCreativeAssets?.image} className="w-full aspect-square object-cover rounded-xl border border-gray-100 shadow-sm" />
-                                                    <p className="text-[10px] text-center mt-3 font-black text-subtext uppercase tracking-widest">Main Concept Image</p>
+                                                    <p className="text-[10px] text-center mt-3 font-black text-subtext uppercase tracking-widest">{t('Imagen Principal del Concepto', 'Main Concept Image')}</p>
                                             </div>
                                         )}
                                             <div className="flex-1 p-6 bg-gray-50 rounded-xl border border-gray-100 text-sm shadow-sm flex flex-col justify-center">
-                                                <p className="font-black text-heading text-[10px] uppercase tracking-widest mb-3 flex items-center gap-2">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-[#0077C8]" />
-                                                Social Caption
+                                                <p className="font-black text-[#003B7A] text-[10px] uppercase tracking-widest mb-3 flex items-center gap-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
+                                                {t('Copy para Redes Sociales', 'Social Caption')}
                                             </p>
-                                                <p className="italic text-heading mb-6 font-medium leading-relaxed text-base">"{activeCreativeAssets?.social?.caption || 'No caption generated'}"</p>
-                                            <p className="font-black text-heading text-[10px] uppercase tracking-widest mb-2 flex items-center gap-2">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-[#0077C8]" />
-                                                Search Ad copy
+                                                <p className="italic text-heading mb-6 font-medium leading-relaxed text-base">"{activeCreativeAssets?.social?.caption || t('Sin copy generado', 'No caption generated')}"</p>
+                                            <p className="font-black text-[#003B7A] text-[10px] uppercase tracking-widest mb-2 flex items-center gap-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
+                                                {t('Anuncio de Buscador', 'Search Ad copy')}
                                             </p>
-                                                <p className="text-heading font-black text-base mb-1">{activeCreativeAssets?.search?.headline || 'No headline'}</p>
-                                                <p className="text-subtext text-sm leading-relaxed font-medium">{activeCreativeAssets?.search?.description || 'No description'}</p>
+                                                <p className="text-heading font-black text-base mb-1">{activeCreativeAssets?.search?.headline || t('Sin titular', 'No headline')}</p>
+                                                <p className="text-subtext text-sm leading-relaxed font-medium">{activeCreativeAssets?.search?.description || t('Sin descripción', 'No description')}</p>
                                         </div>
                                     </div>
                                 )}
@@ -1485,53 +3183,118 @@ export const SyntheticTesting: React.FC = () => {
                             {creativeResults.length > 0 && (
                                 <div className="content-card lg:col-span-2">
                                     <h3 className="font-black text-heading mb-6 flex items-center gap-2 uppercase tracking-widest text-sm">
-                                        Focus Group Feedback Summary
+                                        {t('Resumen de Retroalimentación del Focus Group', 'Focus Group Feedback Summary')}
                                         <div className="group relative">
                                             <Info size={16} className="text-subtext cursor-help" />
                                             <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-64 bg-heading text-white text-[10px] p-4 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none border border-white/10 leading-relaxed font-medium">
-                                                Aggregated scoring insights from all synthetic Healthco personas in this cohort.
+                                                {t('Calificaciones agregadas de todos los perfiles sintéticos de esta cohorte.', 'Aggregated scoring insights from all synthetic personas in this cohort.')}
                                                 <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-heading" />
                                             </div>
                                         </div>
                                     </h3>
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                                        <div className="bg-gray-50 p-5 rounded-2xl text-center relative group cursor-help transition-all border border-gray-100 hover:border-[#0077C8] shadow-sm">
+                                        <div className="bg-gray-50 p-5 rounded-2xl text-center relative group cursor-help transition-all border border-gray-100 hover:border-[#0066FF] shadow-sm">
                                             <div className="text-3xl font-black text-heading">{Math.round(displayedCreativeResults.reduce((a, b) => a + b.visualAppeal, 0) / displayedCreativeResults.length) || 0}</div>
-                                            <div className="text-[10px] font-black text-subtext uppercase tracking-widest mt-1">Consistency</div>
+                                            <div className="text-[10px] font-black text-subtext uppercase tracking-widest mt-1">{t('Diseño y Atractivo Visual', 'Visual Appeal')}</div>
                                             {/* Tooltip */}
                                             <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-48 bg-heading text-white text-[10px] font-medium p-3 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none border border-white/10 leading-relaxed">
-                                                How aesthetics align with expectations for modern healthcare experiences.
+                                                {t('Qué tan bien se alinea la estética con las expectativas clínicas modernas.', 'How aesthetics align with expectations for modern healthcare experiences.')}
                                                 <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-heading" />
                                             </div>
                                         </div>
-                                        <div className="bg-red-50 p-5 rounded-2xl text-center relative group cursor-help transition-all border border-red-100 hover:border-red-500 shadow-sm">
-                                            <div className="text-3xl font-black text-red-600">{Math.round(displayedCreativeResults.reduce((a, b) => a + b.brandFit, 0) / displayedCreativeResults.length) || 0}</div>
-                                            <div className="text-[10px] font-black text-red-700 uppercase tracking-widest mt-1">Brand Fit</div>
+                                        <div className="bg-blue-50 p-5 rounded-2xl text-center relative group cursor-help transition-all border border-blue-100 hover:border-[#0066FF] shadow-sm">
+                                            <div className="text-3xl font-black text-[#0066FF]">{Math.round(displayedCreativeResults.reduce((a, b) => a + b.brandFit, 0) / displayedCreativeResults.length) || 0}</div>
+                                            <div className="text-[10px] font-black text-[#003B7A] uppercase tracking-widest mt-1">{t('Afinidad con la Marca', 'Brand Fit')}</div>
                                             {/* Tooltip */}
                                             <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-48 bg-heading text-white text-[10px] font-medium p-3 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none border border-white/10 leading-relaxed">
-                                                How well the creative aligns with Healthco Health's core brand identity.
+                                                {t('Qué tan bien se alinea el material con la identidad clínica de Chopo.', 'How well the creative aligns with Chopo core brand identity.')}
                                                 <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-heading" />
                                             </div>
                                         </div>
                                         <div className="bg-green-50 p-5 rounded-2xl text-center relative group cursor-help transition-all border border-green-100 hover:border-green-500 shadow-sm">
                                             <div className="text-3xl font-black text-green-600">{Math.round(displayedCreativeResults.reduce((a, b) => a + (b.conversionLikelihood || 0), 0) / displayedCreativeResults.length) || 0}</div>
-                                            <div className="text-[10px] font-black text-green-700 uppercase tracking-widest mt-1">Growth</div>
+                                            <div className="text-[10px] font-black text-green-700 uppercase tracking-widest mt-1">{t('Intención de Agendar', 'Conversion Likelihood')}</div>
                                             {/* Tooltip */}
                                             <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-48 bg-heading text-white text-[10px] font-medium p-3 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none border border-white/10 leading-relaxed">
-                                                Likelihood of the audience engaging with the proposed plan or service.
+                                                {t('Probabilidad de que la audiencia agende o contrate el estudio propuesto.', 'Likelihood of the audience engaging with the proposed plan or service.')}
                                                 <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-heading" />
                                             </div>
                                         </div>
                                         <div className="bg-purple-50 p-5 rounded-2xl text-center relative group cursor-help transition-all border border-purple-100 hover:border-purple-500 shadow-sm">
                                             <div className="text-3xl font-black text-purple-600">{Math.round(displayedCreativeResults.reduce((a, b) => a + (b.stoppingPower || 0), 0) / displayedCreativeResults.length) || 0}</div>
-                                            <div className="text-[10px] font-black text-purple-700 uppercase tracking-widest mt-1">Clarity</div>
+                                            <div className="text-[10px] font-black text-purple-700 uppercase tracking-widest mt-1">{t('Impacto Visual y Claridad', 'Visual Impact & Clarity')}</div>
                                             {/* Tooltip */}
                                             <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-48 bg-heading text-white text-[10px] font-medium p-3 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none border border-white/10 leading-relaxed">
-                                                Ability for the messaging to be understood clearly and instantly.
+                                                {t('Capacidad del mensaje e imagen para captar la atención y entenderse al instante.', 'Ability for the messaging to be understood clearly and instantly.')}
                                                 <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-heading" />
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Dynamic Rubrics Aggregated Breakdown Card */}
+                                    {displayedCreativeResults.some(r => Array.isArray(r.rubricScores) && r.rubricScores.length > 0) && (
+                                        <div className="mt-6 pt-6 border-t border-gray-100">
+                                            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                                                <h4 className="font-black text-[#003B7A] text-xs uppercase tracking-widest flex items-center gap-2">
+                                                    <ClipboardList size={16} className="text-[#0066FF]" />
+                                                    {t('Desempeño por Criterio de Evaluación (Rúbricas Dinámicas)', 'Performance by Evaluation Criterion (Dynamic Rubrics)')}
+                                                </h4>
+                                                <button
+                                                    type="button"
+                                                    onClick={openRubricsModal}
+                                                    className="text-xs font-bold text-[#0066FF] hover:underline flex items-center gap-1"
+                                                >
+                                                    <Settings size={12} />
+                                                    {t('Editar Rúbricas', 'Edit Rubrics')}
+                                                </button>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {(() => {
+                                                    const rubricMap: Record<string, { name: string; total: number; count: number; weight?: number }> = {};
+                                                    displayedCreativeResults.forEach(r => {
+                                                        (r.rubricScores || []).forEach((rs: any) => {
+                                                            const key = rs.rubricId || rs.rubricKey || rs.rubricName;
+                                                            if (!rubricMap[key]) {
+                                                                const matchedRubric = rubrics.find(rub => rub.id === rs.rubricId || rub.key === rs.rubricKey);
+                                                                rubricMap[key] = {
+                                                                    name: rs.rubricName || matchedRubric?.name || key,
+                                                                    total: 0,
+                                                                    count: 0,
+                                                                    weight: matchedRubric?.weight
+                                                                };
+                                                            }
+                                                            rubricMap[key].total += Number(rs.score) || 0;
+                                                            rubricMap[key].count += 1;
+                                                        });
+                                                    });
+                                                    return Object.entries(rubricMap).map(([key, item]) => {
+                                                        const avg = Math.round(item.total / (item.count || 1));
+                                                        return (
+                                                            <div key={key} className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                                                <div className="flex justify-between items-center text-xs mb-1.5">
+                                                                    <span className="font-bold text-heading">
+                                                                        {item.name}
+                                                                        {item.weight !== undefined && (
+                                                                            <span className="ml-1.5 text-[10px] text-subtext font-semibold">({item.weight}%)</span>
+                                                                        )}
+                                                                    </span>
+                                                                    <span className={`font-black ${avg >= 80 ? 'text-green-600' : avg >= 55 ? 'text-[#0066FF]' : 'text-amber-600'}`}>
+                                                                        {avg} / 100
+                                                                    </span>
+                                                                </div>
+                                                                <div className="h-2.5 w-full bg-white rounded-full overflow-hidden border border-gray-200">
+                                                                    <div
+                                                                        className={`h-full rounded-full transition-all duration-500 ${avg >= 80 ? 'bg-green-500' : avg >= 55 ? 'bg-[#0066FF]' : 'bg-amber-500'}`}
+                                                                        style={{ width: `${Math.min(100, Math.max(0, avg))}%` }}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    });
+                                                })()}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -1539,39 +3302,67 @@ export const SyntheticTesting: React.FC = () => {
                             <div className="content-card">
                                 <h3 className="font-black text-heading mb-6 flex items-center gap-2 uppercase tracking-widest text-sm">
                                     <Zap size={20} className="text-yellow-500" />
-                                    Persona Optimization insights
+                                    {t('Recomendaciones de Optimización por Perfil', 'Persona Optimization Insights')}
                                 </h3>
-                                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
                                     {/* Group by Persona Name to show 1 idea per audience type if multiple per type, or just map if 1:1 */
                                         Object.values(displayedCreativeResults.reduce((acc, r) => {
                                             if (!acc[r.personaName]) acc[r.personaName] = r;
                                             return acc;
                                         }, {} as Record<string, typeof displayedCreativeResults[0]>)).map((r: any, i) => (
-                                            <div key={i} className="border border-gray-100 rounded-2xl p-5 bg-gray-50 shadow-sm">
-                                                <div className="flex items-center gap-3 mb-4">
-                                                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-[#0077C8] font-black text-xs border border-blue-100 shadow-sm">
-                                                        {r.personaName.charAt(0)}
+                                            <div key={i} className="border border-gray-100 rounded-2xl p-5 bg-gray-50 shadow-sm space-y-4">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-[#0066FF] font-black text-xs border border-blue-100 shadow-sm">
+                                                            {getPersonaInitial(localizePersonaLabel(r.personaName, language))}
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-black text-heading text-sm uppercase tracking-widest">{localizePersonaLabel(r.personaName, language)}</div>
+                                                            {r.weightedOverallScore !== undefined && (
+                                                                <div className="text-[11px] font-bold text-[#0066FF]">
+                                                                    {t('Calificación Ponderada:', 'Weighted Score:')} {r.weightedOverallScore}/100
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                    <div className="font-black text-heading text-sm uppercase tracking-widest">{r.personaName}</div>
                                                 </div>
 
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm relative overflow-hidden">
-                                                        <div className="absolute top-0 left-0 w-1 h-full bg-[#0077C8]/20" />
+                                                        <div className="absolute top-0 left-0 w-1 h-full bg-[#0066FF]/20" />
                                                         <div className="text-[10px] font-black text-subtext uppercase mb-2 flex items-center gap-2 opacity-60">
-                                                            <MessageSquare size={12} /> Messaging Strategy
+                                                            <MessageSquare size={12} /> {t('Estrategia de Mensaje', 'Messaging Strategy')}
                                                         </div>
-                                                        <p className="text-xs text-heading italic font-medium leading-relaxed">"{r.suggestedMessaging || 'No specific suggestion.'}"</p>
+                                                        <p className="text-xs text-heading italic font-medium leading-relaxed">"{r.suggestedImprovement || r.suggestedMessaging || t('Sin sugerencia específica.', 'No specific suggestion.')}"</p>
                                                     </div>
 
                                                     <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm relative overflow-hidden">
-                                                        <div className="absolute top-0 left-0 w-1 h-full bg-[#0077C8]/20" />
+                                                        <div className="absolute top-0 left-0 w-1 h-full bg-[#0066FF]/20" />
                                                         <div className="text-[10px] font-black text-subtext uppercase mb-2 flex items-center gap-2 opacity-60">
-                                                            <Image size={12} /> Visual Direction
+                                                            <Image size={12} /> {t('Dirección Visual / Barreras Detectadas', 'Visual Direction / Barriers Detected')}
                                                         </div>
-                                                        <p className="text-xs text-heading italic font-medium leading-relaxed">"{r.suggestedImage || 'No specific visual suggestion.'}"</p>
+                                                        <p className="text-xs text-heading italic font-medium leading-relaxed">"{r.barriersOrConcerns || r.suggestedImage || t('Sin sugerencia visual específica.', 'No specific visual suggestion.')}"</p>
                                                     </div>
                                                 </div>
+
+                                                {Array.isArray(r.rubricScores) && r.rubricScores.length > 0 && (
+                                                    <div className="pt-2 border-t border-gray-200/70">
+                                                        <div className="text-[10px] font-black text-[#003B7A] uppercase tracking-wider mb-2">
+                                                            {t('Evaluación Detallada por Rúbrica', 'Detailed Evaluation by Rubric')}
+                                                        </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                                                            {r.rubricScores.map((rs: any, idx: number) => (
+                                                                <div key={idx} className="bg-white p-3 rounded-xl border border-gray-100 text-xs">
+                                                                    <div className="flex justify-between items-center mb-1">
+                                                                        <span className="font-bold text-slate-800">{rs.rubricName || rs.rubricKey}</span>
+                                                                        <span className="font-black text-[#0066FF]">{rs.score}/100</span>
+                                                                    </div>
+                                                                    <p className="text-[11px] text-subtext leading-snug italic">"{rs.rationale}"</p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                 </div>
@@ -1581,14 +3372,14 @@ export const SyntheticTesting: React.FC = () => {
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <div className="content-card max-h-[500px] overflow-y-auto custom-scrollbar">
                                     <h3 className="font-black text-heading mb-6 flex items-center gap-2 uppercase tracking-widest text-sm">
-                                        <Edit2 size={20} className="text-[#0077C8]" />
-                                        Copy Enhancement ideas
+                                        <Edit2 size={20} className="text-[#0066FF]" />
+                                        {t('Ideas de Mejora de Copy', 'Copy Enhancement ideas')}
                                     </h3>
                                     <div className="space-y-4">
                                         {displayedCreativeResults.filter(r => r.copyEdit && r.copyEdit !== "None").map((r, i) => (
                                             <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden">
-                                                <div className="absolute top-0 left-0 w-1 h-full bg-[#0077C8]" />
-                                                <div className="text-[10px] font-black text-[#0077C8] mb-2 uppercase tracking-widest">{r.personaName}</div>
+                                                <div className="absolute top-0 left-0 w-1 h-full bg-[#0066FF]" />
+                                                <div className="text-[10px] font-black text-[#0066FF] mb-2 uppercase tracking-widest">{localizePersonaLabel(r.personaName, language)}</div>
                                                 <p className="text-xs text-heading font-medium leading-relaxed italic">"{r.copyEdit}"</p>
                                             </div>
                                         ))}
@@ -1597,14 +3388,14 @@ export const SyntheticTesting: React.FC = () => {
 
                                 <div className="content-card max-h-[500px] overflow-y-auto custom-scrollbar">
                                     <h3 className="font-bold text-heading mb-4 flex items-center gap-2">
-                                        <ShoppingBag size={18} className="text-[#0077C8]" />
-                                        Product Alternatives
+                                        <ShoppingBag size={18} className="text-[#0066FF]" />
+                                        {t('Estudios Alternativos Sugeridos', 'Product Alternatives')}
                                     </h3>
                                     <div className="space-y-3">
                                         {displayedCreativeResults.filter(r => r.suggestedProduct && r.suggestedProduct !== "None").slice(0, 20).map((r, i) => (
                                             <div key={i} className="flex justify-between items-center bg-gray-50/50 p-3 rounded-xl border border-gray-100">
-                                                <span className="text-sm text-subtext font-bold">{r.personaName}</span>
-                                                <span className="text-sm font-black text-[#0077C8]">{r.suggestedProduct}</span>
+                                                <span className="text-sm text-subtext font-bold">{localizePersonaLabel(r.personaName, language)}</span>
+                                                <span className="text-sm font-black text-[#0066FF]">{r.suggestedProduct}</span>
                                             </div>
                                         ))}
                                     </div>
@@ -1613,13 +3404,15 @@ export const SyntheticTesting: React.FC = () => {
 
                             {/* Existing Verbatim Feedback - moved down */}
                             <div className="content-card max-h-[400px] overflow-y-auto custom-scrollbar">
-                                <h3 className="font-bold text-heading mb-4 uppercase tracking-widest text-xs">Verbatim Feedback</h3>
+                                <h3 className="font-bold text-heading mb-4 uppercase tracking-widest text-xs">{t('Comentarios Textuales', 'Verbatim Feedback')}</h3>
                                 <div className="space-y-3">
                                     {displayedCreativeResults.map((r, i) => (
                                         <div key={i} className="bg-gray-50/50 p-4 rounded-xl border border-gray-100">
                                             <div className="flex justify-between text-[10px] font-black text-subtext mb-2 uppercase tracking-widest">
-                                                <span>{r.personaName}</span>
-                                                <span className={r.sentiment === 'Positive' ? 'text-green-600' : r.sentiment === 'Negative' ? 'text-red-600' : 'text-subtext'}>{r.sentiment}</span>
+                                                <span>{localizePersonaLabel(r.personaName, language)}</span>
+                                                <span className={r.sentiment === 'Positive' ? 'text-green-600' : r.sentiment === 'Negative' ? 'text-red-600' : 'text-subtext'}>
+                                                    {r.sentiment === 'Positive' ? t('Positivo', 'Positive') : r.sentiment === 'Negative' ? t('Negativo', 'Negative') : t('Neutral', 'Neutral')}
+                                                </span>
                                             </div>
                                             <p className="text-sm text-heading leading-relaxed italic">"{r.feedback}"</p>
                                         </div>
@@ -1630,29 +3423,39 @@ export const SyntheticTesting: React.FC = () => {
                     )}
 
                     {activeTab === 'AB_TEST' && (
-                        <div className="space-y-6">
+                        <div className={`space-y-6 ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
                             <div className="content-card flex justify-between items-center">
                                 <div>
-                                    <h3 className="text-lg font-black text-heading">Campaign Strategic A/B Testing</h3>
-                                    <p className="text-sm text-subtext">Generate strategic variants & simulate multi-variant testing on {syntheticUsers.length} synthetic users.</p>
+                                    <h3 className="text-lg font-black text-heading">{t('Pruebas A/B Estratégicas de Campaña', 'Campaign Strategic A/B Testing')}</h3>
+                                    <p className="text-sm text-subtext">{t(`Genera variantes estratégicas y simula pruebas multivariante con ${syntheticUsers.length} usuarios sintéticos.`, `Generate strategic variants & simulate multi-variant testing on ${syntheticUsers.length} synthetic users.`)}</p>
                                 </div>
-                                <div className="flex gap-4">
+                                <div className="flex flex-wrap items-center gap-3">
                                     <button
-                                        onClick={() => handleLoadLast('AB_TEST_SIMULATION')}
-                                        disabled={isABTestingLoading}
-                                        className="btn-secondary flex items-center gap-2"
-                                        title="Load Last Run"
+                                        type="button"
+                                        disabled={isBusy}
+                                        onClick={() => setIsSyntheticUsersModalOpen(true)}
+                                        title={t("Ver e inspeccionar la lista de participantes sintéticos activos", "View and inspect the list of active synthetic participants")}
+                                        className="flex items-center gap-2 bg-[#EFF6FF] hover:bg-blue-100 px-3.5 py-2 rounded-xl border border-blue-200 text-xs font-bold text-[#003B7A] transition-colors cursor-pointer disabled:opacity-50"
                                     >
-                                        <History size={18} />
+                                        <span>{t(`👥 Ver / Inspeccionar Participantes Evaluados (${syntheticUsers.length})`, `👥 View / Inspect Evaluated Participants (${syntheticUsers.length})`)}</span>
+                                    </button>
+                                    <button
+                                        onClick={() => refreshBriefData(true)}
+                                        disabled={isBusy}
+                                        className="btn-secondary flex items-center gap-2 text-xs font-bold"
+                                        title={t("Recupera las promociones, mensajes clave, correos, estudios e imágenes generados en el último Brief de Marketing", "Loads the promotions, key messages, emails, studies, and images generated in the latest Marketing Brief")}
+                                    >
+                                        <RotateCcw size={16} />
+                                        {t('Traer datos del último Brief', 'Load from latest Brief')}
                                     </button>
                                     <button
                                         onClick={handleRunABTestSim}
-                                        disabled={isABTestingLoading || syntheticUsers.length === 0}
-                                        title={syntheticUsers.length === 0 ? "You must generate users in the Synthetic Users tab first." : ""}
+                                        disabled={isBusy || syntheticUsers.length === 0}
+                                        title={syntheticUsers.length === 0 ? t("Primero debes generar usuarios en la pestaña Usuarios Sintéticos.", "You must generate users in the Synthetic Users tab first.") : ""}
                                         className="btn-primary flex items-center gap-2"
                                     >
                                         {isABTestingLoading ? <div className="animate-spin h-5 w-5 border-b-2 border-white rounded-full" /> : <Play size={20} />}
-                                        Run Simulation
+                                        {t('Ejecutar Simulación', 'Run Simulation')}
                                     </button>
                                 </div>
                             </div>
@@ -1661,8 +3464,8 @@ export const SyntheticTesting: React.FC = () => {
                             {regionalVariants.length > 0 && (
                                 <div className="content-card">
                                     <h3 className="font-black text-heading mb-6 flex items-center gap-2 uppercase tracking-widest text-sm">
-                                        <Image size={20} className="text-[#0077C8]" />
-                                        Regional Variants Generated
+                                        <Image size={20} className="text-[#0066FF]" />
+                                        {t('Variantes Generadas', 'Regional Variants Generated')}
                                     </h3>
                                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                                         {regionalVariants.map((v, i) => (
@@ -1686,7 +3489,7 @@ export const SyntheticTesting: React.FC = () => {
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                     {/* Stats Column */}
                                     <div className="content-card">
-                                        <h3 className="font-black text-heading mb-4 uppercase tracking-widest text-sm">Variant Performance (Avg Score)</h3>
+                                        <h3 className="font-black text-heading mb-4 uppercase tracking-widest text-sm">{t('Desempeño por Variante (Promedio)', 'Variant Performance (Avg Score)')}</h3>
                                         <div className="space-y-3">
                                             {/* Calculate Average Scores */}
                                             {(() => {
@@ -1701,7 +3504,7 @@ export const SyntheticTesting: React.FC = () => {
                                                 const sortedScores = Object.entries(scores).sort((a, b) => (b[1].total / b[1].count) - (a[1].total / a[1].count));
 
                                                 if (sortedScores.length === 0) {
-                                                    return <div className="text-sm text-subtext">No ranking data available for this run.</div>;
+                                                    return <div className="text-sm text-subtext">{t('No hay datos de ranking disponibles.', 'No ranking data available for this run.')}</div>;
                                                 }
 
                                                 return sortedScores.map(([variant, data]) => {
@@ -1709,7 +3512,7 @@ export const SyntheticTesting: React.FC = () => {
                                                     return (
                                                         <div key={variant} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
                                                             <span className="font-bold text-sm text-heading">{variant}</span>
-                                                            <span className="font-black text-[#0077C8]">{avg} / 10</span>
+                                                            <span className="font-black text-[#0066FF]">{avg} / 10</span>
                                                         </div>
                                                     );
                                                 });
@@ -1719,29 +3522,31 @@ export const SyntheticTesting: React.FC = () => {
 
                                     {/* Feedback Column */}
                                     <div className="lg:col-span-2 content-card max-h-[600px] overflow-y-auto custom-scrollbar">
-                                        <h3 className="font-black text-heading mb-4 uppercase tracking-widest text-sm">Persona Feedback</h3>
+                                        <h3 className="font-black text-heading mb-4 uppercase tracking-widest text-sm">{t('Retroalimentación por Perfil', 'Persona Feedback')}</h3>
                                         <div className="space-y-4">
                                             {abTestResults.map((r, i) => (
                                                 <div key={i} className="p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-sm relative overflow-hidden">
                                                     <div className={`absolute top-0 left-0 w-1 h-full ${r.sentiment === 'Positive' ? 'bg-green-500' : r.sentiment === 'Negative' ? 'bg-red-500' : 'bg-blue-500'} `} />
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div>
-                                                            <div className="text-[10px] font-black text-subtext uppercase tracking-widest">{r.personaName}</div>
-                                                            <div className="text-sm font-bold text-heading mt-1">Top Choice: <span className="text-[#0077C8]">{r.selectedVariant}</span></div>
+                                                            <div className="text-[10px] font-black text-subtext uppercase tracking-widest">{localizePersonaLabel(r.personaName, language)}</div>
+                                                            <div className="text-sm font-bold text-heading mt-1">{t('Mejor Opción:', 'Top Choice:')} <span className="text-[#0066FF]">{r.selectedVariant}</span></div>
                                                         </div>
-                                                        <span className={`text-xs font-black uppercase tracking-widest px-2 py-1 rounded ${r.sentiment === 'Positive' ? 'bg-green-100 text-green-700' : r.sentiment === 'Negative' ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-700'}`}>{r.sentiment}</span>
+                                                        <span className={`text-xs font-black uppercase tracking-widest px-2 py-1 rounded ${r.sentiment === 'Positive' ? 'bg-green-100 text-green-700' : r.sentiment === 'Negative' ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-700'}`}>
+                                                            {r.sentiment === 'Positive' ? t('Positivo', 'Positive') : r.sentiment === 'Negative' ? t('Negativo', 'Negative') : t('Neutral', 'Neutral')}
+                                                        </span>
                                                     </div>
                                                     <p className="text-sm text-heading italic font-medium mt-2 mb-4">"{// @ts-ignore
-                                                        r.overallFeedback || r.rationale || 'No feedback'}"</p>
+                                                        r.overallFeedback || r.rationale || t('Sin retroalimentación', 'No feedback')}"</p>
 
                                                     {r.rankings && r.rankings.length > 0 && (
                                                         <div className="mt-4 space-y-2 border-t border-gray-100 pt-4">
-                                                            <div className="text-[10px] font-black text-subtext uppercase tracking-widest mb-2">Variant Rankings</div>
+                                                            <div className="text-[10px] font-black text-subtext uppercase tracking-widest mb-2">{t('Calificación de Variantes', 'Variant Rankings')}</div>
                                                             {r.rankings.map((rank, idx) => (
                                                                 <div key={idx} className="flex flex-col gap-1 bg-white p-3 rounded-lg border border-gray-100">
                                                                     <div className="flex justify-between items-center mb-1">
                                                                         <span className="font-bold text-sm text-heading">{rank.variantName}</span>
-                                                                        <span className="font-black text-[#0077C8]">{rank.score}/10</span>
+                                                                        <span className="font-black text-[#0066FF]">{rank.score}/10</span>
                                                                     </div>
                                                                     <p className="text-xs text-subtext leading-relaxed">"{rank.rationale}"</p>
                                                                 </div>
@@ -1762,154 +3567,734 @@ export const SyntheticTesting: React.FC = () => {
             {/* Status Footer */}
             {status && (
                 <div className="fixed bottom-6 right-6 bg-white text-heading px-8 py-5 rounded-2xl shadow-2xl flex items-center gap-5 z-50 animate-bounce-in border border-blue-100 backdrop-blur-md">
-                    <div className="animate-spin h-5 w-5 border-2 border-[#0077C8] border-t-transparent rounded-full" />
-                    <span className="font-black text-[10px] uppercase tracking-widest text-[#0077C8]">{status}</span>
+                    <div className="animate-spin h-5 w-5 border-2 border-[#0066FF] border-t-transparent rounded-full" />
+                    <span className="font-black text-[10px] uppercase tracking-widest text-[#0066FF]">{status}</span>
                 </div>
             )}
 
-            {/* Add Audience Modal */}
+            {/* Add & Manage Audience Modal (Fixed Schema + AI + Rollback) */}
             {isAddAudienceModalOpen && (
-                <div className="fixed inset-0 bg-heading/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-8 border border-gray-100 overflow-hidden relative">
-                        <div className="absolute top-0 left-0 w-full h-2 bg-[#0077C8]"></div>
-                        <div className="flex justify-between items-center mb-8">
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-slate-200 overflow-hidden relative">
+                        <div className="w-full h-1.5 bg-[#0066FF]" />
+                        <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-white">
                             <div className="flex items-center gap-3">
-                                <Users className="text-[#0077C8]" size={28} />
-                                <h3 className="text-2xl font-black text-heading">Add New Audience</h3>
+                                <Users className="text-[#0066FF]" size={26} />
+                                <div>
+                                    <h3 className="text-xl font-bold text-[#003B7A]">{t('Agregar o Restaurar Perfiles de Audiencia', 'Add or Restore Audience Personas')}</h3>
+                                    <p className="text-xs text-subtext">{t('Esquema fijo depurado (Paciente B2C / Médico B2B) con respaldo y rollback en Firestore.', 'Standardized fixed schema (B2C Patient / B2B Physician) with Firestore backup and rollback.')}</p>
+                                </div>
                             </div>
-                            <button onClick={() => setIsAddAudienceModalOpen(false)} className="text-subtext hover:text-heading transition-colors p-2 hover:bg-gray-100 rounded-full"><X size={24} /></button>
+                            <button disabled={isSavingPersonas || isGeneratingWildcard} onClick={() => setIsAddAudienceModalOpen(false)} className="text-subtext hover:text-heading transition-colors p-2 hover:bg-gray-100 rounded-full disabled:opacity-50"><X size={22} /></button>
                         </div>
 
-                        <div className="space-y-6 mb-8">
+                        <div className={`p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar ${(isSavingPersonas || isGeneratingWildcard) ? 'pointer-events-none opacity-65 select-none' : ''}`}>
                             <div className="flex flex-col gap-2">
-                                <label className="block text-[10px] font-black text-subtext uppercase tracking-widest">Select From Standards</label>
-                                <div className="grid grid-cols-2 gap-2">
+                                <label className="block text-[10px] font-black text-subtext uppercase tracking-widest">{t('Seleccionar Perfil Base Oficial', 'Select From Official Standards')}</label>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     {STANDARD_AUDIENCES.map((std) => (
-                                        <button 
+                                        <button
                                             key={std.id}
+                                            disabled={isSavingPersonas || isGeneratingWildcard}
                                             onClick={() => {
-                                                setPersonas([...personas, { ...std, isWildcard: false }]);
+                                                const updated = [...personas, { ...std, isWildcard: false }];
+                                                persistPersonasAllChannels(updated, `Agregado perfil estándar: ${std.personaName}`);
                                                 setIsAddAudienceModalOpen(false);
                                             }}
-                                            className="text-left p-3 rounded-2xl border border-gray-100 hover:border-blue-300 hover:bg-blue-50 transition-all flex items-center gap-3 group"
+                                            className="text-left p-3 rounded-2xl border border-gray-100 hover:border-blue-300 hover:bg-blue-50 transition-all flex items-center gap-3 group disabled:opacity-50"
                                         >
                                             <div className="w-8 h-8 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0 group-hover:scale-110 transition-transform">
                                                 <img src={std.imageUrl} className="w-full h-full object-cover" alt={std.name} />
                                             </div>
-                                            <div>
-                                                <div className="text-[10px] font-black text-heading uppercase truncate w-24">{std.name}</div>
-                                                <div className="text-[8px] font-bold text-subtext">{std.demographics.split(',')[0]}</div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-[11px] font-black text-heading truncate">{std.name}</div>
+                                                <div className="text-[10px] font-bold text-subtext truncate">{std.personaName} • {std.job_title}</div>
                                             </div>
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
-                            <div className="relative">
-                                <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                                    <div className="w-full border-t border-gray-100"></div>
-                                </div>
-                                <div className="relative flex justify-center text-xs uppercase font-black text-subtext/40">
-                                    <span className="bg-white px-2">Or Design Custom</span>
-                                </div>
+                            {/* Mode Toggle: Fixed Schema Form vs AI Criteria */}
+                            <div className="flex gap-2 border-b border-gray-100 pb-3">
+                                <button
+                                    type="button"
+                                    disabled={isSavingPersonas || isGeneratingWildcard}
+                                    onClick={() => setShowManualPersonaForm(false)}
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${!showManualPersonaForm ? 'bg-[#0066FF] text-white' : 'bg-gray-100 text-subtext hover:text-heading'}`}
+                                >
+                                    {t('✨ Generar con IA por Criterios', '✨ AI Generate from Criteria')}
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={isSavingPersonas || isGeneratingWildcard}
+                                    onClick={() => setShowManualPersonaForm(true)}
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${showManualPersonaForm ? 'bg-[#0066FF] text-white' : 'bg-gray-100 text-subtext hover:text-heading'}`}
+                                >
+                                    {t('📝 Crear con Esquema Fijo Estandarizado', '📝 Create with Fixed Standardized Schema')}
+                                </button>
                             </div>
 
-                            <div>
-                                <label className="block text-[10px] font-black text-subtext uppercase tracking-widest mb-3">Custom Audience Criteria</label>
-                                <textarea
-                                    className="input-field h-32 text-sm"
-                                    placeholder="Describe the audience you want to test..."
-                                    value={audienceCriteria}
-                                    onChange={e => setAudienceCriteria(e.target.value)}
-                                />
-                            </div>
-                            <div className="bg-blue-50/50 p-5 rounded-2xl border border-blue-100 flex gap-4 shadow-sm">
-                                <Sparkles className="text-[#0077C8] flex-shrink-0 mt-1" size={20} />
-                                <div className="text-xs text-heading font-medium leading-relaxed">
-                                    <strong className="text-[#0077C8] block mb-1 uppercase tracking-widest font-black">AI Auto-Generation:</strong>
-                                    Gemini will create a full persona profile, including bio, demographics, and a photorealistic avatar based on your criteria.
+                            {showManualPersonaForm ? (
+                                <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200 space-y-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Nombre del Segmento', 'Segment Name')}</label>
+                                            <input
+                                                type="text"
+                                                value={newManualPersona.name}
+                                                onChange={e => setNewManualPersona({ ...newManualPersona, name: e.target.value })}
+                                                placeholder={t('ej. [Paciente B2C] Control Diabetes', 'e.g. [B2C Patient] Diabetes Control')}
+                                                className="input-field text-xs py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Nombre y Edad/Ciudad', 'Persona Name')}</label>
+                                            <input
+                                                type="text"
+                                                value={newManualPersona.personaName}
+                                                onChange={e => setNewManualPersona({ ...newManualPersona, personaName: e.target.value })}
+                                                placeholder={t('ej. Laura Méndez (46, CDMX)', 'e.g. Laura Mendez (46, CDMX)')}
+                                                className="input-field text-xs py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Pista (Track)', 'Track')}</label>
+                                            <select
+                                                value={newManualPersona.track}
+                                                onChange={e => setNewManualPersona({ ...newManualPersona, track: e.target.value as 'patient' | 'physician' })}
+                                                className="input-field text-xs py-2"
+                                            >
+                                                <option value="patient">{t('Paciente B2C', 'B2C Patient')}</option>
+                                                <option value="physician">{t('Médico Prescriptor B2B', 'B2B Prescribing Physician')}</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Edad (Numérica)', 'Age (Numeric)')}</label>
+                                            <input
+                                                type="number"
+                                                value={newManualPersona.age}
+                                                onChange={e => setNewManualPersona({ ...newManualPersona, age: Number(e.target.value) || 40 })}
+                                                className="input-field text-xs py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Ocupación / Especialidad', 'Job Title / Specialty')}</label>
+                                            <input
+                                                type="text"
+                                                value={newManualPersona.job_title}
+                                                onChange={e => setNewManualPersona({ ...newManualPersona, job_title: e.target.value })}
+                                                placeholder={t('ej. Médico Internista / Contador', 'e.g. Internist / Accountant')}
+                                                className="input-field text-xs py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Demografía y NSE', 'Demographics & SES')}</label>
+                                            <input
+                                                type="text"
+                                                value={newManualPersona.demographics}
+                                                onChange={e => setNewManualPersona({ ...newManualPersona, demographics: e.target.value })}
+                                                placeholder={t('ej. 40-55 años, CDMX, NSE C+', 'e.g. 40-55 yrs, CDMX, SES C+')}
+                                                className="input-field text-xs py-2"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Biografía Clínica', 'Clinical Bio')}</label>
+                                        <textarea
+                                            value={newManualPersona.bio}
+                                            onChange={e => setNewManualPersona({ ...newManualPersona, bio: e.target.value })}
+                                            className="input-field text-xs h-16"
+                                            placeholder={t('Describe su contexto clínico, hábitos digitales y relación con Laboratorios Chopo...', 'Describe their clinical context, digital habits, and relationship with Chopo...')}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Puntos de Dolor (1 por línea)', 'Pain Points (1 per line)')}</label>
+                                            <textarea
+                                                value={newManualPersona.pain_points_text}
+                                                onChange={e => setNewManualPersona({ ...newManualPersona, pain_points_text: e.target.value })}
+                                                className="input-field text-xs h-20"
+                                                placeholder={t('Incertidumbre sobre horas de ayuno\nFalta de tiempo por las mañanas', 'Uncertainty about fasting hours\nLack of time in the morning')}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Objetivos de Salud (1 por línea)', 'Health Goals (1 per line)')}</label>
+                                            <textarea
+                                                value={newManualPersona.goals_text}
+                                                onChange={e => setNewManualPersona({ ...newManualPersona, goals_text: e.target.value })}
+                                                className="input-field text-xs h-20"
+                                                placeholder={t('Pagar en línea con descuento\nRecibir resultados en App Chopo', 'Pay online with discount\nReceive digital results in Chopo App')}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end">
+                                        <button
+                                            type="button"
+                                            disabled={isSavingPersonas}
+                                            onClick={handleCreateManualPersona}
+                                            className="btn-primary text-xs py-2.5 px-5 flex items-center gap-2"
+                                        >
+                                            <Save size={14} />
+                                            {t('Guardar Perfil en Firestore', 'Save Persona to Firestore')}
+                                        </button>
+                                    </div>
                                 </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-[10px] font-black text-subtext uppercase tracking-widest mb-2">{t('Criterios del Perfil', 'Custom Audience Criteria')}</label>
+                                        <textarea
+                                            className="input-field h-24 text-sm"
+                                            placeholder={t("Describe el perfil de paciente o médico que deseas evaluar...", "Describe the audience you want to test...")}
+                                            value={audienceCriteria}
+                                            onChange={e => setAudienceCriteria(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <button
+                                            onClick={() => handleAddAudience()}
+                                            className="flex-1 btn-secondary py-3 text-sm"
+                                        >
+                                            {t('Perfil Exploratorio Aleatorio', 'Surprise Me')}
+                                        </button>
+                                        <button
+                                            onClick={() => handleAddAudience(audienceCriteria)}
+                                            disabled={!audienceCriteria.trim()}
+                                            className="flex-1 btn-primary py-3 text-sm shadow-xl shadow-blue-500/20"
+                                        >
+                                            {t('Generar Perfil', 'Generate Audience')}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Persona Version Rollback Section */}
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                        <h4 className="text-xs font-black text-[#003B7A] uppercase tracking-wider flex items-center gap-1.5">
+                                            <History size={14} className="text-[#0066FF]" />
+                                            {t('Historial de Versiones de Perfiles', 'Persona Version History')}
+                                        </h4>
+                                        <p className="text-[11px] text-subtext">
+                                            {t('Restaura cualquier versión previa guardada o vuelve a los perfiles iniciales por defecto.', 'Restore any previous saved snapshot or reset to the default personas.')}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        disabled={isSavingPersonas}
+                                        onClick={() => handleRestorePersonas('OFFICIAL_SEED')}
+                                        className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-100 flex items-center gap-1.5"
+                                    >
+                                        <RotateCcw size={13} />
+                                        {t('Restaurar Valores por Defecto', 'Restore Default Values')}
+                                    </button>
+                                </div>
+                                {personaVersions.length > 0 && (
+                                    <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                                        {personaVersions.map((ver) => (
+                                            <div key={ver.versionId} className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200 text-xs">
+                                                <div>
+                                                    <span className="font-bold text-slate-800">{ver.label}</span>
+                                                    <span className="text-slate-400 ml-2">{(ver.timestamp || (ver as any).createdAt) ? new Date(ver.timestamp || (ver as any).createdAt).toLocaleString('es-MX') : ''} ({ver.itemCount})</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    disabled={isSavingPersonas}
+                                                    onClick={() => handleRestorePersonas(ver.versionId)}
+                                                    className="px-2.5 py-1 rounded bg-blue-50 text-[#0066FF] font-bold hover:bg-blue-100"
+                                                >
+                                                    {t('Restaurar', 'Restore')}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Audience Details & Fixed-Schema Editor Modal */}
+            {selectedAudience && (
+                <div className="fixed inset-0 bg-heading/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] border border-gray-100 relative">
+                        <div className="absolute top-0 left-0 w-full h-2 bg-[#0066FF]"></div>
+                        {/* Header */}
+                        <div className="bg-white p-6 border-b border-gray-100 flex justify-between items-start">
+                            <div className="flex gap-5">
+                                <div className="w-20 h-20 rounded-2xl bg-gray-50 overflow-hidden shadow-sm flex-shrink-0 border border-gray-100">
+                                    {selectedAudience.imageUrl ? <img src={selectedAudience.imageUrl} className="w-full h-full object-cover" /> : <Users size={36} className="m-auto mt-6 text-subtext" />}
+                                </div>
+                                <div>
+                                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                                        <h3 className="text-2xl font-black text-heading">{localizePersonaLabel(selectedAudience.name, language)}</h3>
+                                        <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-full uppercase tracking-wider ${selectedAudience.track === 'physician' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-blue-50 text-[#0066FF] border border-blue-200'}`}>
+                                            {selectedAudience.track === 'physician' ? t('Pista Médico B2B', 'B2B Physician Track') : t('Pista Paciente B2C', 'B2C Patient Track')}
+                                        </span>
+                                    </div>
+                                    <div className="text-subtext font-bold uppercase tracking-widest text-xs flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-[#0066FF]" />
+                                        {localizePersonaLabel(selectedAudience.personaName, language)}
+                                        {(selectedAudience.age || selectedAudience.details?.age) && (
+                                            <span>• {selectedAudience.age ? `${selectedAudience.age} ${t('años', 'yrs')}` : selectedAudience.details?.age}</span>
+                                        )}
+                                        {(selectedAudience.job_title || selectedAudience.details?.job_title) && (
+                                            <span>• {selectedAudience.job_title || selectedAudience.details?.job_title}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    disabled={isSavingPersonas}
+                                    onClick={() => setIsEditingSelectedAudience(!isEditingSelectedAudience)}
+                                    className="px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-[#0066FF] text-xs font-bold flex items-center gap-1 hover:bg-blue-100 disabled:opacity-50"
+                                >
+                                    <Edit2 size={13} />
+                                    {isEditingSelectedAudience ? t('Cancelar Edición', 'Cancel Edit') : t('Editar Perfil', 'Edit Persona')}
+                                </button>
+                                <button disabled={isSavingPersonas} onClick={() => setSelectedAudience(null)} className="text-subtext hover:text-heading transition-all p-2 hover:bg-gray-100 rounded-full disabled:opacity-50"><X size={22} /></button>
                             </div>
                         </div>
 
-                        <div className="flex gap-4">
+                        {/* Content */}
+                        <div className={`p-8 overflow-y-auto space-y-6 custom-scrollbar ${isSavingPersonas ? 'pointer-events-none opacity-65 select-none' : ''}`}>
+                            {isEditingSelectedAudience && editAudienceForm ? (
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Segmento', 'Segment')}</label>
+                                            <input
+                                                type="text"
+                                                value={editAudienceForm.name}
+                                                onChange={e => setEditAudienceForm({ ...editAudienceForm, name: e.target.value })}
+                                                className="input-field text-xs py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Nombre Persona', 'Persona Name')}</label>
+                                            <input
+                                                type="text"
+                                                value={editAudienceForm.personaName}
+                                                onChange={e => setEditAudienceForm({ ...editAudienceForm, personaName: e.target.value })}
+                                                className="input-field text-xs py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Pista (Track)', 'Track')}</label>
+                                            <select
+                                                value={editAudienceForm.track}
+                                                onChange={e => setEditAudienceForm({ ...editAudienceForm, track: e.target.value })}
+                                                className="input-field text-xs py-2"
+                                            >
+                                                <option value="patient">{t('Paciente B2C', 'B2C Patient')}</option>
+                                                <option value="physician">{t('Médico B2B', 'B2B Physician')}</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Edad', 'Age')}</label>
+                                            <input
+                                                type="number"
+                                                value={editAudienceForm.age}
+                                                onChange={e => setEditAudienceForm({ ...editAudienceForm, age: Number(e.target.value) || 40 })}
+                                                className="input-field text-xs py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Ocupación / Especialidad', 'Job Title / Specialty')}</label>
+                                            <input
+                                                type="text"
+                                                value={editAudienceForm.job_title}
+                                                onChange={e => setEditAudienceForm({ ...editAudienceForm, job_title: e.target.value })}
+                                                className="input-field text-xs py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Demografía', 'Demographics')}</label>
+                                            <input
+                                                type="text"
+                                                value={editAudienceForm.demographics}
+                                                onChange={e => setEditAudienceForm({ ...editAudienceForm, demographics: e.target.value })}
+                                                className="input-field text-xs py-2"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Biografía', 'Bio')}</label>
+                                        <textarea
+                                            value={editAudienceForm.bio}
+                                            onChange={e => setEditAudienceForm({ ...editAudienceForm, bio: e.target.value })}
+                                            className="input-field text-xs h-20"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Puntos de Dolor (1 por línea)', 'Pain Points (1 per line)')}</label>
+                                            <textarea
+                                                value={editAudienceForm.pain_points_text}
+                                                onChange={e => setEditAudienceForm({ ...editAudienceForm, pain_points_text: e.target.value })}
+                                                className="input-field text-xs h-24"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Objetivos (1 por línea)', 'Goals (1 per line)')}</label>
+                                            <textarea
+                                                value={editAudienceForm.goals_text}
+                                                onChange={e => setEditAudienceForm({ ...editAudienceForm, goals_text: e.target.value })}
+                                                className="input-field text-xs h-24"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Bio */}
+                                    <div>
+                                        <h4 className="text-[10px] font-black text-subtext uppercase tracking-widest mb-2">{t('Biografía y Contexto Clínico', 'Bio & Lifestyle Persona')}</h4>
+                                        <p className="text-heading text-base leading-relaxed font-medium italic">"{selectedAudience.bio}"</p>
+                                    </div>
+
+                                    {/* Demographics & Job Title */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                                            <h4 className="text-[10px] font-black text-subtext uppercase tracking-widest mb-1">{t('Demografía y Ocupación', 'Demographics & Occupation')}</h4>
+                                            <div className="font-bold text-heading text-sm">
+                                                {selectedAudience.demographics || "N/A"}
+                                            </div>
+                                            {(selectedAudience.job_title || selectedAudience.details?.job_title) && (
+                                                <div className="text-xs text-[#0066FF] font-bold mt-1">
+                                                    {selectedAudience.job_title || selectedAudience.details?.job_title}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                                            <h4 className="text-[10px] font-black text-subtext uppercase tracking-widest mb-2">{t('Etiquetas e Intereses', 'Interest Tags')}</h4>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {(selectedAudience.lifestyle_tags || selectedAudience.details?.lifestyle_tags || []).map((tag: string, i: number) => (
+                                                    <span key={i} className="px-3 py-1 bg-blue-50 text-[#0066FF] rounded-xl text-xs font-black border border-blue-100">{tag}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Pain Points & Goals (Fixed Schema) */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="bg-red-50/50 p-4 rounded-2xl border border-red-100">
+                                            <h4 className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-2">{t('Puntos de Dolor (Pain Points)', 'Pain Points')}</h4>
+                                            <ul className="space-y-1.5 text-xs text-slate-700">
+                                                {(selectedAudience.pain_points || selectedAudience.details?.pain_points || []).map((pt: string, idx: number) => (
+                                                    <li key={idx} className="flex gap-1.5">
+                                                        <span className="text-red-500 font-bold">•</span>
+                                                        <span>{pt}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                        <div className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
+                                            <h4 className="text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-2">{t('Objetivos y Motivadores (Goals)', 'Goals & Drivers')}</h4>
+                                            <ul className="space-y-1.5 text-xs text-slate-700">
+                                                {(selectedAudience.goals || selectedAudience.details?.goals || []).map((gl: string, idx: number) => (
+                                                    <li key={idx} className="flex gap-1.5">
+                                                        <span className="text-emerald-600 font-bold">•</span>
+                                                        <span>{gl}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+                            {isEditingSelectedAudience && (
+                                <button
+                                    type="button"
+                                    disabled={isSavingPersonas}
+                                    onClick={handleSaveSelectedAudienceEdits}
+                                    className="px-6 py-2 bg-[#0066FF] text-white rounded-lg font-bold hover:bg-[#004ECC] transition-colors flex items-center gap-2 disabled:opacity-50"
+                                >
+                                    <Save size={16} />
+                                    {t('Guardar Cambios en Firestore', 'Save Changes to Firestore')}
+                                </button>
+                            )}
                             <button
-                                onClick={() => handleAddAudience()}
-                                className="flex-1 btn-secondary py-4 text-sm"
+                                disabled={isSavingPersonas}
+                                onClick={() => setSelectedAudience(null)}
+                                className="btn-secondary px-6 py-2 text-sm font-bold disabled:opacity-50"
                             >
-                                Surprise Me
-                            </button>
-                            <button
-                                onClick={() => handleAddAudience(audienceCriteria)}
-                                disabled={!audienceCriteria.trim()}
-                                className="flex-1 btn-primary py-4 text-sm shadow-xl shadow-blue-500/20"
-                            >
-                                Generate Audience
+                                {t('Cerrar', 'Close')}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Audience Details Modal */}
-            {selectedAudience && (
-                <div className="fixed inset-0 bg-heading/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] border border-gray-100 relative">
-                        <div className="absolute top-0 left-0 w-full h-2 bg-[#0077C8]"></div>
-                        {/* Header */}
-                        <div className="bg-white p-8 border-b border-gray-50 flex justify-between items-start">
-                            <div className="flex gap-6">
-                                <div className="w-24 h-24 rounded-2xl bg-gray-50 overflow-hidden shadow-sm flex-shrink-0 border border-gray-100">
-                                    {selectedAudience.imageUrl ? <img src={selectedAudience.imageUrl} className="w-full h-full object-cover" /> : <Users size={40} className="m-auto mt-8 text-subtext" />}
-                                </div>
-                                <div className="mt-2">
-                                    <div className="flex items-center gap-3 mb-2">
-                                        <h3 className="text-3xl font-black text-heading">{selectedAudience.name}</h3>
-                                        {selectedAudience.isWildcard && <span className="px-3 py-1 bg-red-50 text-red-600 text-[10px] font-black rounded-full uppercase tracking-widest border border-red-100">Wildcard</span>}
-                                    </div>
-                                    <div className="text-subtext font-bold uppercase tracking-widest text-xs flex items-center gap-2">
-                                        <div className="w-2 h-2 rounded-full bg-[#0077C8]" />
-                                        {selectedAudience.personaName}
-                                    </div>
-                                </div>
-                            </div>
-                            <button onClick={() => setSelectedAudience(null)} className="text-subtext hover:text-heading transition-all p-2 hover:bg-gray-100 rounded-full"><X size={24} /></button>
-                        </div>
-
-                        {/* Content */}
-                        <div className="p-10 overflow-y-auto space-y-8 custom-scrollbar">
-                            {/* Bio */}
-                            <div>
-                                <h4 className="text-[10px] font-black text-subtext uppercase tracking-widest mb-3">Bio & Lifestyle Persona</h4>
-                                <p className="text-heading text-lg leading-relaxed font-black/10 font-medium italic">"{selectedAudience.bio}"</p>
-                            </div>
-
-                            {/* Demographics */}
-                            <div className="grid grid-cols-2 gap-8">
+            {/* Dynamic Rubrics & Rollback Modal */}
+            {isRubricsModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-200 relative">
+                        <div className="w-full h-1.5 bg-[#0066FF]" />
+                        <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-white">
+                            <div className="flex items-center gap-3">
+                                <ClipboardList className="text-[#0066FF]" size={26} />
                                 <div>
-                                    <h4 className="text-[10px] font-black text-subtext uppercase tracking-widest mb-3">Audience Demographics</h4>
-                                    <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100 font-bold text-heading text-sm shadow-sm">
-                                        {selectedAudience.demographics || "N/A"}
-                                    </div>
-                                </div>
-                                <div>
-                                    <h4 className="text-[10px] font-black text-subtext uppercase tracking-widest mb-3">Interest Tags</h4>
-                                    <div className="flex flex-wrap gap-2">
-                                        {selectedAudience.details?.lifestyle_tags?.map((tag: string, i: number) => (
-                                            <span key={i} className="px-4 py-1.5 bg-blue-50 text-[#0077C8] rounded-xl text-xs font-black border border-blue-100 shadow-sm">{tag}</span>
-                                        )) || <span className="text-subtext italic">No specific tags identified.</span>}
-                                    </div>
+                                    <h3 className="text-xl font-bold text-[#003B7A]">
+                                        {t('Criterios de Evaluación del Focus Group (Rúbricas Dinámicas)', 'Focus Group Evaluation Criteria (Dynamic Rubrics)')}
+                                    </h3>
+                                    <p className="text-xs text-slate-500">
+                                        {t('Configura las rúbricas ponderadas y anclas de calificación (0–100) con respaldo de versiones en Firestore.', 'Configure weighted rubrics and scoring anchors (0–100) with Firestore version history.')}
+                                    </p>
                                 </div>
                             </div>
-                        </div>
-
-                        {/* Footer */}
-                        <div className="p-6 border-t border-gray-800 bg-[#111] flex justify-end">
                             <button
-                                onClick={() => setSelectedAudience(null)}
-                                className="px-6 py-2 bg-white text-black rounded-lg font-bold hover:bg-gray-200 transition-colors"
+                                disabled={isSavingRubrics}
+                                onClick={() => setIsRubricsModalOpen(false)}
+                                className="text-slate-400 hover:text-slate-800 p-2 rounded-full hover:bg-slate-100 disabled:opacity-50"
                             >
-                                Close
+                                <X size={22} />
+                            </button>
+                        </div>
+
+                        <div className={`p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/50 custom-scrollbar ${isSavingRubrics ? 'pointer-events-none opacity-65 select-none' : ''}`}>
+                            {/* Rubric Pills & New Button */}
+                            <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex flex-wrap gap-2">
+                                    {rubrics.map((rub) => (
+                                        <div
+                                            key={rub.id}
+                                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                                                editingRubric?.id === rub.id
+                                                    ? 'bg-[#0066FF] text-white border-[#0066FF]'
+                                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-[#0066FF]'
+                                            }`}
+                                            onClick={() => setEditingRubric({ ...rub, scoringAnchors: { ...rub.scoringAnchors } })}
+                                        >
+                                            <span>{rub.name}</span>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${editingRubric?.id === rub.id ? 'bg-white/20 text-white' : 'bg-blue-50 text-[#0066FF]'}`}>
+                                                {rub.weight}%
+                                            </span>
+                                            {rubrics.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDeleteRubric(rub.id);
+                                                    }}
+                                                    className={`ml-1 hover:text-red-400 ${editingRubric?.id === rub.id ? 'text-white/80' : 'text-slate-400'}`}
+                                                    title={t('Eliminar Criterio', 'Delete Criterion')}
+                                                >
+                                                    <X size={12} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleStartNewRubric}
+                                    className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5 border-[#0066FF] text-[#0066FF]"
+                                >
+                                    <Plus size={14} />
+                                    {t('Nuevo Criterio / Rúbrica', 'New Criterion / Rubric')}
+                                </button>
+                            </div>
+
+                            {/* Rubric Editor Form */}
+                            {editingRubric && (
+                                <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
+                                                {t('Nombre del Criterio', 'Criterion Name')}
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={editingRubric.name}
+                                                onChange={(e) => setEditingRubric({ ...editingRubric, name: e.target.value })}
+                                                className="input-field text-sm"
+                                                placeholder={t('ej. Claridad del Mensaje en 3 Segundos', 'e.g. 3-Second Message Clarity')}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
+                                                {t('Pista Aplicable (Track)', 'Applicable Track')}
+                                            </label>
+                                            <select
+                                                value={editingRubric.track}
+                                                onChange={(e) => setEditingRubric({ ...editingRubric, track: e.target.value as 'patient' | 'physician' | 'both' })}
+                                                className="input-field text-sm"
+                                            >
+                                                <option value="both">{t('Ambas Pistas (Paciente B2C + Médico B2B)', 'Both Tracks (B2C + B2B)')}</option>
+                                                <option value="patient">{t('Solo Paciente B2C', 'B2C Patient Only')}</option>
+                                                <option value="physician">{t('Solo Médico Prescriptor B2B', 'B2B Physician Only')}</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
+                                                {t('Peso Ponderado (0–100%)', 'Weight (0–100%)')}
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={100}
+                                                value={editingRubric.weight}
+                                                onChange={(e) => setEditingRubric({ ...editingRubric, weight: Number(e.target.value) || 0 })}
+                                                className="input-field text-sm"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
+                                            {t('Pregunta de Evaluación para el Participante Sintético', 'Evaluation Question for Synthetic Participant')}
+                                        </label>
+                                        <textarea
+                                            value={editingRubric.evaluationQuestion}
+                                            onChange={(e) => setEditingRubric({ ...editingRubric, evaluationQuestion: e.target.value })}
+                                            className="input-field text-sm h-20"
+                                            placeholder={t('¿En menos de 3 segundos queda claro qué estudio ofrece Chopo y cuál es el beneficio principal?', 'Within 3 seconds, is it clear what study Chopo offers and its primary benefit?')}
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-red-700 uppercase mb-1">
+                                                {t('Ancla Baja (0 a 40 pts)', 'Low Anchor (0 to 40 pts)')}
+                                            </label>
+                                            <textarea
+                                                value={editingRubric.scoringAnchors.low_0_to_40}
+                                                onChange={(e) => setEditingRubric({
+                                                    ...editingRubric,
+                                                    scoringAnchors: { ...editingRubric.scoringAnchors, low_0_to_40: e.target.value }
+                                                })}
+                                                className="input-field text-xs h-24"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-amber-700 uppercase mb-1">
+                                                {t('Ancla Media (41 a 79 pts)', 'Mid Anchor (41 to 79 pts)')}
+                                            </label>
+                                            <textarea
+                                                value={editingRubric.scoringAnchors.mid_41_to_79}
+                                                onChange={(e) => setEditingRubric({
+                                                    ...editingRubric,
+                                                    scoringAnchors: { ...editingRubric.scoringAnchors, mid_41_to_79: e.target.value }
+                                                })}
+                                                className="input-field text-xs h-24"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-emerald-700 uppercase mb-1">
+                                                {t('Ancla Alta (80 a 100 pts)', 'High Anchor (80 to 100 pts)')}
+                                            </label>
+                                            <textarea
+                                                value={editingRubric.scoringAnchors.high_80_to_100}
+                                                onChange={(e) => setEditingRubric({
+                                                    ...editingRubric,
+                                                    scoringAnchors: { ...editingRubric.scoringAnchors, high_80_to_100: e.target.value }
+                                                })}
+                                                className="input-field text-xs h-24"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
+                                            {t('Etiqueta de Versión (Opcional)', 'Version Label (Optional)')}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={rubricVersionLabel}
+                                            onChange={(e) => setRubricVersionLabel(e.target.value)}
+                                            placeholder={t('ej. Mayor peso a claridad en 3s para campaña Diabetes', 'e.g. Higher weight on 3s clarity for Diabetes campaign')}
+                                            className="input-field text-sm"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Saved Versions & Rollback */}
+                            <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-4">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <h4 className="text-sm font-black text-[#003B7A] flex items-center gap-2 uppercase tracking-wider">
+                                            <History size={16} className="text-[#0066FF]" />
+                                            {t('🕒 Versiones Guardadas / Rollback', '🕒 Saved Versions / Rollback')}
+                                        </h4>
+                                        <p className="text-xs text-slate-500">
+                                            {t('Restaura cualquier versión previa o vuelve a los criterios iniciales por defecto.', 'Restore any previous rubric version or reset to the initial default rubrics.')}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        disabled={isSavingRubrics}
+                                        onClick={() => handleRestoreRubrics('OFFICIAL_SEED')}
+                                        className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5 border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                                    >
+                                        <RotateCcw size={14} />
+                                        {t('Restaurar Valores por Defecto', 'Restore Default Values')}
+                                    </button>
+                                </div>
+
+                                {rubricVersions.length > 0 ? (
+                                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                                        {rubricVersions.map((ver) => (
+                                            <div
+                                                key={ver.versionId}
+                                                className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+                                            >
+                                                <div>
+                                                    <span className="font-bold text-slate-800">{ver.label}</span>
+                                                    <span className="text-slate-400 ml-2">
+                                                        {(ver.timestamp || (ver as any).createdAt) ? new Date(ver.timestamp || (ver as any).createdAt).toLocaleString('es-MX') : ''} ({ver.itemCount} {t('criterios', 'rubrics')})
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    disabled={isSavingRubrics}
+                                                    onClick={() => handleRestoreRubrics(ver.versionId)}
+                                                    className="px-3 py-1 rounded-lg bg-white border border-blue-200 text-[#0066FF] font-bold hover:bg-blue-50"
+                                                >
+                                                    {t('Restaurar', 'Restore')}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-slate-400 italic">
+                                        {t('Aún no hay versiones personalizadas guardadas en el historial.', 'No custom versions saved in history yet.')}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-slate-200 bg-white flex justify-end gap-3">
+                            <button
+                                type="button"
+                                disabled={isSavingRubrics}
+                                onClick={() => setIsRubricsModalOpen(false)}
+                                className="btn-secondary disabled:opacity-50"
+                            >
+                                {t('Cerrar', 'Close')}
+                            </button>
+                            <button
+                                type="button"
+                                disabled={isSavingRubrics}
+                                onClick={handleApplyEditingRubric}
+                                className="btn-primary flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {isSavingRubrics ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                {t('Guardar Criterios', 'Save Rubrics')}
                             </button>
                         </div>
                     </div>
@@ -1918,117 +4303,348 @@ export const SyntheticTesting: React.FC = () => {
 
             {/* Cart Details Modal */}
             {selectedCartResult && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-[#111] rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh] border border-gray-800">
-                        <div className="bg-[#111] p-4 border-b border-gray-800 flex justify-between items-center">
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh] border border-slate-200">
+                        <div className="bg-white p-5 border-b border-slate-200 flex justify-between items-center">
                             <div>
-                                <h3 className="font-bold text-white flex items-center gap-2">
-                                    <ShoppingCart size={18} className="text-green-500" />
-                                    {selectedCartResult.personaName}'s Cart
+                                <h3 className="font-bold text-[#003B7A] flex items-center gap-2">
+                                    <ShoppingCart size={18} className="text-[#0066FF]" />
+                                    {t(`Estudios Seleccionados por ${selectedCartResult.personaName}`, `${selectedCartResult.personaName}'s Cart`)}
                                 </h3>
-                                <p className="text-xs text-gray-500">Purchased Items</p>
+                                <p className="text-xs text-slate-500">{t('Estudios Agendados', 'Purchased Items')}</p>
                             </div>
-                            <button onClick={() => setSelectedCartResult(null)} className="text-gray-500 hover:text-white"><X size={18} /></button>
+                            <button onClick={() => setSelectedCartResult(null)} className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100"><X size={18} /></button>
                         </div>
 
-                        <div className="p-4 overflow-y-auto flex-1 space-y-3">
+                        <div className="p-5 overflow-y-auto flex-1 space-y-3 bg-[#F8FAFC]">
                             {selectedCartResult.cart.filter(c => c.purchased).length > 0 ? (
                                 selectedCartResult.cart.filter(c => c.purchased).map((item, i) => (
-                                    <div key={i} className="flex gap-3 p-3 bg-green-900/10 rounded-xl border border-green-900/30">
-                                        <div className="bg-black p-2 rounded-lg h-fit border border-gray-800">
-                                            <ShoppingCart size={16} className="text-green-500" />
+                                    <div key={i} className="flex gap-3 p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
+                                        <div className="bg-emerald-50 p-2 rounded-lg h-fit border border-emerald-200">
+                                            <ShoppingCart size={16} className="text-emerald-600" />
                                         </div>
                                         <div className="flex-1">
-                                            <div className="font-bold text-white text-sm">{item.productName}</div>
-                                            <div className="text-green-400 text-xs mt-1">"{item.reason}"</div>
+                                            <div className="font-bold text-[#003B7A] text-sm">{item.productName}</div>
+                                            <div className="text-slate-600 text-xs mt-1 italic">"{item.reason}"</div>
                                         </div>
                                     </div>
                                 ))
                             ) : (
-                                <div className="text-center py-8 text-gray-500 italic">
-                                    No items purchased.
+                                <div className="text-center py-8 text-slate-500 italic">
+                                    {t('Ningún estudio seleccionado.', 'No items purchased.')}
                                 </div>
                             )}
-
-                            {/* Show missed opportunities (items strictly NOT purchased but with interesting reasons?) - Optional extension */}
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Email Stats Modal - REMOVED per user request to show inline */}
-            {/* selectedEmailStats is now used for inline expansion only */}
-
-
             {/* Products Modal */}
-            {showProducts && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-[#111] rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[80vh] border border-gray-800">
-                        <div className="bg-[#111] p-6 border-b border-gray-800 flex justify-between items-center">
+            {showProducts && activeTab === 'PURCHASE' && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[86vh] border border-slate-200">
+                        <div className="w-full h-1.5 bg-[#0066FF]" />
+                        <div className="bg-white p-6 border-b border-slate-200 flex justify-between items-center">
                             <div>
-                                <h3 className="font-bold text-white flex items-center gap-2 text-xl">
-                                    <ShoppingCart size={22} className="text-red-500" />
-                                    Target Products ({simulationProducts.length})
+                                <h3 className="font-bold text-[#003B7A] flex items-center gap-2 text-xl">
+                                    <ShoppingCart size={22} className="text-[#0066FF]" />
+                                    {t('Catálogo de Estudios a Evaluar', 'Target Diagnostic Studies')} ({simulationProducts.length})
                                 </h3>
-                                <p className="text-sm text-gray-400 mt-1">Products available for purchase in this simulation.</p>
+                                <p className="text-sm text-slate-500 mt-1">
+                                    {t('Configura el nombre, descripción y modalidad de atención (Sucursal y Domicilio, Solo en Sucursal o Solo a Domicilio) de cada estudio.', 'Configure the name, description, and service modality (Branch & Home, Branch Only, or Home Only) for each study.')}
+                                </p>
                             </div>
-                            <button onClick={() => setShowProducts(false)} className="text-gray-500 hover:text-white p-2"><X size={20} /></button>
+                            <button
+                                disabled={isBusy}
+                                onClick={() => {
+                                    setEditingProductIndex(null);
+                                    setShowProducts(false);
+                                }}
+                                className="text-slate-400 hover:text-slate-700 p-2 rounded-lg hover:bg-slate-100 disabled:opacity-50"
+                            >
+                                <X size={20} />
+                            </button>
                         </div>
 
-                        <div className="p-6 border-b border-gray-800 bg-gray-900/50">
-                            <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Add New Product</label>
-                            <div className="flex gap-2">
+                        <div className={`p-6 border-b border-slate-200 bg-[#F8FAFC] ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
+                            <label className="block text-xs font-bold text-[#003B7A] uppercase mb-2">{t('Agregar Nuevo Estudio', 'Add New Diagnostic Study')}</label>
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                                 <input
+                                    disabled={isBusy}
                                     value={newProduct}
                                     onChange={e => setNewProduct(e.target.value)}
                                     onKeyDown={e => {
                                         if (e.key === 'Enter' && newProduct.trim()) {
-                                            setSimulationProducts([...simulationProducts, newProduct.trim()]);
+                                            const formatted = formatSimulationProduct(newProduct.trim(), newProductModality);
+                                            setSimulationProducts([...simulationProducts, formatted]);
                                             setNewProduct("");
                                         }
                                     }}
-                                    placeholder="e.g. Premium Running Shoes"
-                                    className="flex-1 bg-black border border-gray-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500 transition-colors"
+                                    placeholder={t("ej. Check-up Básico o Mastografía Digital: Estudio preventivo", "e.g. Comprehensive Metabolic Panel or Digital Mammography")}
+                                    className="md:col-span-6 bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0066FF] transition-colors"
                                 />
+                                <select
+                                    disabled={isBusy}
+                                    value={newProductModality}
+                                    onChange={e => setNewProductModality(e.target.value as StudyModality)}
+                                    className="md:col-span-4 bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-[#003B7A] focus:outline-none focus:ring-2 focus:ring-[#0066FF]"
+                                >
+                                    <option value="Disponible en Sucursal y Domicilio">{t('Disponible en Sucursal y Domicilio', 'Branch & Home Service')}</option>
+                                    <option value="Disponible solo en Sucursal">{t('Disponible solo en Sucursal', 'Branch Only')}</option>
+                                    <option value="Disponible solo a Domicilio">{t('Disponible solo a Domicilio', 'Home Draw Only')}</option>
+                                </select>
                                 <button
                                     onClick={() => {
                                         if (newProduct.trim()) {
-                                            setSimulationProducts([...simulationProducts, newProduct.trim()]);
+                                            const formatted = formatSimulationProduct(newProduct.trim(), newProductModality);
+                                            setSimulationProducts([...simulationProducts, formatted]);
                                             setNewProduct("");
                                         }
                                     }}
-                                    disabled={!newProduct.trim()}
-                                    className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 justify-center"
+                                    disabled={isBusy || !newProduct.trim()}
+                                    className="md:col-span-2 bg-[#0066FF] hover:bg-[#004ECC] disabled:opacity-50 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center gap-1.5 justify-center"
                                 >
-                                    <Plus size={18} /> Add
+                                    <Plus size={16} /> {t('Agregar', 'Add')}
                                 </button>
                             </div>
                         </div>
 
-                        <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {simulationProducts.map((p, i) => (
-                                    <div key={i} className="group flex gap-3 p-3 bg-gray-900 rounded-xl border border-gray-800 hover:border-red-500/50 transition-colors">
-                                        <div className="w-10 h-10 rounded-lg bg-black flex items-center justify-center border border-gray-800 text-gray-500 flex-shrink-0">
-                                            <ShoppingCart size={16} />
+                        <div className={`p-6 overflow-y-auto custom-scrollbar flex-1 bg-white space-y-3 ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
+                            {simulationProducts.map((p, i) => {
+                                const parsed = parseSimulationProduct(p);
+                                const isEditingThis = editingProductIndex === i;
+
+                                if (isEditingThis) {
+                                    return (
+                                        <div key={i} className="p-4 bg-[#EFF6FF]/60 rounded-xl border border-[#0066FF] space-y-3">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-[#003B7A] uppercase mb-1">
+                                                        {t('Nombre del Estudio', 'Study Name')}
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        disabled={isBusy}
+                                                        value={editingProductTitle}
+                                                        onChange={e => setEditingProductTitle(e.target.value)}
+                                                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold text-[#003B7A] focus:outline-none focus:ring-2 focus:ring-[#0066FF]"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-[#003B7A] uppercase mb-1">
+                                                        {t('Modalidad de Atención', 'Service Modality')}
+                                                    </label>
+                                                    <select
+                                                        disabled={isBusy}
+                                                        value={editingProductModality}
+                                                        onChange={e => setEditingProductModality(e.target.value as StudyModality)}
+                                                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-[#003B7A] focus:outline-none focus:ring-2 focus:ring-[#0066FF]"
+                                                    >
+                                                        <option value="Disponible en Sucursal y Domicilio">{t('Disponible en Sucursal y Domicilio', 'Branch & Home Service')}</option>
+                                                        <option value="Disponible solo en Sucursal">{t('Disponible solo en Sucursal', 'Branch Only')}</option>
+                                                        <option value="Disponible solo a Domicilio">{t('Disponible solo a Domicilio', 'Home Draw Only')}</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-[#003B7A] uppercase mb-1">
+                                                    {t('Descripción / Parámetros Clínicos (Opcional)', 'Description / Clinical Parameters (Optional)')}
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    disabled={isBusy}
+                                                    value={editingProductDescription}
+                                                    onChange={e => setEditingProductDescription(e.target.value)}
+                                                    placeholder={t('ej. Incluye HbA1c, glucosa en ayuno y microalbuminuria', 'e.g. Includes HbA1c, fasting glucose, and microalbuminuria')}
+                                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0066FF]"
+                                                />
+                                            </div>
+                                            <div className="flex justify-end gap-2">
+                                                <button
+                                                    type="button"
+                                                    disabled={isBusy}
+                                                    onClick={() => setEditingProductIndex(null)}
+                                                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-xs font-bold hover:bg-slate-50"
+                                                >
+                                                    {t('Cancelar', 'Cancel')}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={isBusy || !editingProductTitle.trim()}
+                                                    onClick={() => {
+                                                        const updated = [...simulationProducts];
+                                                        updated[i] = formatSimulationProduct(editingProductTitle, editingProductModality, editingProductDescription);
+                                                        setSimulationProducts(updated);
+                                                        setEditingProductIndex(null);
+                                                    }}
+                                                    className="px-4 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#004ECC] text-white text-xs font-bold flex items-center gap-1.5"
+                                                >
+                                                    <CheckCircle2 size={14} />
+                                                    {t('Guardar Cambios', 'Save Changes')}
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                            <div className="text-sm font-bold text-white truncate" title={p}>{p.split(':')[0]}</div>
+                                    );
+                                }
+
+                                return (
+                                    <div key={i} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-[#F8FAFC] rounded-xl border border-slate-200 hover:border-[#0066FF]/50 transition-colors">
+                                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                                            <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center border border-slate-200 text-[#0066FF] flex-shrink-0 mt-0.5">
+                                                <ShoppingCart size={16} />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-sm font-bold text-[#003B7A] truncate" title={parsed.title}>
+                                                    {parsed.title}
+                                                </div>
+                                                {parsed.description && (
+                                                    <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
+                                                        {parsed.description}
+                                                    </p>
+                                                )}
+                                            </div>
                                         </div>
-                                        <button
-                                            onClick={() => setSimulationProducts(simulationProducts.filter((_, idx) => idx !== i))}
-                                            className="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2"
-                                            title="Remove Product"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
+
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <select
+                                                disabled={isBusy}
+                                                value={parsed.modality}
+                                                onChange={(e) => {
+                                                    const newMod = e.target.value as StudyModality;
+                                                    const updated = [...simulationProducts];
+                                                    updated[i] = formatSimulationProduct(parsed.title, newMod, parsed.description);
+                                                    setSimulationProducts(updated);
+                                                }}
+                                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border focus:outline-none focus:ring-2 focus:ring-[#0066FF] cursor-pointer ${
+                                                    parsed.modality === 'Disponible solo en Sucursal'
+                                                        ? 'bg-indigo-50 text-[#003B7A] border-indigo-200'
+                                                        : parsed.modality === 'Disponible solo a Domicilio'
+                                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                            : 'bg-[#EFF6FF] text-[#0066FF] border-blue-200'
+                                                }`}
+                                            >
+                                                <option value="Disponible en Sucursal y Domicilio">{t('Disponible en Sucursal y Domicilio', 'Branch & Home Service')}</option>
+                                                <option value="Disponible solo en Sucursal">{t('Disponible solo en Sucursal', 'Branch Only')}</option>
+                                                <option value="Disponible solo a Domicilio">{t('Disponible solo a Domicilio', 'Home Draw Only')}</option>
+                                            </select>
+
+                                            <button
+                                                type="button"
+                                                disabled={isBusy}
+                                                onClick={() => {
+                                                    setEditingProductIndex(i);
+                                                    setEditingProductTitle(parsed.title);
+                                                    setEditingProductDescription(parsed.description);
+                                                    setEditingProductModality(parsed.modality);
+                                                }}
+                                                className="p-2 rounded-lg text-slate-500 hover:text-[#0066FF] hover:bg-blue-50 transition-colors"
+                                                title={t("Editar Estudio", "Edit Study")}
+                                            >
+                                                <Edit2 size={15} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={isBusy}
+                                                onClick={() => {
+                                                    if (editingProductIndex === i) setEditingProductIndex(null);
+                                                    setSimulationProducts(simulationProducts.filter((_, idx) => idx !== i));
+                                                }}
+                                                className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                                title={t("Eliminar Estudio", "Remove Study")}
+                                            >
+                                                <Trash2 size={15} />
+                                            </button>
+                                        </div>
                                     </div>
-                                ))}
-                            </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+                            <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => {
+                                    setEditingProductIndex(null);
+                                    setShowProducts(false);
+                                }}
+                                className="btn-secondary px-5 py-2 text-xs font-bold"
+                            >
+                                {t('Cerrar', 'Close')}
+                            </button>
                         </div>
                     </div>
                 </div>
             )}
+            {/* Active Synthetic Users Inspector Modal */}
+            {isSyntheticUsersModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[86vh] border border-slate-200">
+                        <div className="w-full h-1.5 bg-[#0066FF]" />
+                        <div className="bg-white p-6 border-b border-slate-200 flex justify-between items-center">
+                            <div>
+                                <h3 className="font-bold text-[#003B7A] flex items-center gap-2 text-xl">
+                                    <Users size={22} className="text-[#0066FF]" />
+                                    {t('Usuarios Sintéticos Activos en Focus Group', 'Active Synthetic Users in Focus Group')} ({syntheticUsers.length})
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    {t(
+                                        'Estos perfiles generados en el módulo "Usuarios Sintéticos" son los participantes que evalúan tus Promociones, Brief, Emails, Compra de Estudios, Imágenes/Banners y A/B Tests.',
+                                        'These profiles generated in the "Synthetic Users" module are the participants evaluating your Promotions, Brief, Emails, Study Purchases, Creative Assets, and A/B Tests.'
+                                    )}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setIsSyntheticUsersModalOpen(false)}
+                                className="text-slate-400 hover:text-slate-700 p-2 rounded-lg hover:bg-slate-100"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-[#F8FAFC] space-y-3">
+                            {syntheticUsers.map((u, idx) => (
+                                <div key={u.id || idx} className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col gap-2">
+                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                        <div>
+                                            <div className="font-bold text-[#003B7A] text-sm">
+                                                {idx + 1}. {localizePersonaLabel(u.name || u.personaName, language)}
+                                            </div>
+                                            {u.demographics && (
+                                                <div className="text-xs text-slate-500 font-medium mt-0.5">
+                                                    {u.demographics}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <span className="px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-blue-200 text-[#0066FF] text-[11px] font-bold">
+                                            {localizePersonaLabel(u.baseAudienceName || u.personaName || u.name, language)}
+                                        </span>
+                                    </div>
+                                    {u.bio && (
+                                        <p className="text-xs text-slate-600 italic leading-relaxed border-l-2 border-blue-200 pl-3">
+                                            "{u.bio}"
+                                        </p>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="px-6 py-4 border-t border-slate-200 bg-white flex items-center justify-between gap-3">
+                            <span className="text-xs text-slate-500">
+                                {t('Para generar otra cantidad o cohorte, ve al módulo "Usuarios Sintéticos" en el menú lateral.', 'To generate a different count or cohort, go to the "Synthetic Users" module in the sidebar.')}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setIsSyntheticUsersModalOpen(false)}
+                                className="btn-secondary px-5 py-2 text-xs font-bold shrink-0"
+                            >
+                                {t('Cerrar', 'Close')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Interview Modal */}
             {interviewPersona && brief && (
                 <SyntheticInterview

@@ -1,7 +1,314 @@
-import { Schema, Type, Video } from "@google/genai";
+import { Schema, Type } from "@google/genai";
 import { brandConfig } from "../config";
-import type { MarketingAssets, MarketingBriefData, FeasibilityReport, CombinedPersona, ABTestResult, InterviewResult } from "../types";
-export type { MarketingAssets };
+import { getCurrentLanguage } from "../context/LanguageContext";
+import type {
+    MarketingAssets,
+    MarketingBriefData,
+    CombinedPersona,
+    ABTestResult,
+    InterviewResult,
+    FocusGroupRubric,
+    RubricScore,
+    ClinicalUseCase,
+    ConfigVersionSnapshot
+} from "../types";
+export type {
+    MarketingAssets,
+    FocusGroupRubric,
+    RubricScore,
+    ClinicalUseCase,
+    ConfigVersionSnapshot
+};
+
+export const MODEL_TEXT = "gemini-3.5-flash";
+
+const getLanguageInstruction = (): string => {
+    const lang = getCurrentLanguage();
+    if (lang === 'es') {
+        return `\nCRITICAL LANGUAGE RULE: Write all human-readable text values, bios, feedback, explanations, quotes, suggestions, and responses in natural Mexican Spanish (Español de México). However, you MUST keep all JSON property keys and enum tokens (such as 'Positive', 'Neutral', 'Negative', 'A', 'B') strictly in English ASCII exactly as defined in the output format.`;
+    }
+    return `\nCRITICAL LANGUAGE RULE: Write all output values and explanations in English.`;
+};
+
+// --- Fallback Official Rubrics (Used if /api/rubrics is unreachable) ---
+export const DEFAULT_CHOPO_RUBRICS: FocusGroupRubric[] = [
+    {
+        id: "clarity_3s",
+        name: "Claridad y Concisión (3 seg de Scroll)",
+        track: "both",
+        weight: 25,
+        evaluationQuestion: "¿Se entiende en 3 segundos de scroll en el celular qué estudio se anuncia y cuál es el beneficio principal sin saturar de texto?",
+        scoringAnchors: {
+            low_0_to_40: "El texto es demasiado largo (más de 3-4 líneas comerciales), parece un folleto o instructivo de sucursal (menciona batas, reglas internas o párrafos densos) y da flojera leerlo en redes sociales.",
+            mid_41_to_79: "El mensaje se entiende pero tiene palabras de más o el beneficio principal no destaca en la primera línea.",
+            high_80_to_100: "Mensaje directo, ágil y escaneable en menos de 3 segundos: gancho claro en la primera línea y llamado a la acción inmediato."
+        }
+    },
+    {
+        id: "visual_trust_warmth",
+        name: "Confianza Visual y Realismo Clínico",
+        track: "both",
+        weight: 25,
+        evaluationQuestion: "¿La imagen y el tono transmiten la confianza, modernidad tecnológica y calidez de 'Tu laboratorio de cabecera'?",
+        scoringAnchors: {
+            low_0_to_40: "La imagen se ve falsa, fría, anticuada (ej. doctores viendo placas radiográficas físicas viejas a contraluz), muestra agujas/sangre o tiene errores de vestimenta/equipo médico.",
+            mid_41_to_79: "Imagen aceptable pero genérica de foto de stock sin identidad clara de Chopo.",
+            high_80_to_100: "Fotografía auténtica, luminosa y moderna (entrega digital en App/tablet, vestimenta y equipo correctos, paleta azul/blanco Chopo) que inspira tranquilidad."
+        }
+    },
+    {
+        id: "digital_ease_promo",
+        name: "Atractivo Promocional y Facilidad Digital",
+        track: "patient",
+        weight: 25,
+        evaluationQuestion: "¿Qué tan fácil y conveniente se percibe agendar/pagar en línea (chopo.com.mx o App Chopo) y recibir resultados digitales?",
+        scoringAnchors: {
+            low_0_to_40: "No queda claro cómo agendar en línea, no menciona el beneficio de resultados digitales en la App/celular, o parece que hay que ir a hacer fila para cotizar.",
+            mid_41_to_79: "Menciona el sitio web pero no resalta la comodidad de pagar en línea o consultar resultados en el celular.",
+            high_80_to_100: "Motiva de inmediato a usar la App Chopo o chopo.com.mx por su practicidad (cero filas, precio especial en línea y resultados directo en el celular)."
+        }
+    },
+    {
+        id: "patient_action_intent",
+        name: "Intención de Agendar Estudio",
+        track: "patient",
+        weight: 25,
+        evaluationQuestion: "Con base en tus necesidades personales y familiares, ¿qué tan probable es que detengas el scroll y entres a chopo.com.mx o la App para agendar?",
+        scoringAnchors: {
+            low_0_to_40: "Pasaría de largo el anuncio ('scroll past') porque me aburrió, me generó desconfianza o no conecta con mi necesidad de salud.",
+            mid_41_to_79: "Me llama la atención el estudio pero lo dejaría para después.",
+            high_80_to_100: "Detendría el scroll y haría clic en este momento para cotizar o agendar mi estudio en línea."
+        }
+    },
+    {
+        id: "clinical_utility_rigor",
+        name: "Rigor Clínico y Utilidad Diagnóstica",
+        track: "physician",
+        weight: 25,
+        evaluationQuestion: "Como médico, ¿el mensaje proyecta seriedad científica, precisión analítica y utilidad real para el seguimiento de tus pacientes?",
+        scoringAnchors: {
+            low_0_to_40: "Tono sensacionalista o comercial superficial, promete diagnósticos mágicos, o carece de seriedad médica para respaldar mis decisiones clínicas.",
+            mid_41_to_79: "Mensaje correcto pero demasiado genérico para un profesional de la salud.",
+            high_80_to_100: "Comunica precisión diagnóstica, respaldo de especialistas certificados y entrega digital práctica para revisar resultados en consulta."
+        }
+    },
+    {
+        id: "physician_prescription_intent",
+        name: "Intención de Prescribir / Recomendar a Pacientes",
+        track: "physician",
+        weight: 25,
+        evaluationQuestion: "¿Qué tan probable es que recomiendes o envíes a tus pacientes a realizarse este estudio en Laboratorios Médicos El Chopo?",
+        scoringAnchors: {
+            low_0_to_40: "No lo recomendaría porque el anuncio confunde al paciente o muestra inconsistencias clínicas.",
+            mid_41_to_79: "Lo consideraría como una opción más entre varios laboratorios.",
+            high_80_to_100: "Lo recomendaría activamente a mis pacientes por su confiabilidad, accesibilidad y facilidad de consulta digital de resultados."
+        }
+    }
+];
+
+// --- Dynamic Catalog, Rubrics, Use Cases, Versioning & RAG Client Functions ---
+
+export const fetchPersonas = async (): Promise<CombinedPersona[]> => {
+    try {
+        const res = await fetch('/api/personas');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return Array.isArray(data) ? data : (data?.personas || []);
+    } catch (e) {
+        console.warn("Failed to fetch personas from /api/personas:", e);
+        return [];
+    }
+};
+
+export const savePersonas = async (personas: CombinedPersona[], label?: string): Promise<CombinedPersona[]> => {
+    const res = await fetch('/api/personas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personas, label })
+    });
+    if (!res.ok) throw new Error('Failed to save personas');
+    const data = await res.json();
+    return data?.personas || personas;
+};
+
+export const fetchRubrics = async (): Promise<FocusGroupRubric[]> => {
+    try {
+        const res = await fetch('/api/rubrics');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data?.rubrics || []);
+        return list.length > 0 ? list : DEFAULT_CHOPO_RUBRICS;
+    } catch (e) {
+        console.warn("Failed to fetch rubrics from /api/rubrics, using default seed rubrics:", e);
+        return DEFAULT_CHOPO_RUBRICS;
+    }
+};
+
+export const saveRubrics = async (rubrics: FocusGroupRubric[], label?: string): Promise<FocusGroupRubric[]> => {
+    const res = await fetch('/api/rubrics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rubrics, label })
+    });
+    if (!res.ok) throw new Error('Failed to save rubrics');
+    const data = await res.json();
+    return data?.rubrics || rubrics;
+};
+
+export const fetchUseCases = async (): Promise<ClinicalUseCase[]> => {
+    try {
+        const res = await fetch('/api/use-cases');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return Array.isArray(data) ? data : (data?.useCases || []);
+    } catch (e) {
+        console.warn("Failed to fetch use cases from /api/use-cases:", e);
+        return [];
+    }
+};
+
+export const saveUseCases = async (useCases: ClinicalUseCase[], label?: string): Promise<ClinicalUseCase[]> => {
+    const res = await fetch('/api/use-cases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ useCases, label })
+    });
+    if (!res.ok) throw new Error('Failed to save use cases');
+    const data = await res.json();
+    return data?.useCases || useCases;
+};
+
+export const fetchConfigVersions = async (
+    entityType: 'personas' | 'rubrics' | 'use_cases' | 'prompts' | 'rag_docs'
+): Promise<ConfigVersionSnapshot[]> => {
+    try {
+        const res = await fetch(`/api/config-versions/${entityType}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+    } catch (e) {
+        console.warn(`Failed to fetch config versions for ${entityType}:`, e);
+        return [];
+    }
+};
+
+export const restoreConfigVersion = async (
+    entityType: 'personas' | 'rubrics' | 'use_cases' | 'prompts' | 'rag_docs',
+    versionId: string
+): Promise<any> => {
+    const res = await fetch('/api/config-versions/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entityType, versionId })
+    });
+    if (!res.ok) throw new Error(`Failed to restore ${entityType} version ${versionId}`);
+    return res.json();
+};
+
+export const fetchRagDocs = async (): Promise<Record<string, string>> => {
+    try {
+        const res = await fetch('/api/rag/docs');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const docs = data?.documents || data?.docs || data;
+        if (docs && typeof docs === 'object' && !Array.isArray(docs) && Object.keys(docs).length > 0) {
+            return docs;
+        }
+    } catch (e) {
+        console.warn('Failed to fetch RAG docs from server:', e);
+    }
+    return {
+        '01_cofepris_lineamientos.md': '# Lineamientos COFEPRIS\n- Permiso de Publicidad COFEPRIS No. 2609152002A00518\n- Consulte a su médico.\n- Responsable Sanitario: Q.F.B. Jessica Alejandra Rivera Domínguez, Céd. Prof. 3602644, Univ. Simón Bolívar.',
+        '02_chopo_brand_manual.md': '# Manual de Identidad y Marca Laboratorios Médicos El Chopo\n- Paleta Azul Chopo (#004B87 / #0066FF) y Blanco Clínico (#FFFFFF).\n- Precio especial exclusivo pagando en línea en chopo.com.mx o App Chopo.',
+        '03_catalogo_estudios_diabetes.md': '# Catálogo de Estudios y Preparación Clínica\n- Check-up Control Diabetes (HbA1c, Química Sanguínea y EGO/Microalbuminuria).\n- Ayuno obligatorio de 8 a 12 horas.',
+        '04_reglas_realismo_clinico_y_operativo.md': '# Reglas de Imagen y Realismo Clínico\n- Resultados 100% digitales en App Chopo / smartphone / tablet (prohibido placas físicas a contraluz).\n- Prohibido mostrar agujas perforando la piel o sangre explícita.'
+    };
+};
+
+export const saveRagDocs = async (
+    docs: Record<string, string>,
+    label?: string
+): Promise<Record<string, string>> => {
+    const res = await fetch('/api/rag/docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docs, label })
+    });
+    if (!res.ok) throw new Error('Failed to save RAG documents');
+    const data = await res.json();
+    return data?.documents || docs;
+};
+
+export const uploadRagFile = async (payload: {
+    filename: string;
+    mimeType: string;
+    base64Data?: string;
+    textContent?: string;
+}): Promise<{ filename: string; content: string }> => {
+    const res = await fetch('/api/rag/upload-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Failed to upload RAG file');
+    return res.json();
+};
+
+export const retrieveRagContext = async (
+    studyName: string = 'Check-up Control Diabetes',
+    track: string = 'patient',
+    query: string = ''
+): Promise<{
+    studyName: string;
+    track: string;
+    useCase: ClinicalUseCase | null;
+    chunks: Array<{ id: string; title: string; content: string }>;
+    combinedContext: string;
+}> => {
+    try {
+        const res = await fetch('/api/rag/retrieve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ studyName, track, query })
+        });
+        if (res.ok) {
+            return await res.json();
+        }
+    } catch (e) {
+        console.warn("Fallback to local RAG rules summary:", e);
+    }
+    return {
+        studyName,
+        track,
+        useCase: null,
+        chunks: [],
+        combinedContext: `
+        - COF-001/002/003: Incluir "Consulte a su médico", Permiso de Publicidad COFEPRIS No. 243300201A1842 y Responsable Sanitario: Dr. Alejandro Rivera Gómez, Médico Cirujano (UNAM), Cédula Profesional 3918472.
+        - COF-004/005/006/007: Prohibido prometer curas, autodiagnóstico o tono alarmista. Todo en español claro.
+        - BRD-001/004/005: Paleta Azul Chopo (#004B87), Blanco Clínico (#FFFFFF) y Rojo Acento (#E30613). Fotografía auténtica sin agujas ni sangre explícita y sin texto incrustado. Especificar vigencia y exclusividad en línea (chopo.com.mx / App Chopo).
+        - CLN-001/002: Check-up Control Diabetes requiere ayuno de 8 a 12 h (HbA1c aislada no requiere ayuno estricto).
+        - RLM-001..004: Entrega de resultados 100% digital en App Chopo / tablet / smartphone (PROHIBIDO mostrar placas radiográficas físicas impresas a contraluz). Paciente en ropa casual para toma de muestra sanguínea y bata clínica en estudios de imagenología.
+        `
+    };
+};
+
+export const evaluateCreativeCompliance = async (payload: {
+    copyText: string;
+    imageUrl?: string | null;
+    track?: string;
+    clinicalLine?: string;
+}): Promise<any> => {
+    const res = await fetch('/api/evaluator/single-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to run compliance check');
+    }
+    return res.json();
+};
 
 // --- Proxy Call Helper ---
 const callGenAiProxy = async (endpoint: string, payload: any): Promise<any> => {
@@ -39,22 +346,17 @@ const extractImageFromResponse = (response: any): string | null => {
         return null;
     }
 
-    // Handle different SDK response structures. 
-    // Prioritize direct candidates access as per user example for image model.
     const candidates = response?.candidates || response?.response?.candidates;
 
     if (!candidates || !candidates.length) {
-        // Log the response keys to help debug if candidates are missing
         console.warn("No candidates found in Gemini response. Keys:", Object.keys(response));
         return null;
     }
 
-    // Try to find an inline image part
     for (const candidate of candidates) {
         const parts = candidate?.content?.parts;
         if (parts) {
             for (const part of parts) {
-                // Check for inlineData
                 // @ts-ignore
                 if (part.inlineData && part.inlineData.mimeType && part.inlineData.mimeType.startsWith('image/')) {
                     // @ts-ignore
@@ -71,7 +373,6 @@ const extractImageFromResponse = (response: any): string | null => {
  */
 export const generateText = async (prompt: string, model: string = "gemini-3-flash-preview"): Promise<string> => {
     try {
-        
         const response = await callGenAiProxy("generateContent", {
             model: model,
             contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -88,7 +389,6 @@ export const generateText = async (prompt: string, model: string = "gemini-3-fla
  */
 export const generateJson = async (prompt: string, schema: Schema, model: string = "gemini-3-flash-preview"): Promise<any> => {
     try {
-        
         const response = await callGenAiProxy("generateContent", {
             model: model,
             contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -106,12 +406,11 @@ export const generateJson = async (prompt: string, schema: Schema, model: string
 };
 
 /**
- * Generates an image using Gemini.
+ * Generates an image using Gemini (Vertex AI normalized to gemini-2.5-flash-image).
  * Returns base64 string of the image.
  */
-export const generateImage = async (prompt: string, model: string = "gemini-3.1-flash-image-preview", aspectRatio: string = "1:1"): Promise<string | null> => {
+export const generateImage = async (prompt: string, model: string = "gemini-2.5-flash-image", aspectRatio: string = "1:1"): Promise<string | null> => {
     try {
-        
         console.log(`Generating image with model ${model} and prompt: ${prompt}`);
 
         const response = await callGenAiProxy("generateContent", {
@@ -119,7 +418,6 @@ export const generateImage = async (prompt: string, model: string = "gemini-3.1-
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             config: {
                 responseModalities: ["IMAGE", "TEXT"],
-                tools: [{ googleSearch: {} }],
                 // @ts-ignore
                 imageConfig: {
                     aspectRatio: aspectRatio,
@@ -144,9 +442,8 @@ export const generateImage = async (prompt: string, model: string = "gemini-3.1-
 /**
  * Generates an image using Gemini with a reference image.
  */
-export const generateImageWithReference = async (prompt: string, referenceImageBase64s: string[], mimeType: string = "image/png", model: string = "gemini-3.1-flash-image-preview", aspectRatio: string = "1:1"): Promise<string | null> => {
+export const generateImageWithReference = async (prompt: string, referenceImageBase64s: string[], mimeType: string = "image/png", model: string = "gemini-2.5-flash-image", aspectRatio: string = "1:1"): Promise<string | null> => {
     try {
-        
         console.log(`Generating image with reference, model ${model}. Prompt: ${prompt}, Aspect: ${aspectRatio}`);
         console.log(`Reference Images count: ${referenceImageBase64s.length}`);
 
@@ -199,213 +496,40 @@ export const fileToGenerativePart = (file: File): Promise<string> => {
     });
 };
 
-// --- QVC Logic ---
-
-export const generateRoomDesign = async (roomImage: string, productImage: string, style: string = "modern"): Promise<string> => {
-    
-    try {
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3.1-flash-image-preview',
-            contents: {
-                parts: [
-                    { text: `Generate a photorealistic image of this room redesigned in a "${style}" style, with the provided product placed naturally within it. Maintain the perspective of the room but update the decor to match the requested style.` },
-                    { inlineData: { mimeType: 'image/jpeg', data: roomImage } },
-                    { inlineData: { mimeType: 'image/jpeg', data: productImage } }
-                ]
-            }
-        });
-
-        const imageBase64 = extractImageFromResponse(response);
-        if (imageBase64) return `data:image/jpeg;base64,${imageBase64}`;
-        throw new Error("No image generated.");
-
-    } catch (error) {
-        console.error("Room design generation error:", error);
-        throw error;
-    }
-};
-
-export const generateLifestyleVariations = async (productImage: string): Promise<{ type: string, image: string | null }[]> => {
-    
-
-    const variations = [
-        {
-            type: "Natural Setting",
-            prompt: "Generate a photorealistic image of this product placed in a natural, appropriate setting. For example, if it's clothing, show it laid out on a bed or chair. If it's decor, show it on a shelf. Ensure high quality lighting. Return only the image."
-        },
-        {
-            type: "Studio Model",
-            prompt: "Generate a photorealistic image of a model wearing this product. The model should match the style of the product. The background must be a clean, flat white studio background. Full body or 3/4 shot depending on the item. Return only the image."
-        },
-        {
-            type: "Lifestyle Model",
-            prompt: "Generate a photorealistic image of a model wearing this product in a realistic, appropriate location (e.g. outdoors, in a living room, at a cafe). The setting should match the vibe of the item. Return only the image."
-        }
-    ];
-
-    const generateSingle = async (variation: { type: string, prompt: string }): Promise<{ type: string, image: string | null }> => {
-        try {
-            const response = await callGenAiProxy("generateContent", {
-                model: 'gemini-3.1-flash-image-preview',
-                contents: {
-                    parts: [
-                        { text: variation.prompt },
-                        { inlineData: { mimeType: 'image/jpeg', data: productImage } }
-                    ]
-                }
-            });
-
-            const imageBase64 = extractImageFromResponse(response);
-            if (imageBase64) {
-                return { type: variation.type, image: `data:image/jpeg;base64,${imageBase64}` };
-            }
-            return { type: variation.type, image: null };
-
-        } catch (error) {
-            console.error(`Failed to generate variation for ${variation.type}:`, error);
-            return { type: variation.type, image: null };
-        }
-    };
-
-    return Promise.all(variations.map(v => generateSingle(v)));
-};
-
-export const analyzeVibe = async (base64Image: string): Promise<{ mood: string, colors: string[] }> => {
-    
-    try {
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3-flash-preview',
-            contents: {
-                parts: [
-                    { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-                    {
-                        text: `
-                        Analyze this image and identify the aesthetic "mood" (e.g., "Boho Chic", "Modern Industrial", "Cozy Minimalist") and the top 5 dominant hex color codes.
-                        
-                        Return a JSON object with this structure:
-                        {
-                            "mood": "Mood Name",
-                            "colors": ["#HEX1", "#HEX2", "#HEX3", "#HEX4", "#HEX5"]
-                        }
-                        Do not include markdown code blocks.
-                    ` }
-                ]
-            }
-        });
-
-        const text = extractTextFromResponse(response) || "{}";
-        const cleanText = text.replace(/```json|```/g, '').trim();
-        return JSON.parse(cleanText);
-
-    } catch (error) {
-        console.error("Vibe analysis error:", error);
-        return { mood: "Undetected", colors: ["#CCCCCC", "#999999", "#666666"] };
-    }
-};
-
-export const generateVibeMatches = async (base64Image: string): Promise<any> => {
-    
-
-    // 1. Analyze Vibe & Generate Product Ideas
-    try {
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3-flash-preview',
-            contents: {
-                parts: [
-                    { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-                    {
-                        text: `
-                        Analyze this image to determine its aesthetic mood and color palette.
-                        Then, suggest 3 specific products, services, or focus areas that would appeal to a person with this lifestyle vibe based on the context of the requested application.
-                        
-                        For each recommendation, provide:
-                        - A catchy name
-                        - A realistic price or value metric (e.g. "$0", "$25/mo")
-                        - A short description explaining why it fits
-                        - A detailed image generation prompt to visualize a marketing asset for this benefit (lifestyle or abstract).
-                        
-                        Return a valid JSON object:
-                        {
-                            "mood": "e.g. Boho Chic",
-                            "colors": ["#HEX1", "#HEX2", "#HEX3", "#HEX4", "#HEX5"],
-                            "products": [
-                                {
-                                    "id": "1",
-                                    "name": "Benefit Name",
-                                    "price": "$0 copay",
-                                    "description": "Why it fits...",
-                                    "imagePrompt": "Photorealistic lifestyle shot of..."
-                                }
-                            ]
-                        }
-                        Do not use markdown.
-                    ` }
-                ]
-            }
-        });
-
-        const text = extractTextFromResponse(response) || "{}";
-        const cleanText = text.replace(/```json|```/g, '').trim();
-        const data = JSON.parse(cleanText);
-
-        // 2. Generate Images for each product in parallel
-        if (data.products && Array.isArray(data.products)) {
-            const productsWithImages = await Promise.all(data.products.map(async (prod: any) => {
-                const imageUrl = await generateImage(prod.imagePrompt + ", professional marketing style, warm lighting, high resolution");
-                // Convert to data uri format if raw base64 returned from generateImage
-                return { ...prod, image: imageUrl ? `data:image/jpeg;base64,${imageUrl}` : null };
-            }));
-
-            return {
-                mood: data.mood,
-                colors: data.colors,
-                suggestedProducts: productsWithImages
-            };
-        }
-
-        return { mood: "Error", colors: [], suggestedProducts: [] };
-
-    } catch (error) {
-        console.error("Vibe match error:", error);
-        return { mood: "Error", colors: [], suggestedProducts: [] };
-    }
-};
-
-
+// --- Chopo Diagnostics (Grupo PROA) Logic ---
 
 export const generateAudienceSegments = async (context: string): Promise<any[]> => {
-    
     try {
         const response = await callGenAiProxy("generateContent", {
             model: 'gemini-3-flash-preview',
             contents: {
                 parts: [{
                     text: `
-                    You are an expert marketing analyst.
-                    Company Context: ${context}
+                    Eres un experto en investigación de mercados médicos y comportamiento del consumidor en salud en México para Laboratorios Médicos El Chopo ("Tu laboratorio de cabecera").
+                    Contexto Institucional: ${context}
                     
-                    Task: Create exactly 3 distinct, highly relevant Audience Segments for this company based on the provided context. Instead of generic archetypes, think critically about who would specifically benefit from these services.
+                    Tarea: Crea exactamente 3 segmentos de audiencia clínica altamente relevantes para Laboratorios Chopo en México (combinando Pista Paciente B2C y Pista Médico B2B).
                     
-                    For each audience, provide:
-                    1. A compelling Name (e.g., "The Digital Nomad", "The Holistic Parent")
-                    2. A Brief Bio (2 sentences explaining their lifestyle and core values)
-                    3. Key Demographics (Realistic age range and income bracket)
-                    4. A prompt to generate a headshot for a persona representing this audience.
-                       CRITICAL for Image Prompt: Ensure the prompt describes a realistic, relatable person in a natural setting (e.g., park, home, office). Avoid studio backgrounds. Ensure diversity.
-                    5. A unique Full Name for a representative persona within this segment.
+                    Reglas estrictas:
+                    - 100% datos sintéticos (cero datos personales reales).
+                    - Contexto cultural y socioeconómico auténtico de México (CDMX, Guadalajara, Monterrey, Puebla, Querétaro).
+                    - Psicología realista de consumidores y médicos reales viendo publicidad en su celular: evalúan claridad comercial, facilidad digital (App Chopo / chopo.com.mx), calidez visual y confianza institucional.
                     
-                    Return a valid JSON array of objects:
+                    Devuelve un arreglo JSON válido con objetos que sigan esta estructura exacta:
                     [
                         {
-                            "name": "Segment Name",
-                            "personaName": "Full Name",
-                            "bio": "Description...",
-                            "demographics": "Age range...",
-                            "imagePrompt": "Portrait of a..."
+                            "track": "patient",
+                            "name": "[Paciente B2C] Nombre del Segmento",
+                            "personaName": "Nombre Completo (Edad, Ciudad)",
+                            "bio": "Descripción de 2 oraciones...",
+                            "demographics": "Rango de edad, Ciudad, NSE...",
+                            "imagePrompt": "Retrato fotográfico realista de una persona mexicana en entorno cotidiano o clínico moderno iluminado, sin texto incrustado..."
                         }
                     ]
-                    Do not use markdown code blocks.
-                ` }]
+                    No uses bloques markdown.
+                    ${getLanguageInstruction()}
+                `
+                }]
             },
             config: { responseMimeType: "application/json" }
         });
@@ -420,49 +544,44 @@ export const generateAudienceSegments = async (context: string): Promise<any[]> 
 };
 
 export const generateSyntheticPersona = async (personaName: string, audienceName: string, context: string): Promise<any> => {
-    
     try {
+        const isPhysician = audienceName.toLowerCase().includes('médico') || audienceName.toLowerCase().includes('b2b') || audienceName.toLowerCase().includes('physician');
         const prompt = `
-        You are a creative marketing analyst. Based on the provided information, generate a detailed customer persona as a JSON object.
+        Eres un analista experto en investigación médica y de salud en México para Laboratorios Médicos El Chopo ("Tu laboratorio de cabecera").
+        Genera el perfil detallado para la siguiente persona sintética bajo nuestro esquema fijo depurado.
 
-        **Company Context:**
+        **Contexto Institucional:**
         ${context}
 
-        **Audience Segment:**
-        ${audienceName}
+        **Segmento de Audiencia:**
+        ${audienceName} (${isPhysician ? 'Pista Médico B2B' : 'Pista Paciente B2C'})
 
-        **DETAILED INSTRUCTIONS FOR THIS PERSONA:**
-        Develop a deeply realistic and empathetic persona that perfectly embodies this audience segment. You must define their core values, beliefs, communication tone, and specific industry knowledge level appropriate for their demographic.
-
-        **CHART & BRAND DATA REQUIREMENTS:**
-        1. "preferred_products": Provide 3-4 specific, realistic products or categories from ${context} this persona would highly value.
-        2. "charts.brand_affinity": Provide 12 months of affinity data (0-100 scale) for ${context}. Generate a realistic 12-month trend line.
-
-        **Target Persona Name:**
+        **Nombre de la Persona:**
         ${personaName}
 
-        **Output Requirements:**
-        Generate ONLY a valid JSON object with the following structure.
+        **Requisitos de Salida (Esquema Fijo Depurado):**
+        Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta:
         {
             "name": "${personaName}",
-            "age": 22,
-            "job_title": "Job Title",
-            "bio": "A 2-3 sentence, first-person bio that reflects your unique tone and beliefs.",
-            "income": "Annual income (e.g., '$45,000')",
-            "net_worth": "Estimated net worth",
-            "household_size": "Number of people in household",
-            "lifestyle_tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-            "preferred_products": ["Product 1", "Product 2", "Product 3"],
-            "pain_points": ["point 1", "point 2"],
-            "goals": ["goal 1", "goal 2"],
-            "charts": {
-                "brand_affinity": {
-                    "labels": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
-                    "data": [value1, value2, ...]
-                }
-            }
+            "track": "${isPhysician ? 'physician' : 'patient'}",
+            "age": 42,
+            "job_title": "Ocupación o Especialidad Médica",
+            "bio": "Biografía realista en 2 oraciones sobre su relación con el cuidado de la salud, estudios de laboratorio y uso digital.",
+            "income": "Nivel de ingreso mensual estimado en MXN",
+            "lifestyle_tags": ["tag1", "tag2", "tag3", "tag4"],
+            "preferred_products": ["Check-up Control Diabetes", "Hemoglobina Glicosilada (HbA1c)", "Check-up Completo Chopo"],
+            "pain_points": [
+                "Punto de dolor realista al ver publicidad médica o acudir al laboratorio 1",
+                "Punto de dolor 2",
+                "Punto de dolor 3"
+            ],
+            "goals": [
+                "Objetivo práctico de salud o consulta digital 1",
+                "Objetivo 2"
+            ]
         }
-        CRITICAL: The bio, tags, and trends must be highly creative and strictly align with the inferred traits of this audience segment.
+        No uses bloques markdown.
+        ${getLanguageInstruction()}
         `;
 
         const response = await callGenAiProxy("generateContent", {
@@ -481,54 +600,246 @@ export const generateSyntheticPersona = async (personaName: string, audienceName
     }
 };
 
-export const generateSyntheticUsersBatch = async (basePersona: any, count: number, context: string): Promise<any[]> => {
+export const generateSingleAudienceFromPrompt = async (
+    promptText: string,
+    track: 'B2C' | 'B2B',
+    companyDescription: string
+): Promise<CombinedPersona> => {
+    const isB2B = track === 'B2B';
+    const trackSuffix = isB2B ? '(Médico B2B)' : '(Paciente B2C)';
+    const internalTrack: 'physician' | 'patient' = isB2B ? 'physician' : 'patient';
+
+    const singleAudienceSchema: Schema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING },
+            personaName: { type: Type.STRING },
+            demographics: { type: Type.STRING },
+            bio: { type: Type.STRING },
+            imagePrompt: { type: Type.STRING },
+            details: {
+                type: Type.OBJECT,
+                properties: {
+                    age: { type: Type.NUMBER },
+                    income: { type: Type.STRING },
+                    job_title: { type: Type.STRING },
+                    bio: { type: Type.STRING },
+                    pain_points: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    goals: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    lifestyle_tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    preferred_products: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    charts: {
+                        type: Type.OBJECT,
+                        properties: {
+                            brand_affinity: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    labels: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                    data: { type: Type.ARRAY, items: { type: Type.NUMBER } }
+                                },
+                                required: ["labels", "data"]
+                            }
+                        },
+                        required: ["brand_affinity"]
+                    }
+                },
+                required: [
+                    "age",
+                    "income",
+                    "job_title",
+                    "bio",
+                    "pain_points",
+                    "goals",
+                    "lifestyle_tags",
+                    "preferred_products",
+                    "charts"
+                ]
+            }
+        },
+        required: ["name", "personaName", "demographics", "bio", "imagePrompt", "details"]
+    };
+
+    const prompt = `
+    Eres el Director de Investigación de Mercados Clínicos y Comportamiento del Consumidor de Laboratorios Médicos El Chopo ("Tu laboratorio de cabecera").
+    Construye exactamente 1 perfil de audiencia clínico completo (CombinedPersona) en español de México (es-MX) a partir de la descripción en lenguaje natural del usuario y la pista seleccionada.
+
+    **Contexto Institucional:**
+    ${companyDescription || "Laboratorios Médicos El Chopo - Diagnóstico clínico e imagenología en México"}
+
+    **Pista Seleccionada:**
+    ${isB2B ? 'B2B — Médico Prescriptor / Especialista / Profesional de la Salud en México' : 'B2C — Paciente / Consumidor de Salud y Prevención en México'}
+
+    **Descripción de la Audiencia Solicitada por el Usuario:**
+    "${promptText}"
+
+    **Reglas Estrictas de Construcción:**
+    1. "name": Nombre claro y ejecutivo del segmento incluyendo entre paréntesis "${trackSuffix}" al final (ejemplo: "${isB2B ? 'Médico General Recién Egresado (Médico B2B)' : 'Mujer Embarazada Primeriza (Paciente B2C)'}").
+    2. "personaName": Nombre representativo mexicano con edad (ejemplo: "${isB2B ? 'Dr. Sebastián Mora, 26' : 'Mariana Ríos, 29'}").
+    3. "demographics": Rango de edad, ocupación/especialidad, ciudad/zona en México (CDMX, Guadalajara, Monterrey, Puebla, Querétaro, etc.) y nivel socioeconómico (NSE).
+    4. "bio": Historia clínica, contexto profesional y estilo de vida detallado (3 a 4 oraciones realistas).
+    5. "imagePrompt": Prompt fotográfico realista para retrato de estudio o entorno clínico/cotidiano iluminado en México, sin texto incrustado, sin agujas perforando la piel y sin placas físicas viejas.
+    6. "details":
+       - "age": Edad numérica (ej. 26).
+       - "income": Rango de ingreso mensual estimado en MXN o nivel socioeconómico (ej. "$28,000 - $45,000 MXN/mes (NSE C+)").
+       - "job_title": Ocupación o especialidad médica (con mención de cédula o ámbito clínico si es B2B).
+       - "bio": Resumen de su relación con estudios diagnósticos, uso digital (App Chopo / chopo.com.mx) y toma de decisiones (2 a 3 oraciones).
+       - "pain_points": 3 a 4 dolores o barreras reales frente a estudios clínicos o publicidad médica en celular.
+       - "goals": 3 a 4 motivadores o metas claras de salud / práctica médica.
+       - "lifestyle_tags": 4 a 5 etiquetas cortas del perfil.
+       - "preferred_products": 3 a 5 estudios diagnósticos o check-ups de Laboratorios Chopo altamente afines al perfil (ej. Check-up Control Diabetes, Hemoglobina Glicosilada HbA1c, Check-up Completo Chopo, Mastografía Digital + Ultrasonido, Ultrasonido Obstétrico / Prenatal, Química Sanguínea de 45 elementos, Perfil Tiroideo, Biomarcadores / Marcadores Tumorales, Rayos X de Tórax Digital).
+       - "charts": { "brand_affinity": { "labels": ["Calidad Analítica", "Precio / Promoción", "Rapidez Digital", "Cercanía Sucursal"], "data": [n1, n2, n3, n4] } } con valores numéricos realistas de 0 a 100.
+
+    Devuelve únicamente el objeto JSON válido.
+    ${getLanguageInstruction()}
+    `;
+
+    const response = await callGenAiProxy("generateContent", {
+        model: MODEL_TEXT,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: singleAudienceSchema
+        }
+    });
+
+    const text = extractTextFromResponse(response) || "{}";
+    const cleanText = text.replace(/```json|```/g, '').trim();
+    const raw = JSON.parse(cleanText);
+
+    const rawName = String(raw.name || promptText.slice(0, 48)).trim();
+    const normalizedName = /\((?:Paciente\s*B2C|Médico\s*B2B|B2C|B2B)\)/i.test(rawName) || rawName.startsWith('[')
+        ? rawName
+        : `${rawName} ${trackSuffix}`;
+
+    const age = Number(raw.details?.age) || (isB2B ? 34 : 36);
+    const jobTitle = String(raw.details?.job_title || (isB2B ? 'Médico Prescriptor' : 'Profesionista')).trim();
+    const personaName = String(raw.personaName || (isB2B ? `Dr. Alejandro Vega, ${age}` : ` Sofía Méndez, ${age}`)).trim();
+    const bio = String(raw.bio || raw.details?.bio || promptText).trim();
+    const demographics = String(raw.demographics || `${age} años, Urbano México, ${isB2B ? 'Médico B2B' : 'Paciente B2C'}`).trim();
+    const painPoints = Array.isArray(raw.details?.pain_points) && raw.details.pain_points.length > 0
+        ? raw.details.pain_points
+        : ['Falta de tiempo para trámites presenciales', 'Información confusa sobre requisitos de ayuno o preparación'];
+    const goals = Array.isArray(raw.details?.goals) && raw.details.goals.length > 0
+        ? raw.details.goals
+        : ['Recibir resultados digitales confiables en la App Chopo', 'Agendar en línea de forma rápida y con precio transparente'];
+    const lifestyleTags = Array.isArray(raw.details?.lifestyle_tags) && raw.details.lifestyle_tags.length > 0
+        ? raw.details.lifestyle_tags
+        : [isB2B ? 'Práctica Clínica' : 'Salud Preventiva', 'Resultados Digitales', 'App Chopo'];
+    const preferredProducts = Array.isArray(raw.details?.preferred_products) && raw.details.preferred_products.length > 0
+        ? raw.details.preferred_products
+        : ['Check-up Completo Chopo', 'Química Sanguínea de 45 elementos', 'Check-up Control Diabetes'];
+    const defaultAffinityData = isB2B ? [96, 76, 92, 85] : [92, 90, 89, 88];
+
+    return {
+        id: `aud_${internalTrack}_${Date.now()}`,
+        track: internalTrack,
+        name: normalizedName,
+        personaName,
+        age,
+        job_title: jobTitle,
+        demographics,
+        bio,
+        pain_points: painPoints,
+        goals,
+        lifestyle_tags: lifestyleTags,
+        preferred_products: preferredProducts,
+        imagePrompt: String(
+            raw.imagePrompt ||
+            `Retrato fotográfico realista de estudio de ${personaName}, ${jobTitle} en México, iluminación cálida y profesional, sin texto incrustado`
+        ).trim(),
+        imageUrl: '',
+        isStandard: false,
+        details: {
+            name: personaName.split(',')[0].split('(')[0].trim(),
+            age,
+            income: String(raw.details?.income || 'Medio-Alto ($35,000 - $60,000 MXN/mes)').trim(),
+            job_title: jobTitle,
+            bio: String(raw.details?.bio || bio).trim(),
+            pain_points: painPoints,
+            goals,
+            lifestyle_tags: lifestyleTags,
+            preferred_products: preferredProducts,
+            charts: {
+                brand_affinity: {
+                    labels: ['Calidad Analítica', 'Precio / Promoción', 'Rapidez Digital', 'Cercanía Sucursal'],
+                    data: Array.isArray(raw.details?.charts?.brand_affinity?.data) && raw.details.charts.brand_affinity.data.length === 4
+                        ? raw.details.charts.brand_affinity.data.map((n: any) => Number(n) || 85)
+                        : defaultAffinityData
+                }
+            }
+        }
+    };
+};
+
+export const generateSyntheticUsersBatch = async (
+    basePersona: CombinedPersona | any,
+    count: number = 5,
+    companyDescription: string = '',
+    additionalClinicalContext?: string
+): Promise<any[]> => {
     try {
+        const isPhysician =
+            basePersona?.track === 'physician' ||
+            /médico|b2b|physician/i.test(String(basePersona?.name || ''));
+        const extraContextBlock = additionalClinicalContext && additionalClinicalContext.trim()
+            ? `\n        **CONTEXTO CLÍNICO O DE CAMPAÑA ADICIONAL PARA VARIAR LOS PERFILES DEL LOTE:**\n        CONTEXTO CLÍNICO O DE CAMPAÑA ADICIONAL PARA VARIAR LOS PERFILES DEL LOTE: "${additionalClinicalContext.trim()}". Asegúrate de que los ${count} usuarios sintéticos reflejen este contexto con matices individuales distintos sin ser clones idénticos.\n`
+            : '';
+
         const prompt = `
-        You are an expert market researcher. Based on the provided base persona and company context, generate exactly ${count} unique synthetic user profiles. Each user should inherit the high-level traits of the base persona but have distinct details.
+        You are an expert market researcher for Laboratorios Médicos El Chopo. Based on the provided base persona and company context, generate exactly ${count} unique synthetic user profiles. Each user should inherit the high-level traits of the base persona (${isPhysician ? 'B2B Prescribing Physician' : 'B2C Patient'}) but have distinct details.
 
         **Company Context:**
-        ${context}
+        ${companyDescription}
 
         **Base Persona:**
         Name: ${basePersona.name || basePersona.personaName}
+        Representative Archetype: ${basePersona.personaName || ''}
+        Track: ${isPhysician ? 'physician' : 'patient'}
         Bio: ${basePersona.bio || (basePersona.details ? basePersona.details.bio : '')}
         Demographics: ${basePersona.demographics || (basePersona.details ? basePersona.details.age : '')}
-
+        Pain Points: ${JSON.stringify(basePersona.pain_points || basePersona.details?.pain_points || [])}
+        Goals: ${JSON.stringify(basePersona.goals || basePersona.details?.goals || [])}
+        Preferred Studies: ${JSON.stringify(basePersona.preferred_products || basePersona.details?.preferred_products || [])}
+        ${extraContextBlock}
         **Output Requirements:**
         Generate ONLY a valid JSON array of ${count} objects, with each object following this exact structure:
         {
             "name": "Unique Fake Name",
+            "track": "${isPhysician ? 'physician' : 'patient'}",
             "personaName": "${basePersona.name || basePersona.personaName}",
-            "bio": "Unique 1 sentence bio tailored to this specific generated person.",
-            "demographics": "Specific age, location, and family status",
+            "bio": "Unique 1-2 sentence bio tailored to this specific generated person${additionalClinicalContext?.trim() ? ' incorporating the additional clinical context' : ''}.",
+            "demographics": "Specific age, location in Mexico, and profile",
+            "pain_points": ["pain point 1", "pain point 2"],
+            "goals": ["goal 1", "goal 2"],
             "cognitiveStyle": {
-                "informationDensityPreference": "e.g. TL;DR or technical whitepaper",
-                "primaryTrustSignal": "e.g. peer reviews, expert certifications",
-                "decisionVelocity": "e.g. impulsive or researcher",
-                "riskTolerance": "e.g. early adopter or laggard"
+                "informationDensityPreference": "e.g. Concisa y directa en celular",
+                "primaryTrustSignal": "e.g. Prestigio Chopo y resultados digitales en App",
+                "decisionVelocity": "e.g. Rápida si el beneficio es claro",
+                "riskTolerance": "e.g. Baja ante mensajes alarmistas"
             },
             "lifestyleFriction": {
-                "dailyGrindContext": "e.g. commuter, remote worker",
-                "financialMindset": "e.g. value-seeker, premium-seeker",
-                "brandLoyaltyQuotient": "e.g. sticks for a decade or jumps for $5",
-                "householdPowerDynamic": "e.g. sole decision-maker or pitches to spouse"
+                "dailyGrindContext": "e.g. Horario laboral ocupado",
+                "financialMindset": "e.g. Busca promociones claras pagando en línea",
+                "brandLoyaltyQuotient": "e.g. Alta hacia Tu laboratorio de cabecera",
+                "householdPowerDynamic": "e.g. Decisor de salud familiar"
             },
             "digitalFootprint": {
                 "last3SearchQueries": ["query 1", "query 2", "query 3"],
-                "unsubscribeTrigger": "What makes them annoyed? e.g. clickbait",
-                "platformEcosystem": "e.g. high-end iOS, Windows power user",
-                "recentBigLifeEvent": "e.g. recent move, new pet"
+                "unsubscribeTrigger": "Anuncios largos tipo folleto médico",
+                "platformEcosystem": "App Chopo / WhatsApp / Instagram",
+                "recentBigLifeEvent": "Check-up preventivo anual"
             },
             "psychographicFlavor": {
-                "theOneLuxury": "One thing they overspend on",
-                "aspirationVsReality": "e.g. buys organic but loves cheap snacks",
-                "socialCauseAlignment": "e.g. environmentalism, local-only"
+                "theOneLuxury": "Salud preventiva sin filas",
+                "aspirationVsReality": "Quiere cuidarse sin perder toda la mañana",
+                "socialCauseAlignment": "Prevención de diabetes familiar"
             }
         }
+        ${getLanguageInstruction()}
         `;
 
         const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3-flash-preview',
+            model: MODEL_TEXT,
             contents: { parts: [{ text: prompt }] },
             config: { responseMimeType: "application/json" }
         });
@@ -544,71 +855,131 @@ export const generateSyntheticUsersBatch = async (basePersona: any, count: numbe
 };
 
 export const generateImageFromPrompt = async (prompt: string): Promise<string> => {
-    const imgData = await generateImage(prompt, 'gemini-3.1-flash-image-preview');
+    const imgData = await generateImage(prompt, 'gemini-2.5-flash-image');
     if (imgData) {
         return `data:image/jpeg;base64,${imgData}`;
     }
-    return "https://via.placeholder.com/400x400?text=Generation+Failed";
+    return "/api/media/chopo_persona_dr_carlos.png";
 };
 
-export const generateMarketingCampaignAssets = async (productName: string, targetAudience: string, context: string): Promise<MarketingAssets> => {
-    
+export const generateMarketingCampaignAssets = async (
+    productName: string,
+    targetAudience: string,
+    context: string
+): Promise<MarketingAssets> => {
+    const isB2B =
+        targetAudience.toLowerCase().includes('médico') ||
+        targetAudience.toLowerCase().includes('b2b') ||
+        targetAudience.toLowerCase().includes('especialista') ||
+        targetAudience.toLowerCase().includes('physician');
 
-    // 1. Generate the Image Prompt and Copy concurrently
+    const track = isB2B ? 'physician' : 'patient';
+    const ragData = await retrieveRagContext(productName, track);
+    const useCase = ragData.useCase;
+
+    const cofeprisPermit = isB2B
+        ? (useCase?.cofeprisPermitB2B || 'Aviso de Publicidad COFEPRIS No. 243300202A0911')
+        : (useCase?.cofeprisPermitB2C || 'Permiso de Publicidad COFEPRIS No. 243300201A1842');
+    const mandatoryLegend = isB2B
+        ? 'Información exclusiva para profesionales de la salud.'
+        : 'Consulte a su médico.';
+    const responsableSanitario =
+        useCase?.responsableSanitario ||
+        'Responsable Sanitario: Dr. Alejandro Rivera Gómez, Médico Cirujano (UNAM), Cédula Profesional 3918472.';
+    const promoText =
+        useCase?.defaultPromoText ||
+        'Precio especial exclusivo pagando en línea en chopo.com.mx o App Chopo. Vigencia al 31 de diciembre de 2026.';
+
     const copyPromise = callGenAiProxy("generateContent", {
         model: 'gemini-3-flash-preview',
         contents: {
             parts: [{
                 text: `
-                You are a creative director and marketing expert.
-                
-                **Company Context:**
-                ${brandConfig.companyName} - world-class retail and commerce provider.
+                Eres el Director Creativo y Médico de Laboratorios Chopo ("Tu laboratorio de cabecera").
+                Diseña una campaña multicanal de alta conversión y alto impacto emocional para el estudio "${productName}" dirigida a "${targetAudience}" (${isB2B ? 'Pista Médico B2B' : 'Pista Paciente B2C'}).
 
-                Product: ${productName}
-                Target Audience: ${targetAudience}
-                
-                Task: Create marketing assets for a multi-channel campaign.
-                
-                1. **Image Prompt**: A detailed prompt to generate a high-quality lifestyle image of the product/service that appeals to the target audience.
-                   CRITICAL: Ensure the image is diverse and inclusive, showing happy people in natural settings relevant to the product.
-                2. **Social Media Post**: An Instagram/Facebook style caption with relevant hashtags.
-                3. **Search Ad**: A punchy Google Search ad headline (max 30 chars) and description (max 90 chars).
-                4. **Email**: A catchy subject line, preheader text, and a short persuasive body paragraph.
-                5. **YouTube Short**: A title and a brief 15-second script/hook.
-                6. **Website Recommendations**: Suggest 3 distinct products, services, or perks that would be "frequently viewed together".
-                   For each, provide a Name, Price (e.g. "$0"), and a detailed Image Prompt for a marketing icon or lifestyle shot.
-                
-                Return a valid JSON object with this structure:
+                **Contexto Institucional:**
+                ${brandConfig.companyName || "Laboratorios Chopo"} - ${context}
+
+                **INSTRUCCIÓN OBLIGATORIA DEL USUARIO (REGLA SUPREMA — SEGUIR AL PIE DE LA LETRA):**
+                """
+                ${targetAudience}
+                """
+                ⚠️ ATENCIÓN CRÍTICA: Debes obedecer AL 100% Y AL PIE DE LA LETRA todas las instrucciones específicas que el usuario haya escrito arriba (sobre qué debe decir o mostrar el email, el post de redes sociales, la promoción, el tono, el enfoque visual o el mensaje). PROHIBIDO ignorar, contradecir o cambiar lo que el usuario pidió específicamente. Si el usuario pidió incluir algo específico en el email o en la imagen, DEBE aparecer exactamente como lo solicitó.
+
+                === REGLAS OFICIALES DE CUMPLIMIENTO RAG (COFEPRIS, MARCA CHOPO, CLÍNICA Y REALISMO VISUAL) ===
+                ${ragData.combinedContext}
+
+                === PARÁMETROS OBLIGATORIOS DEL CASO DE USO ===
+                - Estudio / Paquete: ${productName}
+                - Condición Promocional (BRD-005): ${promoText}
+                - Leyenda Precautoria (COF-002): ${mandatoryLegend}
+                - Folio COFEPRIS (COF-001): ${cofeprisPermit}
+                - Responsable Sanitario (COF-003): ${responsableSanitario}
+
+                REGLAS CRÍTICAS DE ESTILO PUBLICITARIO (02_campaign_creator):
+                1. BREVEDAD, EMPATÍA Y PUNCH COMERCIAL EN REDES SOCIALES (social.caption):
+                   - Máximo 35 a 45 palabras comerciales ANTES del pie legal obligatorio (salvo que el usuario pida otra extensión en su instrucción).
+                   - Línea 1: Gancho empático/consciente + valor real de "${productName}" siguiendo fielmente la instrucción del usuario.
+                   - Línea 2: Llamado a la acción directo con la condición promocional en línea (${promoText}).
+                   - Línea 3 (Pie legal obligatorio compacto): "${mandatoryLegend} ${cofeprisPermit}. ${responsableSanitario}"
+                2. CORREO ELECTRÓNICO TIPO BANNER VISUAL MODERNO (email):
+                   - La mayoría de los correos de marketing modernos NO son bloques largos de texto plano: son un **Banner Visual con texto corto no invasivo integrado** + un mensaje breve y personalizado de 2 a 3 líneas.
+                   - OBEDECE AL PIE DE LA LETRA cualquier instrucción que el usuario haya dado para el correo.
+                   - Estructura obligatoria del objeto "email":
+                     * "subject": Asunto personalizado y directo (fiel al prompt del usuario).
+                     * "preheader": Texto corto de vista previa (10 a 15 palabras).
+                     * "bannerHeadline": Titular corto y no invasivo que va sobre la imagen/banner del correo (4 a 8 palabras máximo, con alto impacto visual y fiel a la instrucción del usuario).
+                     * "bannerSubheadline": Subtítulo breve o beneficio clave en 1 línea corta para el cintillo del banner (ej. "${productName} • Beneficio exclusivo en línea").
+                     * "body": Texto breve, cálido y directo de acompañamiento debajo del banner (máximo 25 a 45 palabras, salvo que el usuario haya pedido algo distinto; NUNCA escribas las palabras literales "Incluye pie legal:").
+                     * "ctaText": Texto del botón de acción (ej. "Agendar Estudio en Línea").
+                     * "legalFooter": "${mandatoryLegend} ${cofeprisPermit}. ${responsableSanitario}"
+                3. DIRECCIÓN DE ARTE Y REALISMO VISUAL PARA LA IMAGEN / BANNER (imagePrompt):
+                   - OBEDECE PRIMERO Y AL PIE DE LA LETRA EL ENFOQUE CREATIVO DEL USUARIO Y EL SEGMENTO (${isB2B ? 'Médico B2B' : 'Paciente B2C'}):
+                   - PROHIBIDO generar fotos genéricas y frías de catálogo donde solo aparece un médico posando junto a una máquina con una tablet, a menos que la audiencia sea exclusivamente Médico B2B o el usuario lo pida expresamente.
+                   - Si la audiencia es PACIENTE B2C (ej. Mujeres / Prevención de Cáncer de Mama / Mastografía Digital + Ultrasonido):
+                     * El protagonista visual DEBE ser la paciente mujer mexicana (ej. 35-50 años) transmitiendo prevención oportuna, amor propio, tranquilidad familiar y el valor de detectar a tiempo.
+                     * Si el objetivo pide "enfoque rosa" o concientización sobre cáncer de mama: usa una dirección de arte editorial cálida y empática con sutiles acentos en tonos rosa suave/cálido combinados con la limpieza clínica de Chopo (luz natural cálida, listón o prenda en tono rosa sutil, abrazo familiar o acompañamiento humano cálido de una especialista mujer, sin ser explícito ni alarmista).
+                   - Composición pensada para funcionar también como **Banner de Email Marketing** (con aire visual limpio para que el cintillo de texto no invasivo luzca profesional).
+                   - Reglas negativas estrictas (RLM-001 a RLM-004): PROHIBIDO mostrar placas radiográficas físicas impresas a contraluz, PROHIBIDO mostrar agujas perforando la piel o sangre explícita, PROHIBIDO texto deformado incrustado en la foto.
+
+                Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura:
                 {
-                    "imagePrompt": "Photorealistic shot of...",
+                    "imagePrompt": "Descripción fotográfica editorial detallada en español, 100% fiel a la instrucción del usuario, con composición limpia tipo banner y sin texto incrustado...",
                     "social": {
                         "caption": "...",
-                        "hashtags": ["#marketing", "#campaign"]
+                        "hashtags": ["#Chopo", "#TuLaboratorioDeCabecera", "#DetecciónOportuna"]
                     },
                     "search": {
-                        "headline": "...",
-                        "description": "...",
-                        "url": "example.com/products/${productName.replace(/\s+/g, '-').toLowerCase()}"
+                        "headline": "Título corto (máx 30 caracteres)",
+                        "description": "Descripción persuasiva con precio especial en línea en chopo.com.mx. ${mandatoryLegend}",
+                        "url": "chopo.com.mx/estudios/${productName.replace(/\s+/g, '-').toLowerCase()}"
                     },
                     "email": {
                         "subject": "...",
                         "preheader": "...",
-                        "body": "..."
+                        "bannerHeadline": "Titular corto no invasivo para el banner del correo (4-8 palabras)",
+                        "bannerSubheadline": "Subtítulo corto del cintillo del banner",
+                        "body": "Mensaje corto y personalizado (25-45 palabras, fiel a la instrucción del usuario)...",
+                        "ctaText": "Agendar Estudio en Línea",
+                        "legalFooter": "${mandatoryLegend} ${cofeprisPermit}. ${responsableSanitario}"
                     },
                     "youtube": {
                         "title": "...",
                         "script": "..."
                     },
                     "recommendations": [
-                        { "name": "Prod 1", "price": "$10.99", "imagePrompt": "..." },
-                        { "name": "Prod 2", "price": "$25.00", "imagePrompt": "..." },
-                        { "name": "Prod 3", "price": "$15.50", "imagePrompt": "..." }
+                        { "name": "Estudio o Check-up Complementario 1 acorde a ${productName}", "price": "Precio especial en línea", "imagePrompt": "Fotografía editorial luminosa en México acorde al estudio 1, sin texto incrustado..." },
+                        { "name": "Estudio o Check-up Complementario 2 acorde a ${productName}", "price": "Agenda en App Chopo", "imagePrompt": "Fotografía editorial luminosa en México acorde al estudio 2, sin texto incrustado..." },
+                        { "name": "Estudio o Check-up Complementario 3 acorde a ${productName}", "price": "Exclusivo en chopo.com.mx", "imagePrompt": "Fotografía editorial luminosa en México acorde al estudio 3, sin texto incrustado..." }
                     ]
                 }
-                Do not use markdown code blocks.
-            ` }]
-        }
+                No uses bloques markdown.
+                ${getLanguageInstruction()}
+            `
+            }]
+        },
+        config: { responseMimeType: "application/json" }
     });
 
     try {
@@ -616,42 +987,44 @@ export const generateMarketingCampaignAssets = async (productName: string, targe
         const copyText = extractTextFromResponse(copyResponse) || "{}";
         const cleanCopyText = copyText.replace(/```json|```/g, '').trim();
         const data = JSON.parse(cleanCopyText);
-        
-        console.log("Parsed Marketing Brief Data:", JSON.stringify(data, null, 2));
 
-        // 2 & 3. Generate Images in batches of 3
+        const visualSafetySuffix = ", fotografía editorial hiperrealista en México, iluminación cálida y profesional, estética publicitaria empática, SIN placas radiográficas físicas impresas a contraluz, SIN agujas ni sangre explícita, SIN texto incrustado";
+
         const allImagePrompts: { type: string, prompt: string, rec?: any }[] = [];
-        
+
         if (data.imagePrompt) {
-            allImagePrompts.push({ type: 'MAIN', prompt: data.imagePrompt + ", professional photography, high resolution, commercial lighting" });
+            allImagePrompts.push({
+                type: 'MAIN',
+                prompt: data.imagePrompt + visualSafetySuffix
+            });
         }
-        
+
         for (const rec of (data.recommendations || [])) {
-            allImagePrompts.push({ type: 'REC', prompt: rec.imagePrompt + ", clean commerce marketing style, warm lighting", rec });
+            allImagePrompts.push({
+                type: 'REC',
+                prompt: (rec.imagePrompt || `${rec.name} en Laboratorios Chopo`) + visualSafetySuffix,
+                rec
+            });
         }
 
         const results: any[] = [];
         const imageBatchSize = 4;
-        
-        console.log(`Processing ${allImagePrompts.length} images in batches of ${imageBatchSize}...`);
-        
+
         for (let i = 0; i < allImagePrompts.length; i += imageBatchSize) {
             const batch = allImagePrompts.slice(i, i + imageBatchSize);
             const batchResults = await Promise.all(batch.map(async (item) => {
                 const img = await generateImageFromPrompt(item.prompt);
                 if (item.type === 'MAIN') return { type: 'MAIN', img };
-                return { 
-                    type: 'REC', 
-                    img, 
-                    name: item.rec.name, 
-                    price: item.rec.price 
+                return {
+                    type: 'REC',
+                    img,
+                    name: item.rec.name,
+                    price: item.rec.price
                 };
             }));
             results.push(...batchResults);
         }
-        
-        console.log("Finished all image generation batches.");
-        
+
         const mainImageObj = results.find(r => r.type === 'MAIN');
         const mainImage = mainImageObj ? mainImageObj.img : null;
         const recommendations = results.filter(r => r.type === 'REC').map(r => ({
@@ -662,10 +1035,19 @@ export const generateMarketingCampaignAssets = async (productName: string, targe
 
         return {
             image: mainImage,
-            social: data.social || { caption: "Check out our new offering!", hashtags: [] },
-            search: data.search || { headline: "New Offering", description: "Learn more today.", url: "qvc.com" },
-            email: data.email || { subject: "New Update", preheader: "Learn more inside.", body: "Explore our new offerings." },
-            youtube: data.youtube || { title: "Overview", script: "Learn about our offerings in 15 seconds." },
+            social: data.social || { caption: "", hashtags: [] },
+            search: data.search || { headline: productName, description: "", url: "chopo.com.mx" },
+            email: {
+                subject: data.email?.subject || productName,
+                preheader: data.email?.preheader || "",
+                bannerHeadline: data.email?.bannerHeadline || data.search?.headline || productName,
+                bannerSubheadline: data.email?.bannerSubheadline || promoText,
+                body: data.email?.body || "",
+                ctaText: data.email?.ctaText || "Agendar Estudio en Línea",
+                legalFooter: data.email?.legalFooter || `${mandatoryLegend} ${cofeprisPermit}. ${responsableSanitario}`,
+                image: mainImage || undefined
+            },
+            youtube: data.youtube || { title: productName, script: "" },
             website: { recommendations }
         };
 
@@ -676,7 +1058,6 @@ export const generateMarketingCampaignAssets = async (productName: string, targe
 };
 
 export const generateMarketingCopy = async (productName: string, personaName: string): Promise<any> => {
-    
     try {
         const response = await callGenAiProxy("generateContent", {
             model: 'gemini-3-flash-preview',
@@ -698,7 +1079,8 @@ export const generateMarketingCopy = async (productName: string, personaName: st
                     }
                     Do not use markdown.
                 ` }]
-            }
+            },
+            config: { responseMimeType: "application/json" }
         });
 
         const text = extractTextFromResponse(response) || "{}";
@@ -710,301 +1092,50 @@ export const generateMarketingCopy = async (productName: string, personaName: st
     }
 };
 
-export const generateProductVariant = async (productImage: string, instruction: string): Promise<string> => {
-    
-    try {
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3.1-flash-image-preview',
-            contents: {
-                parts: [
-                    { text: `Edit this product image: ${instruction}. Keep the background clean.` },
-                    { inlineData: { mimeType: 'image/jpeg', data: productImage } }
-                ]
-            }
-        });
-
-        const imageBase64 = extractImageFromResponse(response);
-        if (imageBase64) return `data:image/jpeg;base64,${imageBase64}`;
-        throw new Error("No image generated.");
-
-    } catch (error) {
-        console.error("Product variant error:", error);
-        throw error;
-    }
-};
-
-export const LAMPSHADE_STYLES = [
-    "Modern Drum Shade", "Vintage Bell Shade", "Industrial Cage Shade",
-    "Pleated Empire Shade", "Geometric Patterned Shade", "Fabric Cone Shade",
-    "Tiffany Style Shade", "Rattan Pendant Shade", "Metal Dome Shade"
-];
-
-export const generateMultipleProductVariants = async (baseImage: string, styles: string[]): Promise<{ style: string, image: string | null }[]> => {
-    
-
-    const generateSingle = async (style: string): Promise<{ style: string, image: string | null }> => {
-        try {
-            const prompt = `Given the lamp in the image, replace the lampshade with a ${style}.
-            The rest of the lamp base should remain the same.
-            The background should be a plain white studio background.
-            Return ONLY the edited image.`;
-
-            const response = await callGenAiProxy("generateContent", {
-                model: 'gemini-3.1-flash-image-preview',
-                contents: {
-                    parts: [
-                        { text: prompt },
-                        { inlineData: { mimeType: 'image/jpeg', data: baseImage } }
-                    ]
-                }
-            });
-
-            const imageBase64 = extractImageFromResponse(response);
-            if (imageBase64) {
-                return { style, image: `data:image/jpeg;base64,${imageBase64}` };
-            }
-            return { style, image: null };
-        } catch (error) {
-            console.error(`Failed to generate variant for ${style}:`, error);
-            return { style, image: null };
-        }
-    };
-
-    return Promise.all(styles.map(style => generateSingle(style)));
-};
-
-export const auditImage = async (generatedImage: string, referenceImage: string, type: 'couch' | 'table'): Promise<{ passed: boolean, reason: string }> => {
-    
-    try {
-        const prompt = type === 'couch'
-            ? `Analyze this generated room image alongside the reference couch image.
-               Your task is to verify:
-               1. The couch from the reference image is present and clearly visible in the room.
-               2. The couch is appropriately placed and proportioned in the room.
-               Respond with ONLY one of these exact phrases:
-               - "PASS - reason" if the couch is properly placed.
-               - "FAIL - reason" if the couch is missing, unclear, or unnatural.`
-            : `Analyze this generated room image alongside the reference end table image.
-               Your task is to verify:
-               1. The end table from the reference image is present and clearly visible in the room.
-               2. The end table is appropriately placed and proportioned.
-               Respond with ONLY one of these exact phrases:
-               - "PASS - reason" if the end table is properly placed.
-               - "FAIL - reason" if the end table is missing or unnatural.`;
-
-        // Strip base64 prefix if present
-        const cleanGeneratedImage = generatedImage.replace(/^data:image\/\w+;base64,/, '');
-        const cleanReferenceImage = referenceImage.replace(/^data:image\/\w+;base64,/, '');
-
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3-flash-preview',
-            contents: {
-                parts: [
-                    { text: prompt },
-                    { inlineData: { mimeType: 'image/jpeg', data: cleanGeneratedImage } },
-                    { inlineData: { mimeType: 'image/jpeg', data: cleanReferenceImage } }
-                ]
-            }
-        });
-
-        const text = extractTextFromResponse(response) || "FAIL - No response";
-        const passed = text.toUpperCase().includes("PASS");
-        return { passed, reason: text };
-    } catch (error) {
-        console.error("Audit error:", error);
-        return { passed: false, reason: "Audit failed due to error." };
-    }
-};
-
-// Helper to save image to server
-const saveImage = async (base64Data: string): Promise<string | null> => {
-    try {
-        const timestamp = new Date().getTime();
-        const random = Math.floor(Math.random() * 1000);
-        const filename = `gen_${timestamp}_${random}.jpg`;
-
-        const response = await fetch('/api/save-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: base64Data, filename })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            return data.url;
-        }
-        console.error('Failed to save image to server:', response.statusText);
-        return null;
-    } catch (error) {
-        console.error('Error saving image:', error);
-        return null;
-    }
-};
-
-// Helper to save video to server
-const saveVideoServe = async (base64Data: string | null, videoUrl?: string): Promise<string | null> => {
-    try {
-        const timestamp = new Date().getTime();
-        const random = Math.floor(Math.random() * 1000);
-        const filename = `spin_${timestamp}_${random}.mp4`;
-
-        const response = await fetch('/api/save-video', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ video: base64Data, videoUrl, filename })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            return data.url;
-        }
-        console.error('Failed to save video to server:', response.statusText);
-        return null;
-    } catch (error) {
-        console.error('Error saving video:', error);
-        return null;
-    }
-};
-
-export const generateProductSpinVideo = async (imageB64s: string[], customPrompt?: string): Promise<string | null> => {
-    
-    try {
-        console.log(`Generating product spin video with ${imageB64s.length} images...`);
-
-        // Process all images into referenceImages format
-        const referenceImages = await Promise.all(imageB64s.map(async (img) => {
-            let data = img;
-            let type = "image/png";
-
-            if (img.startsWith('/') || img.startsWith('http')) {
-                const result = await urlToRawBase64(img);
-                data = result.data;
-                type = result.mimeType;
-            } else if (img.startsWith('data:')) {
-                const matches = img.match(/^data:([^;]+);base64,(.+)$/);
-                if (matches && matches.length === 3) {
-                    type = matches[1];
-                    data = matches[2];
-                } else {
-                    data = img.split(',')[1];
-                }
-            } else {
-                data = img.replace(/^data:image\/\w+;base64,/, "");
-            }
-
-            return {
-                image: {
-                    imageBytes: data,
-                    mimeType: type
-                },
-                referenceType: "asset"
-            };
-        }));
-
-        const response = await callGenAiProxy("generateVideos", {
-            model: 'veo-3.1-generate-preview',
-            prompt: customPrompt || "A photorealistic 360-degree spin of the product on a clean pedestal. Maintain exact consistency with the provided reference images.",
-            config: {
-                aspectRatio: "16:9",
-                numberOfVideos: 1,
-                durationSeconds: 8,
-                resolution: "720p",
-                generateAudio: false,
-                // @ts-ignore
-                referenceImages: referenceImages
-            }
-        });
-
-        // Polling loop for video generation
-        let operation = response;
-        const POLL_INTERVAL = 5000; // 5 seconds
-        const MAX_POLLS = 60; // 5 minutes timeout
-
-        console.log("Video generation operation started:", operation.name);
-
-        for (let i = 0; i < MAX_POLLS; i++) {
-            if (operation.done) {
-                console.log("Video generation completed.");
-                break;
-            }
-            console.log(`Waiting for video generation... attempt ${i + 1}/${MAX_POLLS}`);
-            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-
-            // Refresh operation status via proxy
-            try {
-                // @ts-ignore
-                const op = await callGenAiProxy("getOperation", { operation: operation });
-                if (op) {
-                    operation = op;
-                }
-            } catch (e) {
-                console.warn("Retrying operation check...", e);
-            }
-        }
-
-        if (!operation.done) {
-            throw new Error("Video generation timed out.");
-        }
-
-        // @ts-ignore
-        // result is likely nested in response or result property depending on SDK
-        // User snippet says: response = operation.result
-        // @ts-ignore
-        const result = operation.result || operation.response;
-        
-        // Handle different possible response structures for Veo 3.1
-        // 1. response.videos[0].bytesBase64Encoded (User's actual log)
-        const v0 = result?.videos?.[0] || operation.response?.videos?.[0];
-        if (v0?.bytesBase64Encoded) {
-            return await saveVideoServe(v0.bytesBase64Encoded);
-        }
-        if (v0?.uri) {
-            return await saveVideoServe(null, v0.uri);
-        }
-
-        // 2. response.generatedVideos[0].video.encodedVideo (Typical SDK structure)
-        const gv0 = result?.generatedVideos?.[0] || operation.response?.generatedVideos?.[0];
-        if (gv0?.video?.encodedVideo) {
-            return await saveVideoServe(gv0.video.encodedVideo);
-        }
-        if (gv0?.video?.uri) {
-            return await saveVideoServe(null, gv0.video.uri);
-        }
-
-        console.error("No video data found in completed operation result:", JSON.stringify(operation, null, 2));
-        return null;
-
-    } catch (error) {
-        console.error("Product spin video generation error:", error);
-        return null;
-    }
-};
-
-export const generateMarketingBrief = async (context: string, goal: string, sourceAudiences?: any[]): Promise<any> => {
-    
+export const generateMarketingBrief = async (
+    context: string,
+    goal: string,
+    sourceAudiences?: any[],
+    studyName: string = 'Check-up Control Diabetes',
+    track: string = 'both'
+): Promise<any> => {
     try {
         const timestamp = new Date().toLocaleString();
-        
+        const ragData = await retrieveRagContext(studyName, track, goal);
+        const useCase = ragData.useCase;
+
         const audienceContext = sourceAudiences && sourceAudiences.length > 0 
-            ? `\n**Target Demographic Constraint:** Your brief must specifically target the following ${sourceAudiences.length} personas. Focus your entire strategy on catering to these exact audiences.\n${sourceAudiences.map((aud, i) => `\n${i+1}. Name: ${aud.name}\n   Bio: ${aud.bio}\n   Demographics: ${aud.demographics}`).join('\n')}\n`
+            ? `\n**Audiencias Objetivo Seleccionadas (${sourceAudiences.length}):**\n${sourceAudiences.map((aud, i) => `\n${i+1}. Nombre: ${aud.name} (${aud.personaName || ''})\n   Pista: ${aud.track || 'patient'}\n   Bio: ${aud.bio}\n   Demografía: ${aud.demographics}`).join('\n')}\n`
             : "";
 
         const prompt = `
-        You are an expert Marketing Brief Agent. Create a comprehensive marketing brief based on the following:
+        Eres el Agente Estratégico de Marketing Clínico y Cumplimiento de Laboratorios Médicos El Chopo ("Tu laboratorio de cabecera").
+        Crea un Marketing Brief integral anclado en nuestra Base de Conocimiento Oficial (RAG) para el estudio "${useCase?.studyName || studyName}".
         
-        **Company Context:** ${context}
-        **Campaign Goal:** ${goal}
+        **Contexto Institucional:** ${context}
+        **Estudio / Caso de Uso Principal:** ${useCase?.studyName || studyName}
+        **Estudios que incluye:** ${(useCase?.includedStudies || []).join(', ')}
+        **Requisito de Ayuno (CLN-002):** ${useCase?.fastingRequirement || 'Ayuno obligatorio de 8 a 12 horas'}
+        **Objetivo de la Campaña:** ${goal}
         ${audienceContext}
+
+        === BASE DE CONOCIMIENTO RAG (COFEPRIS, MANUAL DE MARCA CHOPO, CATÁLOGO CLÍNICO Y REALISMO VISUAL) ===
+        ${ragData.combinedContext}
         
-        CRITICAL: Follow the exact 8-section structure below. Be detailed, professional, and data-driven.
+        CRÍTICO: Sigue exactamente la estructura de 8 secciones en JSON. Asegura que:
+        - "productName" sea exactamente "${useCase?.studyName || studyName}".
+        - OBEDECE FIELMENTE las instrucciones creativas, emocionales y de enfoque indicadas en "Objetivo de la Campaña" (${goal}).
+        - NO fuerces ni inventes una duración fija de "8 semanas" en "assumptions.timeline" ni en "phases" a menos que el usuario lo haya escrito explícitamente en el Objetivo de la Campaña. Si el usuario no especifica semanas exactas, define un ciclo flexible o por etapas estratégicas ("Etapa Inicial: Concientización", "Etapa Central: Conversión y Agenda Digital", "Etapa Continua: Seguimiento Preventivo") o acorde a la temporalidad natural del estudio (ej. Campaña Mensual / Permanente).
+        - "assumptions.mitigationStrategy" detalle explícitamente el cumplimiento de COF-001 (${useCase?.cofeprisPermitB2C || 'Permiso COFEPRIS No. 2609152002A00518'} / ${useCase?.cofeprisPermitB2B || 'Aviso COFEPRIS No. 243300202A0911'}), COF-002 ("Consulte a su médico"), COF-003 (${useCase?.responsableSanitario || 'Responsable Sanitario con Cédula Profesional'}), CLN-002 (preparación exacta) y RLM-001..004 (cero placas físicas a contraluz, cero agujas explícitas, entrega 100% digital en App Chopo).
         
-        Return ONLY a valid JSON object with this structure:
+        Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura:
         {
-            "title": "Marketing Brief: [A Catchy Campaign Title]",
+            "title": "Marketing Brief: [Título Estratégico de la Campaña]",
             "timestamp": "${timestamp}",
             "campaignGoal": "${goal}",
-            "productName": "[Product/Service Name]",
-            "companyName": "[Extracted Company Name from Context]",
+            "productName": "${useCase?.studyName || studyName}",
+            "studyName": "${useCase?.studyName || studyName}",
+            "companyName": "Laboratorios Médicos El Chopo",
             "assumptions": {
                 "budget": "...",
                 "timeline": "...",
@@ -1017,8 +1148,8 @@ export const generateMarketingBrief = async (context: string, goal: string, sour
             },
             "audiences": [
                 {
-                    "name": "[Persona Name]",
-                    "sourceSegment": "[Description of original segment]",
+                    "name": "[Nombre de la Audiencia]",
+                    "sourceSegment": "[Pista Paciente B2C o Pista Médico B2B]",
                     "ageRange": "...",
                     "painPoints": ["...", "..."],
                     "drivers": ["...", "..."],
@@ -1030,27 +1161,28 @@ export const generateMarketingBrief = async (context: string, goal: string, sour
             ],
             "valueProp": {
                 "main": { "en": "...", "es": "..." },
-                "againstCompetitors": "[How we beat competitors]",
-                "addressingTrends": "[Relevant industry trends]"
+                "againstCompetitors": "...",
+                "addressingTrends": "..."
             },
             "messaging": {
                 "primaryHook": { "en": "...", "es": "..." },
-                "supporting1": { "title": "[Message Title]", "content": { "en": "...", "es": "..." } },
-                "supporting2": { "title": "[Message Title]", "content": { "en": "...", "es": "..." } }
+                "supporting1": { "title": "...", "content": { "en": "...", "es": "..." } },
+                "supporting2": { "title": "...", "content": { "en": "...", "es": "..." } }
             },
             "channels": [
-                { "name": "[Channel Name]", "justification": "..." }
+                { "name": "[Canal]", "justification": "..." }
             ],
             "phases": [
                 {
-                    "title": "Phase 1: [Name]",
-                    "dates": "[Start Date - End Date]",
+                    "title": "Fase 1: [Nombre]",
+                    "dates": "[Fechas]",
                     "focus": "...",
                     "action": "...",
                     "goal": "..."
                 }
             ]
         }
+        ${getLanguageInstruction()}
         `;
 
         const response = await callGenAiProxy("generateContent", {
@@ -1060,7 +1192,12 @@ export const generateMarketingBrief = async (context: string, goal: string, sour
         });
 
         const text = extractTextFromResponse(response) || "{}";
-        return JSON.parse(text);
+        const cleanText = text.replace(/```json|```/g, '').trim();
+        const parsed = JSON.parse(cleanText);
+        if (parsed && typeof parsed === 'object') {
+            parsed.campaignGoal = goal;
+        }
+        return parsed;
     } catch (error) {
         console.error("Brief generation error:", error);
         return null;
@@ -1068,704 +1205,89 @@ export const generateMarketingBrief = async (context: string, goal: string, sour
 };
 
 export const generatePersonaChatResponse = async (persona: any, brief: any, message: string, chatHistory: { role: string, parts: { text: string }[] }[], simulationContext?: any): Promise<string> => {
-    
     try {
-        // Find if the audience matches one of our archetypes for better instructions
-        const archetype = { name: "General", representation: "A standard user", objectives: "Find good products", belief: "Values quality", value: "Price and value", tone: "Neutral", knowledge: "Basic" };
+        const personaName = persona.personaName || persona.name || 'Participante';
+        const demographics = persona.demographics || `${persona.age || persona.details?.age || 40} años`;
+        const bio = persona.bio || persona.details?.bio || '';
+        const painPoints = (persona.pain_points || persona.details?.pain_points || []).join('; ');
+        const goals = (persona.goals || persona.details?.goals || []).join('; ');
+        const studyName = brief?.productName || brief?.studyName || 'Check-up Control Diabetes';
 
-        let memoryContext = "";
+        let rubricSummaryText = '';
         if (simulationContext) {
-            memoryContext = `
-            **YOUR PREVIOUS SIMULATION FEEDBACK:**
-            You have already reviewed this campaign in a focus group.
-            - Your Score for Visual Appeal: ${simulationContext.visualAppeal}/100
-            - Your Score for Brand Fit: ${simulationContext.brandFit}/100
-            - Your Score for Stopping Power: ${simulationContext.stoppingPower}/100
-            - Your Sentiment: ${simulationContext.sentiment}
-            - Your Feedback: "${simulationContext.feedback}"
-            - Your Suggestion: "${simulationContext.suggestedMessaging || simulationContext.suggestedImage || 'None'}"
-            
-            CRITICAL: You must be consistent with these scores. If you gave a low score, you must explain why you disliked it. Do not contradict your previous feedback.
-            `;
+            if (Array.isArray(simulationContext.rubricScores) && simulationContext.rubricScores.length > 0) {
+                rubricSummaryText = simulationContext.rubricScores
+                    .map((r: RubricScore) => `- ${r.name} (Peso ${r.weight}%): ${r.score}/100 — "${r.rationale}"`)
+                    .join('\n');
+            } else {
+                rubricSummaryText = `
+                - Atractivo Visual / Confianza: ${simulationContext.visualAppeal}/100
+                - Apego a Marca Chopo: ${simulationContext.brandFit}/100
+                - Claridad en 3 seg (Stopping Power): ${simulationContext.stoppingPower}/100
+                - Intención de Acción: ${simulationContext.conversionLikelihood}/100
+                `;
+            }
         }
 
         const personaContext = `
-        **WHO YOU ARE:**
-        - Name: ${persona.name}
-        - Age: ${persona.age}
-        - Job: ${persona.job_title}
-        - Bio: ${persona.bio}
-        - Archetype: ${archetype.name}
-        
-        **YOUR DETAILED BEHAVIORAL INSTRUCTIONS:**
-        - Representation: ${archetype.representation}
-        - Objectives: ${archetype.objectives}
-        - Belief: ${archetype.belief}
-        - Value: ${archetype.value}
-        - Tone: ${archetype.tone}
-        - Knowledge: ${archetype.knowledge}
-        
-        **THE TASK:**
-        You are a prospective or current customer reviewing a marketing brief for ${brief.productName}.
-        - Campaign Goal: ${brief.campaignGoal}
-        - Value Proposition: ${brief.valueProp?.main?.en || 'N/A'}
+        Estás interpretando en primera persona a "${personaName}" (${demographics}).
+        Biografía y contexto: ${bio}
+        Puntos de dolor: ${painPoints}
+        Objetivos: ${goals}
 
-        ${memoryContext}
-        
-        **INSTRUCTIONS:**
-        Respond to the user's message as this persona. Be realistic, highly selective, and authentic to your specific archetype. 
-        If asking about your scores, explain the *reasoning* behind the numbers based on your values.
+        Acabas de participar en un Focus Group de Laboratorios Médicos El Chopo viendo una campaña para "${studyName}" en tu celular.
+        ${simulationContext ? `
+        Tu comentario inicial fue: "${simulationContext.feedback || ''}".
+        Tu calificación global ponderada fue: ${simulationContext.weightedOverallScore ?? simulationContext.conversionLikelihood ?? 75}/100.
+        Tus calificaciones por rúbrica fueron:
+        ${rubricSummaryText}
+        Dudas o barreras que detectaste: "${simulationContext.barriersOrConcerns || simulationContext.suggestedMessaging || ''}"
+        ` : ''}
+
+        REGLAS DE INTERPRETACIÓN (04_focus_group_1on1_chat):
+        Responde en primera persona, como un consumidor o médico real viendo redes sociales en su celular (NUNCA actúes como inspector legal ni pidas que un anuncio de redes sociales tenga manuales de procedimiento o batas; prefiere anuncios cortos, claros, con facilidad digital en App Chopo y visualmente atractivos).
+        Si te preguntan por qué diste cierta calificación en alguna rúbrica, explícalo desde tu personalidad y tus razones anteriores sin contradecirte. Sé conciso (2 a 3 oraciones).
+        ${getLanguageInstruction()}
         `;
 
         const response = await callGenAiProxy("generateContent", {
             model: 'gemini-3-flash-preview',
             contents: [
                 { role: "user", parts: [{ text: personaContext }] },
-                { role: "model", parts: [{ text: "Understood. I am now in character as " + persona.name + ". How can I help you today?" }] },
+                { role: "model", parts: [{ text: `Entendido. Estoy en personaje como ${personaName}.` }] },
                 ...chatHistory,
                 { role: "user", parts: [{ text: message }] }
             ]
         });
 
-        return extractTextFromResponse(response) || "I'm sorry, I couldn't process that.";
+        return extractTextFromResponse(response) || "Lo siento, no pude procesar esa pregunta.";
     } catch (error) {
         console.error("Chat error:", error);
-        return "I'm having trouble responding right now.";
+        return "Tengo problemas para responder en este momento.";
     }
-};
-
-export const generateRoomPersonalization = async (
-    couchImage: string,
-    tableImage: string,
-    roomImage: string,
-    onStepUpdate: (step: string, image: string | null, status: 'pending' | 'success' | 'error', message?: string) => void
-): Promise<string | null> => {
-    
-    const MAX_RETRIES = 3;
-
-    // --- Step 1: Place Couch ---
-    let currentRoomImage = roomImage;
-    let couchPlaced = false;
-
-    for (let i = 0; i < MAX_RETRIES; i++) {
-        onStepUpdate('couch', null, 'pending', `Placing Couch (Attempt ${i + 1})...`);
-        try {
-            const couchPrompt = `Generate an image: Using the provided couch and room images, place the couch in the room.
-            Instructions:
-            - Replace the couch in the room with the provided couch image.
-            - The couch should be placed naturally.
-            - Ensure the couch is scaled correctly and clearly visible.
-            - Return ONLY the edited image.`;
-
-            const response = await callGenAiProxy("generateContent", {
-                model: 'gemini-3.1-flash-image-preview',
-                contents: {
-                    parts: [
-                        { text: couchPrompt },
-                        { inlineData: { mimeType: 'image/jpeg', data: currentRoomImage } },
-                        { inlineData: { mimeType: 'image/jpeg', data: couchImage } }
-                    ]
-                }
-            });
-
-            const imageBase64 = extractImageFromResponse(response);
-            if (imageBase64) {
-                const fullBase64 = `data:image/jpeg;base64,${imageBase64}`;
-
-                // Audit
-                onStepUpdate('couch', null, 'pending', 'Auditing placement...');
-                const audit = await auditImage(fullBase64, couchImage, 'couch');
-
-                if (audit.passed) {
-                    currentRoomImage = imageBase64;
-                    couchPlaced = true;
-                    // Save and update UI
-                    const savedUrl = await saveImage(fullBase64);
-                    onStepUpdate('couch', savedUrl || fullBase64, 'success', audit.reason);
-                    break;
-                } else {
-                    // Save failed attempt for debugging? Optional. 
-                    // For now just show "audit failed" and maybe the image if we wanted, but sticking to logic.
-                    // Actually, user wants to see what happened.
-                    const savedUrl = await saveImage(fullBase64);
-                    onStepUpdate('couch', savedUrl || fullBase64, 'error', `Audit Failed: ${audit.reason}`);
-                }
-            } else {
-                onStepUpdate('couch', null, 'error', 'No image generated.');
-            }
-        } catch (e) {
-            console.error(e);
-            onStepUpdate('couch', null, 'error', 'Generation failed.');
-        }
-    }
-
-    if (!couchPlaced) return null;
-
-    // --- Step 2: Add Table ---
-    let tablePlaced = false;
-
-    for (let i = 0; i < MAX_RETRIES; i++) {
-        onStepUpdate('table', null, 'pending', `Adding Table (Attempt ${i + 1})...`);
-        try {
-            const tablePrompt = `Generate an image: Using the provided end table and room images, add the end table to the room.
-            Instructions:
-            - Add the provided end table to the room in an appropriate location.
-            - Ensure the end table is clearly visible and appropriately sized.
-            - Return ONLY the edited image.`;
-
-            const response = await callGenAiProxy("generateContent", {
-                model: 'gemini-3.1-flash-image-preview',
-                contents: {
-                    parts: [
-                        { text: tablePrompt },
-                        { inlineData: { mimeType: 'image/jpeg', data: currentRoomImage } },
-                        { inlineData: { mimeType: 'image/jpeg', data: tableImage } }
-                    ]
-                }
-            });
-
-            const imageBase64 = extractImageFromResponse(response);
-            if (imageBase64) {
-                const fullBase64 = `data:image/jpeg;base64,${imageBase64}`;
-
-                // Audit
-                onStepUpdate('table', null, 'pending', 'Auditing placement...');
-                const audit = await auditImage(fullBase64, tableImage, 'table');
-
-                if (audit.passed) {
-                    currentRoomImage = imageBase64;
-                    tablePlaced = true;
-                    const savedUrl = await saveImage(fullBase64);
-                    onStepUpdate('table', savedUrl || fullBase64, 'success', audit.reason);
-                    break;
-                } else {
-                    const savedUrl = await saveImage(fullBase64);
-                    onStepUpdate('table', savedUrl || fullBase64, 'error', `Audit Failed: ${audit.reason}`);
-                }
-            } else {
-                onStepUpdate('table', null, 'error', 'No image generated.');
-            }
-
-        } catch (e) {
-            console.error(e);
-            onStepUpdate('table', null, 'error', 'Generation failed.');
-        }
-    }
-
-    return tablePlaced ? currentRoomImage : null;
-};
-
-export const SEASONAL_THEMES = ["Halloween", "Thanksgiving", "Christmas", "Valentines Day", "Spring", "Summer"];
-
-export const generateSeasonalVariations = async (baseRoomImage: string): Promise<{ theme: string, image: string | null }[]> => {
-    
-
-    const generateSingle = async (theme: string): Promise<{ theme: string, image: string | null }> => {
-        try {
-            const prompt = `Generate an image: Take this room image and create a new version decorated for ${theme}.
-            Instructions:
-            - Keep the existing furniture (couch and end table) exactly as shown.
-            - Add appropriate ${theme}-themed decorations, colors, and accessories throughout the room.
-            - Maintain the same room layout and perspective.
-            - Return ONLY the edited image.`;
-
-            const response = await callGenAiProxy("generateContent", {
-                model: 'gemini-3.1-flash-image-preview',
-                contents: {
-                    parts: [
-                        { text: prompt },
-                        { inlineData: { mimeType: 'image/jpeg', data: baseRoomImage } }
-                    ]
-                }
-            });
-
-            const imageBase64 = extractImageFromResponse(response);
-            if (imageBase64) {
-                const fullBase64 = `data:image/jpeg;base64,${imageBase64}`;
-                const savedUrl = await saveImage(fullBase64);
-                return { theme, image: savedUrl || fullBase64 };
-            }
-            return { theme, image: null };
-
-        } catch (error) {
-                console.error(`Failed to generate variation for ${theme}:`, error);
-            return { theme, image: null };
-        }
-    };
-
-    return Promise.all(SEASONAL_THEMES.map(theme => generateSingle(theme)));
-};
-
-// --- Generative Site / Landing Page Logic ---
-
-export const generatePersonalizedProducts = async (userProfile: any, audienceContext: any = null, companyName: string = "AI"): Promise<any> => {
-    
-    try {
-        let audiencePrompt = "";
-        if (audienceContext) {
-            audiencePrompt = `
-            **AUDIENCE INSIGHTS (Use these to guide recommendations):**
-            - Segment Name: ${audienceContext.name}
-            - Bio: ${audienceContext.bio}
-            - Goals: ${audienceContext.details?.goals?.join(', ') || audienceContext.goals?.join(', ') || 'N/A'}
-            - Pain Points: ${audienceContext.details?.pain_points?.join(', ') || audienceContext.pain_points?.join(', ') || 'N/A'}
-            - **CRITICAL - PREFERRED PRODUCTS**: ${audienceContext.details?.preferred_products?.join(', ') || 'N/A'}
-            
-            Instruction: Prioritize the "Preferred Products" listed above if they are relevant to the user's current needs.
-            Also consider their goals and pain points when writing the "reason" for the recommendation.
-            `;
-        }
-
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3-flash-preview',
-            contents: {
-                parts: [{
-                    text: `
-                    Task: Generate 6 personalized product, plan, or service recommendations for the user based on their data.
-                    The recommendations should be relevant to the company's offerings and the provided context.
-
-                    ${audiencePrompt}
-
-                    For each product, provide: name, sku, short_description, cost, a reason for the recommendation, and a detailed prompt for an image generation model to create a visually appealing product photo.
-
-                    IMPORTANT for image_prompt: The image will be displayed on a clean, modern website.
-                    Each image_prompt MUST specify:
-                    - Clean, professional imagery (lifestyle or abstract concepts)
-                    - Professional photography
-                    - Style should match the brand aesthetic (Premium/Trust/Quality) and target audience
-                    - Good contrast to make the product stand out
-                    - Clean, premium atmosphere
-
-                    Return ONLY the raw JSON object that conforms to this structure:
-                    {
-                        "products": [
-                            {
-                                "name": "...",
-                                "sku": "...",
-                                "short_description": "...",
-                                "cost": "...",
-                                "reason": "...",
-                                "image_prompt": "..."
-                            }
-                        ]
-                    }
-                    User Data: ${JSON.stringify(userProfile)}
-                ` }]
-            },
-            config: { responseMimeType: "application/json" }
-        });
-
-        const text = extractTextFromResponse(response) || "{}";
-        return JSON.parse(text);
-    } catch (error) {
-        console.error("Product generation error:", error);
-        return { products: [] };
-    }
-};
-
-export const translateProducts = async (products: any[]): Promise<any> => {
-    
-    try {
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3-flash-preview', // lightweight model for translation
-            contents: {
-                parts: [{
-                    text: `
-                    Task: Translate the 'name', 'short_description', and 'reason' fields for each product in the following JSON from English to Spanish.
-                    Do not translate 'sku', 'cost', or 'image_prompt'. Keep the exact same JSON structure.
-                    
-                    Input JSON: { "products": ${JSON.stringify(products)} }
-                ` }]
-            },
-            config: { responseMimeType: "application/json" }
-        });
-
-        const text = extractTextFromResponse(response) || "{}";
-        return JSON.parse(text);
-    } catch (error) {
-        console.error("Translation error:", error);
-        return { products: products }; // Fallback to original
-    }
-};
-
-export const generatePersonalizedHeadlines = async (userProfile: any, audienceContext: any = null, companyName: string = "AI"): Promise<any> => {
-    
-    try {
-        let audiencePrompt = "";
-        if (audienceContext) {
-            audiencePrompt = `
-            **AUDIENCE CONTEXT:**
-            - Segment: ${audienceContext.name}
-            - Tone/Vibe: ${audienceContext.details?.bio || "Caring and reliable"}
-            - Key Values: ${audienceContext.details?.goals?.join(', ') || "Peace of Mind"}
-            
-            Instruction: Adjust the headline tone to match the Audience Segment's specific vibe (e.g. "The Young Family" should sound reassuring/warm, "The Active Senior" should sound empowering/vibrant).
-            `;
-        }
-
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3-flash-preview',
-            contents: {
-                parts: [{
-                    text: `
-                    Task: Based on the user's data, write a short, catchy headline and a slightly more detailed subheadline for their personalized landing page.
-
-                    ${audiencePrompt}
-
-                    - Use a professional, caring, yet modern and accessible tone appropriate for the brand.
-                    - Headlines should be concise, friendly, and make the user feel valued.
-                    - Focus on personalization and the user's specific interests.
-                    - Make it feel exclusive and curated for them.
-
-                    For the subheadline use some details about them to help them realize this page is personalized to them, create a full paragraph of text for the subheadline.
-                    Provide the text in both English and Spanish.
-
-                    Return JSON:
-                    {
-                        "en": { "headline": "...", "subheadline": "..." },
-                        "es": { "headline": "...", "subheadline": "..." }
-                    }
-                    User Data: ${JSON.stringify(userProfile)}
-                ` }]
-            },
-            config: { responseMimeType: "application/json" }
-        });
-
-        const text = extractTextFromResponse(response) || "{}";
-        return JSON.parse(text);
-    } catch (error) {
-        console.error("Headline generation error:", error);
-        return {
-            en: { headline: "A Partner in Your Health", subheadline: "Coverage that cares for you." },
-            es: { headline: "Un Socio en Su Salud", subheadline: "Cobertura que se preocupa por usted." }
-        };
-    }
-};
-
-export const generatePersonalizedPDPContent = async (audience: string, productName: string, companyName: string = "AI"): Promise<any> => {
-    
-    try {
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3-flash-preview',
-            contents: {
-                parts: [{
-                    text: `
-                    Task: Write personalized product detail page (PDP) content for "${productName}" targeting the audience: "${audience}".
-                    Industry: Services
-                    Company: ${companyName}
-                    Product: ${productName}
-                    Audience: ${audience}
-                    
-                    Return a JSON object with:
-                    1. "whyPerfect": A single, punchy sentence (max 15 words) explaining why this product is perfect for this specific audience.
-                    2. "description": A modified version of the standard product description that highlights features relevant to this audience. Keep it concise.
-                    3. "imagePrompt": A detailed prompt to generate a photorealistic image of "${productName}" being used by or placed in a setting typical for this audience. The product should be clearly visible.
-                    
-                    Input Product: ${productName}
-                    Target Audience: ${audience}
-                    
-                    Return JSON:
-                    {
-                        "whyPerfect": "...",
-                        "description": "...",
-                        "imagePrompt": "..."
-                    }
-                ` }]
-            },
-            config: { responseMimeType: "application/json" }
-        });
-
-        const text = extractTextFromResponse(response) || "{}";
-        return JSON.parse(text);
-    } catch (error) {
-        console.error("PDP content generation error:", error);
-        return {
-            whyPerfect: "Great for everyone!",
-            description: "High quality detergent.",
-            imagePrompt: `Photorealistic shot of ${productName} on a clean background.`
-        };
-    }
-};
-
-// Helper to fetch URL and convert to raw base64
-const urlToRawBase64 = async (url: string): Promise<{ data: string, mimeType: string }> => {
-    console.log(`Fetching image from URL: ${url}`);
-
-    // Resolve relative URL to absolute if in browser
-    let fetchUrl = url;
-    if (url.startsWith('/') && typeof window !== 'undefined') {
-        fetchUrl = `${window.location.origin}${url}`;
-        console.log(`Resolved relative URL to absolute: ${fetchUrl}`);
-    }
-
-    // Use proxy for external URLs to avoid CORS
-    if (fetchUrl.startsWith('http') && !fetchUrl.includes(window.location.host)) {
-        try {
-            const proxyRes = await fetch('/api/proxy-image', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: fetchUrl.includes('?') ? `${fetchUrl}&t=${Date.now()}` : `${fetchUrl}?t=${Date.now()}` })
-            });
-
-            if (proxyRes.ok) {
-                const proxyData = await proxyRes.json();
-                if (proxyData.base64 && proxyData.mimeType) {
-                    console.log("Successfully fetched image via proxy.");
-                    return { data: proxyData.base64, mimeType: proxyData.mimeType };
-                }
-            } else {
-                console.warn(`Proxy fetch failed (${proxyRes.status}), falling back to direct fetch.`);
-            }
-        } catch (e) {
-            console.error("Error using image proxy:", e);
-        }
-    }
-
-    // Direct fetch (local or fallback)
-    try {
-        const response = await fetch(fetchUrl);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch image from ${fetchUrl}: ${response.status} ${response.statusText}`);
-        }
-        const blob = await response.blob();
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const result = reader.result as string;
-                // Strip data:image/xyz;base64, prefix
-                const base64 = result.split(',')[1];
-                // Extract mime type from data URI if possible, or fallback to blob type
-                const mimeType = result.match(/data:([^;]+);/)?.[1] || blob.type || 'image/png';
-                resolve({ data: base64, mimeType });
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-    } catch (error) {
-        console.error(`Error fetching image from ${fetchUrl}:`, error);
-        throw error;
-    }
-};
-export const generateLifestyleScene = async (productImages: string | string[], sceneDescription: string, mimeType: string = 'image/png'): Promise<string | null> => {
-    
-    try {
-        const images = Array.isArray(productImages) ? productImages : [productImages];
-        const processedImages = await Promise.all(images.map(async (img) => {
-            if (img.startsWith('/') || img.startsWith('http')) {
-                const result = await urlToRawBase64(img);
-                return { data: result.data, mimeType: result.mimeType };
-            } else if (img.startsWith('data:')) {
-                const matches = img.match(/^data:([^;]+);base64,(.+)$/);
-                if (matches && matches.length === 3) {
-                    return { mimeType: matches[1], data: matches[2] };
-                }
-                return { mimeType: 'image/png', data: img.split(',')[1] };
-            }
-            return { data: img, mimeType };
-        }));
-
-        const model = 'gemini-3.1-flash-image-preview';
-
-        // Config with JPEG output
-        const config = {
-            responseModalities: ['IMAGE', 'TEXT'],
-            imageConfig: {
-                imageSize: '1K',
-                // @ts-ignore
-                outputMimeType: "image/jpeg"
-            },
-            safetySettings: [
-                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
-                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
-                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
-                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' }
-            ]
-        };
-
-        const imageParts = processedImages.map(img => ({
-            inlineData: { mimeType: img.mimeType, data: img.data }
-        }));
-
-        const contents = [
-            {
-                role: 'user',
-                parts: [
-                    ...imageParts,
-                    { text: sceneDescription }
-                ],
-            },
-        ];
-
-        console.log("Generating lifestyle scene (multi-image context)...");
-        // @ts-ignore
-        const response = await callGenAiProxy("generateContent", {
-            model,
-            config,
-            contents,
-        });
-
-        const imageBase64 = extractImageFromResponse(response);
-        if (imageBase64) {
-            return `data:image/jpeg;base64,${imageBase64}`;
-        }
-
-        return null;
-
-    } catch (error) {
-        console.error("Lifestyle scene generation error:", error);
-        return null;
-    }
-};
-
-/**
- * @deprecated Use generatePersonalizedPDPContent and generateLifestyleScene separately.
- */
-export const generatePersonalizedPDPCombined = async (audience: string, productName: string, referenceImageSource: string): Promise<{ image: string | null, content: any }> => {
-    
-    try {
-        console.log(`Generating combined PDP asset for ${audience} using gemini-3-pro-image-preview...`);
-
-        let imageBytes = referenceImageSource;
-        let mimeType = 'image/png';
-
-        // If it looks like a URL or path, fetch it
-        if (referenceImageSource.startsWith('/') || referenceImageSource.startsWith('http')) {
-            console.log(`Fetching reference image from URL: ${referenceImageSource}`);
-            try {
-                const result = await urlToRawBase64(referenceImageSource);
-                imageBytes = result.data;
-                mimeType = result.mimeType;
-                console.log(`Image fetched successfully. Mime: ${mimeType}, Size: ${imageBytes.length}`);
-            } catch (fetchError) {
-                console.error("Error fetching reference image:", fetchError);
-                // Fallback or rethrow? If reference is missing, generation will fail or be generic.
-                // Let's assume we proceed without image or throw? 
-                // Proceeding might be better to at least get text, but the prompt relies on the image.
-                throw fetchError;
-            }
-        } else if (referenceImageSource.startsWith('data:')) {
-            // Strip prefix if a full data URI was passed
-            const matches = referenceImageSource.match(/^data:([^;]+);base64,(.+)$/);
-            if (matches && matches.length === 3) {
-                mimeType = matches[1];
-                imageBytes = matches[2];
-            } else {
-                imageBytes = referenceImageSource.split(',')[1];
-            }
-        }
-
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3.1-flash-image-preview',
-            contents: {
-                parts: [
-                    { inlineData: { mimeType: mimeType, data: imageBytes } },
-                    {
-                        text: `
-                        You are a marketing expert and visual designer.
-                        
-                        Task 1: Generate a photorealistic image of the product (reference provided) placed in a setting typical for the audience: "${audience}". 
-                        - CRITICAL: The product in the output must be the EXACT same bottle from the reference image. Maintain the logo, text, colors, and shape exactly.
-                        - Do not generate a new bottle. Composite the reference bottle naturally into the scene.
-                        
-                        Task 2: Write personalized PDP content for this audience.
-                        - "whyPerfect": A single, punchy sentence (max 15 words) explaining why this product is perfect for them.
-                        - "description": A short, tailored description (2-3 sentences) highlighting relevant features.
-                        
-                        Output Requirement:
-                        Return BOTH the generated image and a text response containing the JSON for Task 2.
-                        The text output MUST be a valid JSON object:
-                        {
-                            "whyPerfect": "...",
-                            "description": "..."
-                        }
-                    ` }
-                ]
-            },
-            config: {
-                responseModalities: ["IMAGE", "TEXT"],
-                // @ts-ignore
-                imageConfig: {
-                    aspectRatio: "1:1",
-                    imageSize: "1K"
-                }
-            }
-        });
-
-        const imageBase64 = extractImageFromResponse(response);
-
-        let content = { whyPerfect: "Perfect for you.", description: "High quality laundry detergent." };
-        const candidates = response?.candidates || response?.response?.candidates;
-
-        if (candidates && candidates.length > 0) {
-            for (const part of candidates[0].content.parts) {
-                if (part.text) {
-                    try {
-                        const cleanText = part.text.replace(/```json|```/g, '').trim();
-                        // Find the JSON object within the text if there's extra chatter
-                        const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-                        if (jsonMatch) {
-                            content = JSON.parse(jsonMatch[0]);
-                        } else {
-                            content = JSON.parse(cleanText);
-                        }
-                    } catch (e) {
-                        console.warn("Failed to parse JSON from combined response text:", part.text);
-                    }
-                }
-            }
-        }
-
-        return {
-            image: imageBase64 ? `data:image/jpeg;base64,${imageBase64}` : null,
-            content: content
-        };
-
-    } catch (error) {
-        console.error("Combined PDP generation error:", error);
-        return {
-            image: null,
-            content: { whyPerfect: "Error generating content.", description: "Please try again." }
-        };
-    }
-};
-
-
-
-/**
- * Generates a video using Veo.
- */
-export const generateVideo = async (
-    params: any,
-): Promise<{ objectUrl: string; blob: Blob; uri: string; video: Video }> => {
-    throw new Error("generateVideo is no longer supported in this context.");
 };
 
 // --- Synthetic Focus Group & Simulation Logic ---
 
 export const generateEmailBodies = async (headlines: string[], brief: MarketingBriefData): Promise<{ [headline: string]: string }> => {
-    
     try {
         const prompt = `
-        You are an expert email marketer for ${brandConfig.companyName}.
+        Eres el Director de Email Marketing de ${brandConfig.companyName || "Laboratorios Chopo"} ("Tu laboratorio de cabecera").
         
-        **Product:** ${brief.productName}
-        **Target Audience:** ${brief.audiences[0]?.name || "General Audience"}
-        **Key Goal:** Drive clicks, health plan enrollments, or health action engagement.
+        **Estudio / Producto:** ${brief.productName}
+        **Audiencia Objetivo:** ${brief.audiences?.[0]?.name || "Paciente / Médico Chopo"}
+        **Instrucción / Objetivo del Usuario (SEGUIR AL PIE DE LA LETRA):** ${brief.campaignGoal}
 
-        **Task:**
-        For EACH of the provided subject lines, write a short, persuasive email body (max 100 words).
-        The tone should be consistent with the subject line.
+        **Tarea:**
+        Para CADA uno de los siguientes asuntos de correo, redacta un mensaje breve, directo y de alto impacto (máximo 35 a 45 palabras, pensado para acompañar un banner visual de correo) siguiendo estrictamente las instrucciones de "${brief.campaignGoal}".
 
-        **Subject Lines:**
+        **Asuntos de Correo:**
         ${JSON.stringify(headlines)}
 
-        **Output:**
-        Return a valid JSON object where keys are the subject lines and values are the generated email bodies.
-        {
-            "Subject Line 1": "Email body text...",
-            "Subject Line 2": "Email body text..."
-        }
-        Do not use markdown.
+        **Salida:**
+        Devuelve un objeto JSON válido donde las llaves sean exactamente los asuntos de correo y los valores sean los textos generados.
+        No uses markdown.
+        ${getLanguageInstruction()}
         `;
 
         const response = await callGenAiProxy("generateContent", {
@@ -1781,20 +1303,19 @@ export const generateEmailBodies = async (headlines: string[], brief: MarketingB
     } catch (error) {
         console.error("Email body generation error:", error);
         const fallback: any = {};
-        headlines.forEach(h => fallback[h] = `Discover our latest deals and exclusive savings just for you. Shop now at ${brandConfig.companyName}.`);
+        headlines.forEach(h => fallback[h] = `Agenda tu estudio en línea en chopo.com.mx o en la App Chopo con precio especial y recibe tus resultados digitales. Consulte a su médico.`);
         return fallback;
     }
 };
 
 export const generateWildcardAudience = async (context: string, existingAudiences: string[]): Promise<any> => {
-    
     try {
         const response = await callGenAiProxy("generateContent", {
             model: 'gemini-3-flash-preview',
             contents: {
                 parts: [{
                     text: `
-                    You are a creative strategist looking for "Blue Ocean" opportunities.
+                    You are a creative strategist looking for "Blue Ocean" opportunities for Laboratorios Médicos El Chopo.
 
                     **Company Context:**
                     ${context}
@@ -1803,20 +1324,21 @@ export const generateWildcardAudience = async (context: string, existingAudience
                     ${JSON.stringify(existingAudiences)}
 
                     **Task:**
-                    Identify 1 COMPLETELY DIFFERENT "Wildcard" Audience Segment that is distinct from the existing ones.
-                    Think of an outlier demographic, a surprising use-case, or an underserved niche that might actually buy this.
-                    It should be realistic but creative.
+                    Identify 1 COMPLETELY DIFFERENT "Wildcard" Audience Segment in Mexico (either Patient B2C or Physician B2B) that is distinct from the existing ones.
 
                     Return a valid JSON object:
                     {
-                        "name": "Creative Segment Name",
-                        "personaName": "Full Name",
-                        "bio": "Description...",
-                        "demographics": "Age range...",
-                        "imagePrompt": "Portrait of a..."
+                        "track": "patient",
+                        "name": "[Paciente B2C] Nombre del Segmento",
+                        "personaName": "Nombre Completo (Edad, Ciudad)",
+                        "bio": "Descripción...",
+                        "demographics": "Rango de edad, Ciudad, NSE...",
+                        "imagePrompt": "Retrato fotográfico realista en México..."
                     }
                     Do not use markdown code blocks.
-                ` }]
+                    ${getLanguageInstruction()}
+                `
+                }]
             },
             config: { responseMimeType: "application/json" }
         });
@@ -1831,36 +1353,37 @@ export const generateWildcardAudience = async (context: string, existingAudience
 };
 
 export const generateAudienceFromCriteria = async (context: string, criteria: string): Promise<any> => {
-    
     try {
+        const isPhysician = criteria.toLowerCase().includes('médico') || criteria.toLowerCase().includes('especialista') || criteria.toLowerCase().includes('b2b') || criteria.toLowerCase().includes('doctor');
         const response = await callGenAiProxy("generateContent", {
             model: 'gemini-3-flash-preview',
             contents: {
                 parts: [{
                     text: `
-                    You are a creative strategist.
+                    Eres un experto en investigación de mercados médicos para Laboratorios Médicos El Chopo ("Tu laboratorio de cabecera").
 
-                    **Company Context:**
+                    **Contexto Institucional:**
                     ${context}
 
-                    **User Request:**
-                    The user wants to target an audience matching these criteria:
+                    **Criterio del Usuario:**
                     "${criteria}"
 
-                    **Task:**
-                    Develop a detailed target audience segment that PRECISELY matches the user's criteria.
-                    Flesh it out into a specific persona.
+                    **Tarea:**
+                    Desarrolla un perfil sintético mexicano realista para la pista "${isPhysician ? 'physician' : 'patient'}" que cumpla exactamente con el criterio solicitado.
 
-                    Return a valid JSON object:
+                    Devuelve un objeto JSON válido:
                     {
-                        "name": "Segment Name",
-                        "personaName": "Representative Name",
-                        "bio": "A rich description of who they are, their lifestyle, and why they fit the criteria...",
-                        "demographics": "Age, Location, Income...",
-                        "imagePrompt": "Photorealistic portrait of..."
+                        "track": "${isPhysician ? 'physician' : 'patient'}",
+                        "name": "${isPhysician ? '[Médico B2B]' : '[Paciente B2C]'} Nombre del Segmento",
+                        "personaName": "Nombre Representativo (Edad, Ciudad)",
+                        "bio": "Descripción rica de su perfil, estilo de vida y necesidades diagnósticas...",
+                        "demographics": "Edad, Ciudad en México, NSE...",
+                        "imagePrompt": "Retrato fotográfico realista en México sin texto incrustado..."
                     }
-                    Do not use markdown code blocks.
-                ` }]
+                    No uses bloques markdown.
+                    ${getLanguageInstruction()}
+                `
+                }]
             },
             config: { responseMimeType: "application/json" }
         });
@@ -1881,7 +1404,6 @@ export const simulateMarketingFocusGroup = async (
     emailCampaigns: { subject: string, body: string }[],
     marketingMessages: string[] = []
 ): Promise<any[]> => {
-    
     const BATCH_SIZE = 10;
     const results: any[] = [];
 
@@ -1889,21 +1411,19 @@ export const simulateMarketingFocusGroup = async (
         try {
             console.log(`Processing batch of ${batchPersonas.length} users...`);
             const prompt = `
-            You are a hyper-realistic consumer simulator.
+            You are a hyper-realistic consumer and physician simulator in Mexico evaluating campaigns for Laboratorios Médicos El Chopo.
 
             **CONTEXT:**
-            You are simulating the behavior of ${batchPersonas.length} distinct synthetic personas.
+            You are simulating the behavior of ${batchPersonas.length} distinct synthetic personas scrolling on their mobile phones (3-second attention span).
             
-            **CRITICAL INSTRUCTION - MAXIMIZE VARIANCE:**
-            - **DO NOT** make everyone polite or rational.
-            - Include **irrational bias**, **moodiness**, and **skepticism**.
-            - Some users should HATE the campaign for petty reasons.
-            - Some should LOVE it for random reasons.
-            - **Enrollment decisions must be strict.** Most people DO NOT enroll in new health plans or add-ons unless they really need them or it's an amazing benefit.
+            **CRITICAL INSTRUCTION - REALISM & VARIANCE:**
+            - Act as real humans on social media / mobile, NOT as regulatory auditors.
+            - Penalize long, boring, text-heavy messages; reward concise, empathetic, digital-first messages (App Chopo / chopo.com.mx).
+            - Scores must use the full 0-100 range based on each persona's pain points and goals.
             
             **THE MARKETING MATERIAL:**
             Campaign Goal: ${brief.campaignGoal}
-            Value Proposition: ${brief.valueProp?.main?.en || "Great value"}
+            Value Proposition: ${brief.valueProp?.main?.es || brief.valueProp?.main?.en || "Certeza diagnóstica y prevención"}
             
             **THE PRODUCTS TO EVALUATE:**
             ${JSON.stringify(productsList)}
@@ -1914,20 +1434,6 @@ export const simulateMarketingFocusGroup = async (
             **MARKETING MESSAGES TO TEST:**
             ${JSON.stringify(marketingMessages)}
 
-            **YOUR TASK:**
-            For EACH participant, simulate their authentic reaction to these materials. 
-            
-            1. **Brief Score**: Rate Interest, Clarity, and Relevance (0-100). 
-               - **VARIANCE:** Scores should range widely. Do not average around 80. Use 20s, 40s, 90s.
-            2. **Negative Feedback**: What would this specific persona dislike? Be blunt.
-            3. **Cart Selection**: Which of the provided ${brief.companyName} plans or benefits would they ACTUALLY enroll in right now? (True/False) and a short reason.
-            4. **Email Engagement**: 
-               - Only OPEN if the SUBJECT resonates.
-               - Only CLICK if the BODY persuades them.
-            5. **Message Testing**:
-               - Rate each "Marketing Message" (0-100) on resonance.
-               - Sentiment: "Positive", "Neutral", "Negative".
-
             **OUTPUT FORMAT:**
             Return a JSON array with exactly ${batchPersonas.length} objects:
             [
@@ -1937,25 +1443,23 @@ export const simulateMarketingFocusGroup = async (
                     "briefMetrics": { 
                         "interestScore": 85, 
                         "clarityScore": 90, 
-                        "relevanceScore": 0-100, 
+                        "relevanceScore": 80, 
                         "feedback": "...",
                         "negativeFeedback": "..." 
                     },
                     "cart": [
-                        { "productName": "Product 1", "purchased": true, "reason": "..." },
-                        ...
+                        { "productName": "Product 1", "purchased": true, "reason": "..." }
                     ],
                     "emailEngagement": [
-                        { "subjectLine": "Headline 1", "opened": true, "clicked": false },
-                        ...
+                        { "subjectLine": "Exact subject from THE EMAIL CAMPAIGNS TO TEST", "opened": true, "clicked": false, "feedback": "Unique 1-sentence first-person explanation from this specific persona explaining why they opened/clicked or ignored this specific email based on their personal bio, age, and pain points (NEVER repeat the same comment across different personas)" }
                     ],
                     "messageReactions": [
-                        { "message": "Msg 1", "score": 85, "sentiment": "Positive" },
-                        ...
+                        { "message": "Msg 1", "score": 85, "sentiment": "Positive" }
                     ]
                 }
             ]
             Do not use markdown.
+            ${getLanguageInstruction()}
             `;
 
             const response = await callGenAiProxy("generateContent", {
@@ -1966,10 +1470,12 @@ export const simulateMarketingFocusGroup = async (
                             text: JSON.stringify(batchPersonas.map(p => ({
                                 id: p.id,
                                 name: p.name,
+                                track: p.track || 'patient',
                                 bio: p.bio,
                                 demographics: p.demographics,
-                                brands: p.preferred_brands,
-                                traits: p.details?.lifestyle_tags || []
+                                pain_points: p.pain_points || p.details?.pain_points || [],
+                                goals: p.goals || p.details?.goals || [],
+                                traits: p.lifestyle_tags || p.details?.lifestyle_tags || []
                             })))
                         },
                         { text: prompt }
@@ -2010,10 +1516,9 @@ export const simulateMarketingFocusGroup = async (
 export const simulateAcquisitionFocusGroup = async (
     personas: any[],
     offers: string[],
-    companyName: string = "QVC AI",
-    productContext: string = "Retail and Live Commerce"
+    companyName: string = "Laboratorios Médicos El Chopo",
+    productContext: string = "Diagnóstico Clínico y Check-ups"
 ): Promise<any[]> => {
-    
     const BATCH_SIZE = 10;
     const results: any[] = [];
 
@@ -2021,24 +1526,13 @@ export const simulateAcquisitionFocusGroup = async (
         try {
             console.log(`Processing acquisition batch of ${batchPersonas.length} users for ${companyName}...`);
             const prompt = `
-            You are a hyper-realistic consumer simulator specializing in Gen-Z and Millennial retail behaviors.
+            You are a hyper-realistic consumer and physician simulator specializing in healthcare and clinical laboratory behaviors in Mexico.
             
             **CONTEXT:**
-            You are simulating ${batchPersonas.length} distinct synthetic personas.
-            **CRITICAL:** For this simulation, assume these personas are **NEW PROSPECTS** who are considering engaging with ${companyName} for their ${productContext} needs.
+            You are simulating ${batchPersonas.length} distinct synthetic personas evaluating acquisition offers from ${companyName} (${productContext}).
             
             **THE ACQUISITION OFFERS:**
             ${JSON.stringify(offers)}
-
-            **YOUR TASK:**
-            For EACH participant, evaluate the offers based on their personal brand affinity, tech-savviness, and lifestyle needs. 
-            Decide if they would join/engage with ${companyName}.
-            
-            1. **Likelihood to Join**: (0-100). Be realistic. Gen-Z/Millennials are discerning.
-            2. **Perceived Value**: (0-100). How "worth it" is this offer?
-            3. **Barriers**: What is stopping them? (e.g. lack of authenticity, better deals elsewhere, complex UI).
-            4. **Winning Offer**: Which offer (if any) tempted them the most?
-            5. **Feedback**: Their internal monologue. Use language appropriate for their demographic (e.g. "vibey", "aesthetic", "seamless", "overrated").
 
             **OUTPUT FORMAT:**
             Return a JSON array with exactly ${batchPersonas.length} objects:
@@ -2054,6 +1548,7 @@ export const simulateAcquisitionFocusGroup = async (
                 }
             ]
             Do not use markdown.
+            ${getLanguageInstruction()}
             `;
 
             const response = await callGenAiProxy("generateContent", {
@@ -2064,10 +1559,12 @@ export const simulateAcquisitionFocusGroup = async (
                             text: JSON.stringify(batchPersonas.map(p => ({
                                 id: p.id,
                                 name: p.name,
+                                track: p.track || 'patient',
                                 bio: p.bio,
                                 demographics: p.demographics,
-                                brands: p.preferred_brands,
-                                traits: p.details?.lifestyle_tags || []
+                                pain_points: p.pain_points || p.details?.pain_points || [],
+                                goals: p.goals || p.details?.goals || [],
+                                traits: p.lifestyle_tags || p.details?.lifestyle_tags || []
                             })))
                         },
                         { text: prompt }
@@ -2109,90 +1606,143 @@ export const simulateAcquisitionFocusGroup = async (
 export const simulateCreativeFocusGroup = async (
     personas: any[],
     assets: MarketingAssets,
-    companyName: string = "AI"
+    companyName: string = "Laboratorios Médicos El Chopo",
+    activeRubrics?: FocusGroupRubric[],
+    studyName: string = "Check-up Control Diabetes"
 ): Promise<any[]> => {
-    
     const BATCH_SIZE = 5; // Smaller batch for multimodal
     const results: any[] = [];
 
-    // Helper to fetch image data for the prompt
-    // We need to pass the base64 data if it exists
+    const rubricsToUse: FocusGroupRubric[] =
+        activeRubrics && activeRubrics.length > 0 ? activeRubrics : await fetchRubrics();
+
+    // Load multimodal image part if available
     let mainImagePart: any = null;
-    if (assets.image && assets.image.startsWith('data:')) {
-        const matches = assets.image.match(/^data:([^;]+);base64,(.+)$/);
-        if (matches && matches.length === 3) {
-            mainImagePart = { inlineData: { mimeType: matches[1], data: matches[2] } };
+    if (assets.image) {
+        if (assets.image.startsWith('data:')) {
+            const matches = assets.image.match(/^data:([^;]+);base64,(.+)$/);
+            if (matches && matches.length === 3) {
+                mainImagePart = { inlineData: { mimeType: matches[1], data: matches[2] } };
+            }
+        } else if (assets.image.startsWith('/api/media/') || assets.image.startsWith('http') || assets.image.startsWith('/images/')) {
+            try {
+                const imgRes = await fetch(assets.image);
+                if (imgRes.ok) {
+                    const blob = await imgRes.blob();
+                    const base64Data = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const resStr = String(reader.result || '');
+                            const m = resStr.match(/^data:([^;]+);base64,(.+)$/);
+                            resolve(m ? m[2] : '');
+                        };
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                    });
+                    if (base64Data) {
+                        mainImagePart = { inlineData: { mimeType: blob.type || 'image/jpeg', data: base64Data } };
+                    }
+                }
+            } catch (e) {
+                console.warn("Could not load image URL for multimodal creative focus group:", e);
+            }
         }
     }
 
+    const adCopySummary = `
+    - Post Redes Sociales: "${assets.social?.caption || ''}" (${(assets.social?.hashtags || []).join(' ')})
+    - Anuncio Buscador: "${assets.search?.headline || ''}" — "${assets.search?.description || ''}"
+    - Asunto de Correo: "${assets.email?.subject || ''}"
+    `.trim();
+
     const processBatch = async (batchPersonas: any[]) => {
         try {
-            console.log(`Processing creative focus group batch of ${batchPersonas.length} users...`);
+            console.log(`Processing creative focus group batch of ${batchPersonas.length} users with dynamic rubrics...`);
+
+            const personasPayload = batchPersonas.map(p => {
+                const pTrack =
+                    p.track === 'physician' ||
+                    String(p.name || '').toLowerCase().includes('médico') ||
+                    String(p.name || '').toLowerCase().includes('b2b')
+                        ? 'physician'
+                        : 'patient';
+                return {
+                    id: p.id,
+                    name: p.name,
+                    personaName: p.personaName || p.name,
+                    track: pTrack,
+                    bio: p.bio || p.details?.bio || '',
+                    demographics: p.demographics || '',
+                    pain_points: p.pain_points || p.details?.pain_points || [],
+                    goals: p.goals || p.details?.goals || [],
+                    applicableRubricIds: rubricsToUse
+                        .filter(r => r.track === 'both' || r.track === pTrack)
+                        .map(r => r.id)
+                };
+            });
+
             const prompt = `
-            You are a hyper-realistic consumer simulator.
-            
-            **CONTEXT:**
-            You are simulating ${batchPersonas.length} distinct synthetic personas.
-            
-            **THE CREATIVE ASSETS TO EVALUATE:**
-            1. **Main Campaign Image**: (Attached)
-            2. **Social Caption**: "${assets.social.caption}" (#${assets.social.hashtags.join(' #')})
-            3. **Search Ad**: "${assets.search.headline}" - "${assets.search.description}"
-            4. **Email Subject**: "${assets.email.subject}"
-            
-            **YOUR TASK:**
-            For EACH participant, evaluate these creative assets.
-            
-            1. **Visual Appeal**: (0-100). Does the image look good to THEM?
-            2. **Brand Fit**: (0-100). Does it feel perfectly aligned with ${companyName}'s brand identity and values?
-               - **Explanation**: Why/Why not?
-            3. **Resonance**: (0-100). How much would this persona care?
-               - **Explanation**: Specific triggers.
-            4. **Constructive Feedback**: Specific ways to improve the image or copy to better fit the persona.
-               - **Suggested Product**: If they don't like this product, what specific ${companyName} product or service would they prefer? (e.g. "Aha! Plan", "Blue Flex").
-               - **Suggested Messaging**: What angle would work better? (e.g. "Focus on coverage", "Focus on savings").
-               - **Suggested Image**: Describe a specific alternative image concept that would resonate better with THIS specific persona.
-               - **Copy Edit**: Rewrite the Social Caption or Search Headline to better appeal to them.
-            
-            **OUTPUT FORMAT:**
-            Return a JSON array with exactly ${batchPersonas.length} objects:
+            Simula un Focus Group de consumidores y médicos reales en México viendo este material publicitario de ${companyName} para "${studyName}" mientras hacen scroll en su teléfono celular (Instagram / Facebook / LinkedIn / Email):
+
+            === MATERIAL PUBLICITARIO A EVALUAR ===
+            ${adCopySummary}
+            (Imagen promocional adjunta si está disponible)
+
+            === PERFILES DEL FOCUS GROUP ===
+            ${JSON.stringify(personasPayload, null, 2)}
+
+            === CATÁLOGO DE RÚBRICAS DINÁMICAS DE EVALUACIÓN (CON ANCLAS DE CALIFICACIÓN) ===
+            ${JSON.stringify(rubricsToUse, null, 2)}
+
+            REGLAS CRÍTICAS DE REALISMO Y CALIBRACIÓN EN EL FOCUS GROUP (03_focus_group_simulator):
+            1. ACTÚA COMO UN HUMANO REAL EN REDES SOCIALES (ATENCIÓN DE 3 SEGUNDOS), NO COMO UN AUDITOR REGULATORIO NI UN TÉCNICO DE LABORATORIO:
+               - Un consumidor real NUNCA pide que un anuncio de Instagram le explique el proceso interno de la sucursal, ni si le van a dar bata, ni pide más cláusulas legales.
+               - Al contrario: si el anuncio tiene demasiado texto, explicaciones operativas innecesarias o parece un instructivo médico aburrido, el participante DEBE penalizarlo severamente siguiendo las anclas "low_0_to_40" de la rúbrica de Claridad.
+            2. APLICA ESTRICTAMENTE LAS ANCLAS DE CALIFICACIÓN (scoringAnchors) DE CADA RÚBRICA:
+               - No regales calificaciones de 85-95 por cortesía. Usa todo el rango (0 a 100) guiándote por "low_0_to_40", "mid_41_to_79" y "high_80_to_100" de cada rúbrica aplicable al track del participante ("applicableRubricIds").
+            3. Para cada perfil participante:
+               - Evalúa CADA UNA de sus rúbricas aplicables ("applicableRubricIds") devolviendo el arreglo "rubricScores" con { rubricId, name, weight, score, rationale }.
+               - Calcula "weightedOverallScore" (0 a 100) como el promedio ponderado de sus "rubricScores".
+               - Redacta su opinión general en primera persona ("feedback"), sus dudas/barreras reales ("barriersOrConcerns") y su sugerencia comercial ("suggestedImprovement").
+               - Incluye también los campos de compatibilidad ("visualAppeal", "brandFit", "stoppingPower", "conversionLikelihood", "sentiment": "Positive" | "Neutral" | "Negative", "suggestedProduct", "suggestedMessaging", "suggestedImage", "copyEdit").
+
+            Devuelve ÚNICAMENTE un arreglo JSON válido con exactamente ${batchPersonas.length} objetos:
             [
                 {
-                    "personaId": "id from input (MANDATORY: must match input ID exactly)",
-                    "personaName": "name from input (MANDATORY: must match input name exactly)",
-                    "personaName": "...",
+                    "personaId": "id exacto del input",
+                    "personaName": "name exacto del input",
+                    "track": "patient o physician",
+                    "weightedOverallScore": 0-100,
+                    "rubricScores": [
+                        {
+                            "rubricId": "clarity_3s",
+                            "name": "Claridad y Concisión (3 seg de Scroll)",
+                            "weight": 25,
+                            "score": 0-100,
+                            "rationale": "Razón en primera persona (1 oración)..."
+                        }
+                    ],
+                    "barriersOrConcerns": "Duda o barrera principal...",
+                    "suggestedImprovement": "Sugerencia concreta de mejora...",
                     "visualAppeal": 0-100,
                     "brandFit": 0-100,
                     "stoppingPower": 0-100,
                     "conversionLikelihood": 0-100,
                     "sentiment": "Positive",
-                    "feedback": "...",
-                    "suggestedProduct": "...",
+                    "feedback": "Opinión en primera persona...",
+                    "suggestedProduct": "${studyName}",
                     "suggestedMessaging": "...",
                     "suggestedImage": "...",
                     "copyEdit": "..."
                 }
             ]
-            Do not use markdown.
+            No uses bloques markdown.
+            ${getLanguageInstruction()}
             `;
 
-            const parts: any[] = [
-                {
-                    text: JSON.stringify(batchPersonas.map(p => ({
-                        id: p.id,
-                        name: p.name,
-                        bio: p.bio,
-                        demographics: p.demographics,
-                        brands: p.preferred_brands,
-                        traits: p.details?.lifestyle_tags || []
-                    })))
-                },
-                { text: prompt }
-            ];
-
+            const parts: any[] = [{ text: prompt }];
             if (mainImagePart) {
-                // Insert image before prompt
-                parts.splice(1, 0, mainImagePart);
+                parts.unshift(mainImagePart);
             }
 
             const response = await callGenAiProxy("generateContent", {
@@ -2203,13 +1753,78 @@ export const simulateCreativeFocusGroup = async (
 
             const text = extractTextFromResponse(response) || "[]";
             const cleanText = text.replace(/```json|```/g, '').trim();
-            return JSON.parse(cleanText);
+            const rawResults = JSON.parse(cleanText);
+
+            return (Array.isArray(rawResults) ? rawResults : []).map((r: any, idx: number) => {
+                const inputPersona = batchPersonas[idx] || {};
+                const rubricScores: RubricScore[] = Array.isArray(r.rubricScores) ? r.rubricScores : [];
+
+                const findRubricScore = (idPrefix: string): number | undefined => {
+                    const found = rubricScores.find(rs => rs.rubricId?.includes(idPrefix));
+                    return found ? Number(found.score) : undefined;
+                };
+
+                const totalWeight = rubricScores.reduce((acc, rs) => acc + (Number(rs.weight) || 25), 0);
+                const computedWeighted =
+                    rubricScores.length > 0 && totalWeight > 0
+                        ? Math.round(
+                              rubricScores.reduce((acc, rs) => acc + Number(rs.score || 0) * (Number(rs.weight) || 25), 0) /
+                                  totalWeight
+                          )
+                        : Number(r.weightedOverallScore ?? r.conversionLikelihood ?? 75);
+
+                const weightedOverallScore = Number.isFinite(Number(r.weightedOverallScore))
+                    ? Math.round(Number(r.weightedOverallScore))
+                    : computedWeighted;
+
+                const visualAppeal = Number(
+                    r.visualAppeal ?? findRubricScore('visual_trust') ?? weightedOverallScore
+                );
+                const stoppingPower = Number(
+                    r.stoppingPower ?? findRubricScore('clarity_3s') ?? weightedOverallScore
+                );
+                const brandFit = Number(
+                    r.brandFit ?? findRubricScore('clinical_utility') ?? findRubricScore('visual_trust') ?? weightedOverallScore
+                );
+                const conversionLikelihood = Number(
+                    r.conversionLikelihood ??
+                    findRubricScore('patient_action_intent') ??
+                    findRubricScore('physician_prescription_intent') ??
+                    weightedOverallScore
+                );
+
+                return {
+                    ...r,
+                    personaId: r.personaId || inputPersona.id,
+                    personaName: r.personaName || inputPersona.name,
+                    track: r.track || inputPersona.track || 'patient',
+                    weightedOverallScore,
+                    rubricScores,
+                    barriersOrConcerns: r.barriersOrConcerns || '',
+                    suggestedImprovement: r.suggestedImprovement || r.suggestedMessaging || '',
+                    visualAppeal,
+                    brandFit,
+                    stoppingPower,
+                    conversionLikelihood,
+                    sentiment: r.sentiment || (weightedOverallScore >= 75 ? 'Positive' : weightedOverallScore >= 45 ? 'Neutral' : 'Negative'),
+                    feedback: r.feedback || '',
+                    suggestedProduct: r.suggestedProduct || studyName,
+                    suggestedMessaging: r.suggestedMessaging || r.suggestedImprovement || '',
+                    suggestedImage: r.suggestedImage || '',
+                    copyEdit: r.copyEdit || ''
+                };
+            });
 
         } catch (error) {
             console.error("Batch creative simulation error:", error);
             return batchPersonas.map(p => ({
                 personaId: p.id,
                 personaName: p.name,
+                track: p.track || 'patient',
+                weightedOverallScore: 0,
+                rubricScores: [],
+                barriersOrConcerns: "Simulation Failed",
+                suggestedImprovement: "None",
                 visualAppeal: 0,
                 brandFit: 0,
                 stoppingPower: 0,
@@ -2235,157 +1850,22 @@ export const simulateCreativeFocusGroup = async (
     return results;
 };
 
-/**
- * Generates a Feasibility Report based on aggregated data.
- */
-export const generateFeasibilityReport = async (aggregatedData: any): Promise<FeasibilityReport> => {
-    const prompt = `
-    Role: Senior Executive Consultant & Data Analyst.
-    Task: Assess the feasibility and likelihood of success for a marketing campaign based on the provided data components.
-
-    Data Components:
-    1. Marketing Brief: ${JSON.stringify(aggregatedData.brief || "Not Available")}
-    2. Focus Group Feedback: ${JSON.stringify(aggregatedData.focusGroup || "Not Available")}
-
-    Analysis Requirements:
-    - **Score**: Calculate a success probability score (0-100) based on alignment between the brief, customer feedback, and product fit.
-      - High alignment & positive feedback = High Score.
-      - Contradictions or negative feedback = Low Score.
-    - **Summary**: A concise executive summary (2-3 sentences) of the overall viability.
-    - **Risks**: List specific risks or blockers identified in the data (e.g., negative sentiment, misalignment).
-    - **Opportunities**: List specific growth areas or strengths.
-    - **Tactical Improvements**: Concrete, actionable steps to improve the score. Prioritize them (High/Medium/Low).
-
-    Output Schema:
-    Return pure JSON matching this structure:
-    {
-      "score": number,
-      "summary": string,
-      "risks": string[],
-      "opportunities": string[],
-      "tactical_improvements": [
-        { "area": "Messaging" | "Targeting" | "Product" | "Creative", "suggestion": string, "priority": "High" | "Medium" | "Low" }
-      ]
-    }
-    `;
-
-    const schema: Schema = {
-        type: Type.OBJECT,
-        properties: {
-            score: { type: Type.NUMBER },
-            summary: { type: Type.STRING },
-            risks: { type: Type.ARRAY, items: { type: Type.STRING } },
-            opportunities: { type: Type.ARRAY, items: { type: Type.STRING } },
-            tactical_improvements: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        area: { type: Type.STRING },
-                        suggestion: { type: Type.STRING },
-                        priority: { type: Type.STRING, enum: ["High", "Medium", "Low"] }
-                    },
-                    required: ["area", "suggestion", "priority"]
-                }
-            }
-        },
-        required: ["score", "summary", "risks", "opportunities", "tactical_improvements"]
-    };
-
-    const modelsToTry = [
-        "gemini-3-pro-preview",
-        "gemini-3-flash-preview",
-        "gemini-2.5-pro",
-        "gemini-2.5-flash"
-    ];
-
-    for (const model of modelsToTry) {
-        try {
-            console.log(`Generating Feasibility Report with ${model}...`);
-            const result = await generateJson(prompt, schema, model);
-            return result as FeasibilityReport;
-        } catch (error) {
-            console.warn(`${model} failed, trying next fallback...`, error);
-        }
-    }
-
-    throw new Error("Failed to generate feasibility report with all available models.");
-};
-
-export const scoreAudienceSegments = async (personas: CombinedPersona[], context: string): Promise<{ propensity: number, value: number, reason: string }[]> => {
-    
+export const conductQualitativeInterview = async (persona: CombinedPersona, context: string, initialQuestion: string, companyName: string = "Laboratorios Médicos El Chopo"): Promise<InterviewResult> => {
     try {
         const prompt = `
-        You are a strategic marketing analyst.
-        Company Context: ${context}
-        
-        Task: Analyze the following Audience Personas and score them on two dimensions:
-        1. **Propensity to Purchase Now vs Later (X-Axis)**: 
-           - 0 = "Will buy later / never" (Low urgency)
-           - 100 = "Will buy immediately" (High urgency)
-           - Consider: Need state, impulse drivers, and current pain points.
-           
-        2. **Potential Customer Value (Y-Axis)**:
-           - 0 = "Low Value" (One-off purchase, low affinity)
-           - 100 = "High Value" (Loyal, high spend, brand advocate)
-           - Consider: Income, brand loyalty, lifestyle fit, and retention likelihood.
-
-        Audience Personas:
-        ${JSON.stringify(personas.map(p => ({
-            name: p.name,
-            personaName: p.personaName,
-            bio: p.bio || p.details?.bio,
-            income: p.details?.income,
-            goals: p.details?.goals
-        })), null, 2)}
-
-        Return a JSON array of objects, one for each persona in the same order:
-        [
-            {
-                "propensity": 85,
-                "value": 90,
-                "reason": "High urgency due to..."
-            }
-        ]
-        Do not use markdown code blocks.
-        `;
-
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3-flash-preview',
-            contents: {
-                parts: [{ text: prompt }]
-            },
-            config: { responseMimeType: "application/json" }
-        });
-
-        const text = extractTextFromResponse(response) || "[]";
-        const cleanText = text.replace(/```json|```/g, '').trim();
-        return JSON.parse(cleanText);
-    } catch (error) {
-        console.error("Audience scoring error:", error);
-        // Return random scores as fallback for demo if API fails
-        return personas.map(() => ({
-            propensity: Math.floor(Math.random() * 100),
-            value: Math.floor(Math.random() * 100),
-            reason: "Scoring unavailable, using estimate."
-        }));
-    }
-};
-
-export const conductQualitativeInterview = async (persona: CombinedPersona, context: string, initialQuestion: string, companyName: string = "AI"): Promise<InterviewResult> => {
-    
-    try {
-        const prompt = `
-        You are simulating a qualitative user interview regarding the "${context}" and ${companyName}. Let your answers reflect your specific needs and concerns.
+        You are simulating a qualitative user interview regarding "${context}" and ${companyName} ("Tu laboratorio de cabecera"). Let your answers reflect your specific needs and concerns as a real Mexican patient or physician.
         
         **Role**: act as ${persona.name} (${persona.personaName}), with the following details:
+        - Track: ${persona.track || 'patient'}
         - Bio: ${persona.bio || persona.details?.bio || "No bio available"}
-        - Job: ${persona.details?.job_title || "Unknown"}
-        - Age: ${persona.details?.age || "Unknown"}
+        - Job: ${persona.job_title || persona.details?.job_title || "Unknown"}
+        - Age: ${persona.age || persona.details?.age || "Unknown"}
+        - Pain Points: ${(persona.pain_points || persona.details?.pain_points || []).join('; ')}
+        - Goals: ${(persona.goals || persona.details?.goals || []).join('; ')}
         - Context: ${context}
 
         **Task**: 
-        1. Answer the Initial Question from the interviewer.
+        1. Answer the Initial Question from the interviewer in natural first-person speech.
         2. Then, simulate a "Researcher" asking you a follow-up question based on your answer.
         3. Answer the follow-up.
         4. Simulate one final follow-up from the Researcher.
@@ -2410,6 +1890,7 @@ export const conductQualitativeInterview = async (persona: CombinedPersona, cont
         }
         
         Do not output markdown code blocks. Just the raw JSON.
+        ${getLanguageInstruction()}
         `;
 
         const response = await callGenAiProxy("generateContent", {
@@ -2443,19 +1924,17 @@ export const conductQualitativeInterview = async (persona: CombinedPersona, cont
     }
 };
 
-export const generateRegionalVariants = async (basePrompt: string, companyName: string = "QVC AI", productContext: string = "Retail & Live Commerce"): Promise<{ region: string, imagePrompt: string, image: string | null }[]> => {
-    
+export const generateRegionalVariants = async (basePrompt: string, companyName: string = "Laboratorios Médicos El Chopo", productContext: string = "Check-up Control Diabetes"): Promise<{ region: string, imagePrompt: string, image: string | null }[]> => {
     try {
         const categories = ["Lifestyle & Context", "Benefit & Feature-First", "Social-First & Aesthetic", "Value & Urgency-Based", "Aspirational Luxury"];
 
         const prompt = `
         Take the following marketing concept for ${companyName} (${productContext}): "${basePrompt}"
         
-        Adapt this concept for the following variations/themes, adding specific imagery or cultural cues relevant to each:
+        Adapt this concept for the following variations/themes, adding specific imagery relevant to Mexico and enforcing Chopo's visual realism rules (RLM-001: 100% digital results on App Chopo/tablet, NO physical X-ray films, NO needles or blood, Chopo blue #004B87 and clinical white #FFFFFF palette, no embedded text):
         ${categories.join(", ")}
         
-        Return a JSON object mapping each category name exactly as written to a highly detailed image generation prompt. 
-        Focus on high-quality retail photography, authentic lifestyle settings, and vibrant visual storytelling suitable for QVC audiences.
+        Return a JSON object mapping each category name exactly as written to a highly detailed image generation prompt.
         `;
 
         const response = await callGenAiProxy("generateContent", {
@@ -2475,8 +1954,7 @@ export const generateRegionalVariants = async (basePrompt: string, companyName: 
             const batch = categories.slice(i, i + BATCH_SIZE);
             const batchPromises = batch.map(async (category) => {
                 const promptForRegion = data[category] || basePrompt;
-                // Generate the image using the existing utility (gemini-3-pro-image-preview)
-                const imageUrl = await generateImageFromPrompt(promptForRegion + ", professional marketing photography, high resolution");
+                const imageUrl = await generateImageFromPrompt(promptForRegion + ", fotografía realista en México, iluminación clínica limpia azul #004B87 y blanco #FFFFFF, sin placas físicas, sin agujas, sin texto incrustado");
                 return {
                     region: category,
                     imagePrompt: promptForRegion,
@@ -2498,29 +1976,28 @@ export const generateRegionalVariants = async (basePrompt: string, companyName: 
 export const simulateABTestFocusGroup = async (
     pool: any[], 
     variants: { region: string, image: string | null }[],
-    companyName: string = "QVC AI",
-    productContext: string = "Retail & Live Commerce"
+    companyName: string = "Laboratorios Médicos El Chopo",
+    productContext: string = "Check-up Control Diabetes"
 ): Promise<ABTestResult[]> => {
-    
     if (!variants || variants.length === 0) return [];
 
-    // Process each persona in parallel
     const promises = pool.map(async (persona) => {
         try {
             const prompt = `
-            You are evaluating marketing creative variants for ${companyName} (${productContext}) as a synthetic user.
+            You are evaluating marketing creative variants for ${companyName} (${productContext}) as a synthetic user in Mexico.
             
             Persona Profile:
             Name: ${persona.name}
+            Track: ${persona.track || 'patient'}
             Bio: ${persona.bio}
-            Pain Points: ${persona.pain_points?.join(", ")}
-            Goals: ${persona.goals?.join(", ")}
+            Pain Points: ${(persona.pain_points || persona.details?.pain_points || []).join(", ")}
+            Goals: ${(persona.goals || persona.details?.goals || []).join(", ")}
 
             Variants presented to you:
             ${variants.map(v => `- Variant: ${v.region}`).join("\n\n")}
 
             Task: Review the variants presented. 
-            For EACH variant, provide a score from 1 to 10 on how strongly it resonates with your persona (e.g., would you click this ad more or less?). Explain your rationale for that score.
+            For EACH variant, provide a score from 1 to 10 on how strongly it resonates with your persona. Explain your rationale for that score.
             Then, determine the overall best variant.
 
             Return ONLY a JSON object:
@@ -2532,6 +2009,7 @@ export const simulateABTestFocusGroup = async (
                 "overallFeedback": "Overall thoughts on the options presented.",
                 "sentiment": "Positive/Neutral/Critical"
             }
+            ${getLanguageInstruction()}
             `;
 
             const response = await callGenAiProxy("generateContent", {
@@ -2568,234 +2046,3 @@ export const simulateABTestFocusGroup = async (
 
     return Promise.all(promises);
 };
-
-export const generateAgentSummary = async (customerText: string): Promise<any> => {
-    try {
-        const prompt = `
-        You are an expert customer concierge assistant.
-        Analyze the following raw customer data and chat telemetry
-        Extract the information into a highly structured JSON dashboard payload for a live concierge to review during an incoming customer interaction.
-
-        RAW DATA:
-        ${customerText}
-
-        INSTRUCTIONS:
-        Output ONLY a valid JSON object matching this schema exactly:
-        {
-            "profile": {
-                "name": "Full Name",
-                "initials": "First & Last Initials",
-                "email": "Email Address",
-                "phone": "Phone Number",
-                "totalSaved": "Formatted string, e.g. $24,500",
-                "income": "Formatted string, e.g. $8,500/yr"
-            },
-            "familySummary": [
-                { "name": "Name", "relation": "Relation" }
-            ],
-            "recent_purchases": [
-                { "name": "Purchase/Claim Name", "brand": "e.g. In-Network", "price": 450, "type": "e.g. Provider Visit" }
-            ],
-            "upcoming_events": [
-                { "event_name": "Event Name", "target_date": "Upcoming", "notes": "High priority" }
-            ],
-            "aiSummary": "A 3-4 sentence engaging executive summary for the concierge. Describe the user's current interests, brand affinity, and their immediate intent based on the interaction logs.",
-            "nextActions": [
-                { "title": "Action Title", "description": "Action Details" }
-            ],
-            "marketingActivity": [
-                { "type": "Web|Email|App", "event": "Event Name", "time": "e.g. 2026-03-02", "details": "Viewed New Plans" }
-            ],
-            "engagementChart": {
-                "title": "Recent Digital Engagement",
-                "data": [
-                    { "name": "e.g. Web", "visits": 0, "clicks": 0 }
-                ]
-            }
-        }
-        
-        Ensure "nextActions" provides at least 2 distinct recommendations based on user intent in the logs.
-        Ensure "engagementChart.data" correctly tallies their recent online behavior (like Web Visits, Emails, App Usage).
-        Ensure "upcoming_events" provides context for the customer's shopping goals.
-        Extract "recent_purchases" and "upcoming_events" explicitly from the JSON payload. Format prices as integers.
-        Ensure "marketingActivity" includes a "type" field of either "Web", "Email", or "App".
-        Do not use markdown.
-        `;
-
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3-flash-preview',
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            config: { responseMimeType: "application/json" }
-        });
-
-        const text = extractTextFromResponse(response) || "{}";
-        const cleanText = text.replace(/```json|```/g, '').trim();
-        const data = JSON.parse(cleanText);
-        
-        console.log("Parsed Concierge Data:", JSON.stringify(data, null, 2));
-        
-        return data;
-
-    } catch (error) {
-        console.error("Agent summary generation error:", error);
-        throw error;
-    }
-};
-
-export const analyzeRunwayVideo = async (videoUrl: string): Promise<any> => {
-    
-    try {
-        const prompt = `
-        You are a master fashion intelligence curator and archival expert for QVC. 
-        Your goal is to provide a high-fidelity, intellectually deep analysis of the following runway video: ${videoUrl}
-
-        **ANALYTICAL FRAMEWORK:**
-        - **Historical Context**: Connect the aesthetic to QVC's heritage (e.g., Old Money, Western Americana, Collegiate Prep) while identifying the modern "twist".
-        - **Trend Vectoring**: Instead of short bullets, provide rich, descriptive analysis of the trends. Why are they significant? What is the "mood"?
-        - **Outfit Breakdown**: Identify 3-4 specific, standout looks. Describe them in detail (fabrics, layering, accessories, silhouettes).
-
-        **SEASONAL CONTEXT:**
-        - If Spring 2025: Focus on coastal Hamptons elegance, Sailor-core, navy/white/tan palette, and flag sweaters. Look for "Modern Maritime".
-        - If Fall 2024: Focus on Ralph's New York, Camel Polo coats, and Western influences (cowboy buckles, fringe). Look for "Urban Frontiersman".
-        - If Purple Label Spring 2024: Focus on Amalfi Coast, Mediterranean luxury, and vibrant silks. Look for "The European Idler".
-
-        **REQUIRED OUTPUT (JSON Schema):**
-        {
-            "trends": [
-                { "title": "Trend Title", "description": "A deep, 2-3 sentence analysis of why this trend is dominant and its cultural resonance." }
-            ],
-            "outfit_breakdowns": [
-                 { "look": "e.g. Look 4: The Midnight Navy Tuxedo", "details": "Describe the specific garments, textures, and styling nuances that make this outfit a hero piece." }
-            ],
-            "takeaways": [
-                "Strategic Intelligence 1", 
-                "Cinematic Continuity: The World as a Set (Detailed breakdown of how the environment reflects the clothes)", 
-                "Archival Resilience (How this look honors the RL DNA)"
-            ],
-            "summary": "An expansive, 4-5 sentence Market Vision summary that captures the soul, business strategy, and aesthetic legacy of the collection.",
-            "timestamp": "${new Date().toLocaleString()}"
-        }
-        
-        Do not use markdown blocks. Output ONLY raw JSON.
-        `;
-
-        const videoPart = {
-            fileData: {
-                mimeType: 'video/*',
-                fileUri: videoUrl
-            }
-        };
-
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3.1-pro-preview',
-            contents: [{
-                role: "user",
-                parts: [videoPart, { text: prompt }]
-            }],
-            config: {
-                responseMimeType: "application/json",
-                maxOutputTokens: 65535,
-                temperature: 1,
-                topP: 0.95,
-                seed: 0,
-                thinkingConfig: {
-                    thinkingLevel: "HIGH",
-                },
-                safetySettings: [
-                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
-                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
-                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
-                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' }
-                ]
-            }
-        });
-
-        const text = extractTextFromResponse(response) || "{}";
-        const cleanText = text.replace(/```json|```/g, '').trim();
-        return JSON.parse(cleanText);
-    } catch (error) {
-        console.error("Runway analysis error:", error);
-        return null;
-    }
-};
-
-
-
-export const compileRunwayAnalyses = async (analyses: any[]): Promise<any> => {
-    
-    try {
-        const prompt = `
-        You are a master fashion intelligence curator for QVC.
-        Your goal is to provide a high-fidelity, intellectually deep "Compiled Analysis" of overarching themes across multiple recent runway collections.
-        
-        **INPUT DATA (Individual Collection Analyses):**
-        ${JSON.stringify(analyses, null, 2)}
-
-        **ANALYTICAL FRAMEWORK:**
-        - **Overarching Themes**: Identify the unified vision or recurring motifs across these collections. What is the broader narrative QVC is telling?
-        - **Quick Takeaways**: Synthesize the most dominant trends into 3-4 punchy, high-impact bullet points for a quick executive brief.
-        - **Cross-Collection Trends**: Pinpoint specific materials, silhouettes, or aesthetic choices (e.g., elevated heritage, modern maritime, prep revival) that span across seasons or lines.
-        - **Strategic Market Vision**: Synthesize the individual summaries into one master market vision.
-        - **Actionable Insights**: Recommend strategic directions for QVC's future collections based on these cross-collection patterns.
-
-        **REQUIRED OUTPUT (JSON Schema):**
-        {
-            "quick_takeaways": [
-                "Dominant Trend 1: High-impact synthesis",
-                "Dominant Trend 2: High-impact synthesis"
-            ],
-            "trends": [
-                { "title": "Overarching Trend Title", "description": "A deep, 2-3 sentence analysis of why this trend spans across collections and its broader cultural resonance." }
-            ],
-            "outfit_breakdowns": [
-                 { "look": "e.g. The Cross-Seasonal Hero Piece", "details": "Describe a recurring archetypal garment or styling nuance consistently seen across the collections." }
-            ],
-            "takeaways": [
-                "Strategic Intelligence 1 (Macro view)", 
-                "Strategic Intelligence 2 (Macro view)",
-                "Archival Continuity (How the brand identity holds firm across varied contexts)"
-            ],
-            "actionable_insights": [
-                "Future Recommendation 1 (e.g., Doubling down on modern maritime prep architecture)",
-                "Future Recommendation 2"
-            ],
-            "summary": "An expansive, 4-5 sentence Overarching Market Vision summary that captures the brand's trajectory across these collections.",
-            "timestamp": "${new Date().toLocaleString()}"
-        }
-        
-        Do not use markdown blocks. Output ONLY raw JSON.
-        `;
-
-        const response = await callGenAiProxy("generateContent", {
-            model: 'gemini-3.1-pro-preview',
-            contents: [{
-                role: "user",
-                parts: [{ text: prompt }]
-            }],
-            config: {
-                responseMimeType: "application/json",
-                maxOutputTokens: 65535,
-                temperature: 0.9,
-                topP: 0.95,
-                seed: 0,
-                thinkingConfig: {
-                    thinkingLevel: "HIGH",
-                },
-                safetySettings: [
-                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
-                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
-                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
-                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' }
-                ]
-            }
-        });
-
-        const text = extractTextFromResponse(response) || "{}";
-        const cleanText = text.replace(/```json|```/g, '').trim();
-        return JSON.parse(cleanText);
-    } catch (error) {
-        console.error("Runway compiled analysis error:", error);
-        return null;
-    }
-};
-

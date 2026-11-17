@@ -12,6 +12,11 @@ keys/
 key.json
 *.env
 .env*
+!.env.example
+public/data/
+public/images/personas/
+public/audio/
+public/videos/
 dist/
 dist-ssr/
 coverage/

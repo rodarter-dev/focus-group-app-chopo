@@ -1,0 +1,94 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "client": "Grupo Proa / Laboratorios Médicos El Chopo",
+    "purpose": "Standardized clinical use cases with Diabetes Control as the official MVP baseline."
+  },
+  "useCases": [
+    {
+      "id": "uc_diabetes_control",
+      "studyName": "Check-up Control Diabetes",
+      "category": "Línea Diabetes (MVP Oficial)",
+      "track": "both",
+      "isDefault": true,
+      "includedStudies": [
+        "Hemoglobina Glicosilada (HbA1c) certificada NGSP",
+        "Química Sanguínea (Glucosa en ayuno, Perfil de Lípidos, Creatinina/TFGe)",
+        "Examen General de Orina (EGO) / Microalbuminuria"
+      ],
+      "fastingRequirement": "Ayuno obligatorio de 8 a 12 horas y muestra de la primera orina de la mañana.",
+      "visualRealismRules": "RLM-001 y RLM-004: Paciente en ropa casual cotidiana (sin bata hospitalaria), entrega 100% digital en App Chopo/smartphone/tablet (prohibido placas físicas), prohibido mostrar agujas perforando piel o sangre explícita.",
+      "defaultPromoText": "Precio especial exclusivo pagando en línea en chopo.com.mx o App Chopo. Vigencia al 31 de diciembre de 2026.",
+      "cofeprisPermitB2C": "Permiso de Publicidad COFEPRIS No. 2609152002A00518",
+      "cofeprisPermitB2B": "Aviso de Publicidad COFEPRIS No. 243300202A0911",
+      "responsableSanitario": "Responsable Sanitario: Q.F.B. Jessica Alejandra Rivera Domínguez, Céd. Prof. 3602644, Univ. Simón Bolívar."
+    },
+    {
+      "id": "uc_hba1c_individual",
+      "studyName": "Hemoglobina Glicosilada (HbA1c)",
+      "category": "Línea Diabetes (MVP Oficial)",
+      "track": "both",
+      "isDefault": false,
+      "includedStudies": [
+        "Hemoglobina Glicosilada (HbA1c) en sangre venosa con EDTA estandarizada NGSP (promedio glucémico de 8 a 12 semanas)"
+      ],
+      "fastingRequirement": "No requiere ayuno estricto cuando se solicita como estudio individual aislado.",
+      "visualRealismRules": "RLM-001 y RLM-004: Paciente en ropa casual cotidiana consultando resultados digitales en App Chopo o médico especialista revisando historial glucémico en tablet; prohibido mostrar agujas perforando la piel, sangre explícita o placas radiográficas físicas.",
+      "defaultPromoText": "Precio especial exclusivo pagando en línea en chopo.com.mx o App Chopo. Vigencia al 31 de diciembre de 2026.",
+      "cofeprisPermitB2C": "Permiso de Publicidad COFEPRIS No. 2609152002A00518",
+      "cofeprisPermitB2B": "Aviso de Publicidad COFEPRIS No. 243300202A0911",
+      "responsableSanitario": "Responsable Sanitario: Q.F.B. Jessica Alejandra Rivera Domínguez, Céd. Prof. 3602644, Univ. Simón Bolívar."
+    },
+    {
+      "id": "uc_checkup_completo",
+      "studyName": "Check-up Completo Chopo",
+      "category": "Check-ups Preventivos",
+      "track": "both",
+      "isDefault": false,
+      "includedStudies": [
+        "Biometría Hemática Completa (BH)",
+        "Química Sanguínea de 45 elementos (Glucosa, Función Renal, Función Hepática, Electrolitos y Perfil de Lípidos)",
+        "Examen General de Orina (EGO)"
+      ],
+      "fastingRequirement": "Ayuno obligatorio de 8 a 12 horas previo a la toma de muestra sanguínea y entrega de la primera orina de la mañana.",
+      "visualRealismRules": "RLM-001 y RLM-004: Paciente en ropa casual cotidiana en ambiente luminoso o sucursal moderna consultando resultados en App Chopo; químico con bata blanca institucional; prohibido bata hospitalaria en toma de sangre o agujas/sangre explícita.",
+      "defaultPromoText": "Precio especial exclusivo pagando en línea en chopo.com.mx o App Chopo. Vigencia al 31 de diciembre de 2026.",
+      "cofeprisPermitB2C": "Permiso de Publicidad COFEPRIS No. 2609152002A00518",
+      "cofeprisPermitB2B": "Aviso de Publicidad COFEPRIS No. 243300202A0911",
+      "responsableSanitario": "Responsable Sanitario: Q.F.B. Jessica Alejandra Rivera Domínguez, Céd. Prof. 3602644, Univ. Simón Bolívar."
+    },
+    {
+      "id": "uc_mastografia_ultrasonido",
+      "studyName": "Mastografía Digital + Ultrasonido",
+      "category": "Imagenología y Salud de la Mujer",
+      "track": "both",
+      "isDefault": false,
+      "includedStudies": [
+        "Mastografía Digital de alta resolución",
+        "Ultrasonido Mamario complementario interpretado por médicos radiólogos certificados"
+      ],
+      "fastingRequirement": "No requiere ayuno. Acudir con axilas limpias sin desodorante, talco, crema ni perfume.",
+      "visualRealismRules": "RLM-001 y RLM-003D: Mastógrafo digital vertical o consola de ultrasonido con transductor de mano; paciente mujer vistiendo bata clínica institucional en entorno cálido y privado; resultados 100% digitales (prohibido placas físicas a contraluz o equipos de túnel).",
+      "defaultPromoText": "Precio especial exclusivo pagando en línea en chopo.com.mx o App Chopo. Vigencia al 31 de diciembre de 2026.",
+      "cofeprisPermitB2C": "Permiso de Publicidad COFEPRIS No. 2609152002A00518",
+      "cofeprisPermitB2B": "Aviso de Publicidad COFEPRIS No. 243300202A0911",
+      "responsableSanitario": "Responsable Sanitario: Q.F.B. Jessica Alejandra Rivera Domínguez, Céd. Prof. 3602644, Univ. Simón Bolívar."
+    },
+    {
+      "id": "uc_rayos_x_torax",
+      "studyName": "Rayos X de Tórax Digital",
+      "category": "Imagenología Digital",
+      "track": "both",
+      "isDefault": false,
+      "includedStudies": [
+        "Radiografía Digital de Tórax (tele de tórax) con detector plano de alta definición e interpretación radiológica certificada"
+      ],
+      "fastingRequirement": "No requiere ayuno. Retirar objetos metálicos, joyería y prendas con botones o cierres en la zona torácica.",
+      "visualRealismRules": "RLM-001, RLM-002 y RLM-003A: Paciente vistiendo bata clínica institucional (prohibido ropa de calle o joyería en el equipo), sala de radiología con brazo/columna vertical y detector plano bucky de pared (prohibido túnel de Resonancia/TAC), y visualización 100% digital en monitor o tablet (prohibido placas físicas impresas a contraluz).",
+      "defaultPromoText": "Precio especial exclusivo pagando en línea en chopo.com.mx o App Chopo. Vigencia al 31 de diciembre de 2026.",
+      "cofeprisPermitB2C": "Permiso de Publicidad COFEPRIS No. 2609152002A00518",
+      "cofeprisPermitB2B": "Aviso de Publicidad COFEPRIS No. 243300202A0911",
+      "responsableSanitario": "Responsable Sanitario: Q.F.B. Jessica Alejandra Rivera Domínguez, Céd. Prof. 3602644, Univ. Simón Bolívar."
+    }
+  ]
+}
