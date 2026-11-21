@@ -1,0 +1,393 @@
+{
+  "metadata": {
+    "id": "chopo_brand_manual_v4",
+    "version": "4.0.0",
+    "sourceDocument": "Manual V4 300126.pdf (127 páginas, actualización PDV febrero 2026)",
+    "client": "Grupo PROA / Laboratorio Médico del Chopo",
+    "umbrellaCampaign": "Chopo, toda una vida cuidando la vida.",
+    "lastUpdated": "2026-11-20",
+    "architectureNote": "Documento semilla para Firestore (colección sugerida: brand_manual_config). Reemplaza la búsqueda difusa por RAG para reglas de marca: cada flujo de IA recibe de forma determinística únicamente las secciones y el canal que le corresponden, y el equipo de Marketing de Chopo puede editar cada pestaña desde la UI."
+  },
+  "identity_and_voice": {
+    "uiTabTitle": "1. Identidad y Voz",
+    "sourcePages": "Págs. 4–10, 26–31, 54–55, 72–81, 96, 125–126",
+    "officialBrandNames": [
+      "Laboratorio Médico del Chopo",
+      "Chopo"
+    ],
+    "logoDescriptor": "Análisis clínicos y estudios especializados",
+    "mandatorySlogan": {
+      "text": "Chopo, toda una vida cuidando la vida.",
+      "usageRule": "Obligatorio en todas las piezas publicitarias. Debe escribirse en una sola línea en peso Heavy; solo si el ancho es muy reducido y compromete la legibilidad se permite partirlo en dos líneas justificado a la izquierda ('Chopo, toda una vida / cuidando la vida.')."
+    },
+    "purpose": "Abrazar a México con nuestros más de 75 años de experiencia, brindando certeza y bienestar integral a los mexicanos, porque queremos que vivan más y con más plenitud.",
+    "brandAttributesPyramid": {
+      "cuspUnique": [
+        "Refugio",
+        "Experiencia",
+        "Trato humano"
+      ],
+      "centerDifferentiators": [
+        "Cercanía de la mano de tu médico",
+        "Diagnóstico vanguardista",
+        "Valoramos tu tiempo"
+      ],
+      "baseCategoryEssentials": [
+        "Precio a modo",
+        "Percepción de calidad"
+      ],
+      "experiencePillars": {
+        "confianza": ["Trayectoria", "Trato humano", "Comprensión"],
+        "seguridad": ["Vanguardia", "Compromiso", "Precisión"],
+        "certeza": ["Claridad", "Expertise", "Trayectoria"],
+        "tranquilidad": ["Cuidado integral", "Empatía", "Pertenencia"]
+      }
+    },
+    "audienceSegments": {
+      "b2c_patients": {
+        "id": "b2c_patients",
+        "code": "B2C",
+        "appTrack": "patient",
+        "label": "B2C — Compañeros de los Pacientes",
+        "pronoun": "Tú",
+        "toneGuidance": "Emocional, cálido, empático y cotidiano sin tecnicismos rebuscados. Preferimos que la gente nos entienda con claridad antes que sonar excesivamente técnicos.",
+        "valueDrivers": [
+          "Atención personalizada",
+          "Confianza y tranquilidad",
+          "Integralidad en el cuidado",
+          "Accesibilidad y comodidad digital (App Chopo y chopo.com.mx)"
+        ],
+        "primaryDestination": "chopo.com.mx",
+        "mandatoryPrecautionaryLegend": "Consulte a su médico."
+      },
+      "b2d_doctors": {
+        "id": "b2d_doctors",
+        "code": "B2D",
+        "appTrack": "physician",
+        "label": "B2D — Compañeros de los Médicos",
+        "pronoun": "Tú",
+        "toneGuidance": "Hablamos de 'tú' a los doctores para construir cercanía como aliados clínicos, pero NUNCA en modo confianzudo, igualado ni frívolo. Mantiene autoridad diagnóstica, precisión científica y profundo respeto profesional.",
+        "valueDrivers": [
+          "Colaboración integral en el cuidado de sus pacientes",
+          "Resultados confiables y precisión analítica respaldada por certificaciones internacionales",
+          "Apoyo profesional y orden/expediente digital",
+          "Facilidad de acceso e infraestructura diagnóstica de alta especialidad"
+        ],
+        "primaryDestination": "chopo.com.mx/medicos",
+        "mandatoryPrecautionaryLegend": "Información exclusiva para profesionales de la salud."
+      },
+      "b2b_enterprises": {
+        "id": "b2b_enterprises",
+        "code": "B2B",
+        "appTrack": "enterprise",
+        "label": "B2B — Compañero de las Empresas",
+        "pronoun": "Usted",
+        "toneGuidance": "Trato formal y respetuoso de 'usted' (sus colaboradores, su empresa). Proyecta solidez institucional, cobertura nacional y eficiencia operativa en salud ocupacional y convenios corporativos (ej. Alianza por tu Bienestar).",
+        "valueDrivers": [
+          "Salud corporativa integral y personalizada",
+          "Confianza y precisión en los resultados",
+          "Red de infraestructura y soporte profesional",
+          "Cuidado preventivo y bienestar para colaboradores y familiares"
+        ],
+        "primaryDestination": "chopo.com.mx/empresas",
+        "mandatoryPrecautionaryLegend": "Consulte a su médico."
+      }
+    },
+    "voiceAndCopyInvariants": {
+      "grammaticalPerson": "Hablar SIEMPRE en primera persona plural ('Nosotros', ej. 'Te acompañamos con los estudios que tu médico recomiende'). Queda ESTRICTAMENTE PROHIBIDO hablar de Chopo en tercera persona (ej. 'Chopo tiene los estudios...').",
+      "zeroExclamationMarks": "NUNCA USAR SIGNOS DE ADMIRACIÓN (¡...!) en titulares, cuerpos ni llamados a la acción, incluso en campañas de descuentos o Performance. Chopo jamás se comunica como un vendedor agresivo o incómodo.",
+      "clarityOverJargon": "Usar lenguaje claro, humano y directo evitando tecnicismos innecesarios o muletillas ('pues', 'ya que'), sin perder rigor médico.",
+      "ingenuityVsHumor": "Se permite el ingenio sutil para hacer memorable la información, pero se prohíbe el dramatismo alarmista, el sarcasmo, la ironía o los chistes sobre padecimientos o situaciones delicadas de salud.",
+      "dos": [
+        "Hablar siempre desde 'nosotros' como compañero de confianza con más de 75 años en México.",
+        "Usar frases reafirmantes y empáticas ('Comprendemos tu situación y estamos aquí para apoyarte', 'Tu salud es un pilar fundamental').",
+        "Ser prácticos, educativos y orientadores hacia el cuidado preventivo continuo.",
+        "En TikTok se permite un matiz ligeramente más casual con situaciones cotidianas, sin caer en chistes constantes ni ser igualados."
+      ],
+      "donts": [
+        "Usar signos de exclamación (¡...!) en cualquier pieza publicitaria.",
+        "Referirse a Chopo en tercera persona ('El Chopo ofrece...', 'Laboratorio Chopo cuenta con...').",
+        "Usar frases vendedoras agresivas ('Compra ya nuestro paquete y ahorra', 'Será la mejor experiencia garantizada').",
+        "Usar jerga excesiva o diminutivos condescendientes ('¿Ya te echaste tu ayunito?').",
+        "Redactar textos fríos, genéricos, defensivos o que culpen al paciente."
+      ]
+    },
+    "funnelStageRules": {
+      "awareness": {
+        "label": "Awareness (Reconocimiento de Marca)",
+        "headlineRule": "Las cabezas deben comenzar SIEMPRE con 'Toda una vida...' seguido preferentemente de un verbo en gerundio (ej. 'Toda una vida cuidando nuevas vidas.', 'Toda una vida cuidando a tus pacientes como propios.').",
+        "bodyFocus": "Conexión emocional, trayectoria de más de 75 años en México y acompañamiento humano.",
+        "ctaPlacementAndStyle": "Sutil y discreto en la parte inferior de la pieza (ej. 'Conoce más en App Chopo y chopo.com.mx'). Sin signos de admiración."
+      },
+      "consideration": {
+        "label": "Consideration (Consideración)",
+        "headlineRule": "Las cabezas deben comenzar SIEMPRE con 'Toda una vida...' seguido preferentemente de un gerundio o atributo diferencial (ej. 'Toda una vida facilitando tu bienestar.', 'Toda una vida a la vanguardia de la calidad diagnóstica.').",
+        "bodyFocus": "Incluir explícitamente en el encabezado o cuerpo una razón concreta para preferir a Chopo (tecnología digital, expediente electrónico, amplitud de catálogo, certificaciones).",
+        "ctaPlacementAndStyle": "Ubicado en la parte inferior de la pieza invitando a conocer o descargar herramientas digitales (ej. 'Descarga la App Chopo', 'En digital por favor'). Sin signos de admiración."
+      },
+      "performance": {
+        "label": "Performance (Conversión / Promoción)",
+        "headlineRule": "Las cabezas YA NO comienzan con 'Toda una vida...'. Van directamente al beneficio comercial o impulsan a la acción con frases empáticas pero directas (ej. 'No lo dejes pasar.', 'Es el momento ideal para hacer ese estudio que pide tu médico.', 'Cotiza y paga tus estudios en línea, de manera fácil y con mayores descuentos.').",
+        "bodyFocus": "Destacar beneficios tangibles, facilidad de pago en línea, vigencia y porcentaje de descuento real sin promesas engañosas.",
+        "ctaPlacementAndStyle": "Protagónico en la parte superior/principal del layout con verbos concretos ('Cotiza', 'Entra', 'Agenda', 'Visita tu sucursal más cercana'), SIEMPRE SIN signos de admiración."
+      }
+    },
+    "contactTouchpointsOrder": {
+      "strictOrder": [
+        "1. App Chopo",
+        "2. Página web (chopo.com.mx)",
+        "3. WhatsApp (55 6481 1373)",
+        "4. Teléfonos (800 00 24676)"
+      ],
+      "rule": "Siempre que una pieza incluya puntos de contacto, deben aparecer estrictamente en este orden jerárquico: primero App, segundo Página web, tercero WhatsApp y cuarto Teléfonos (salvo Historias de IG/FB, las cuales no llevan puntos de contacto)."
+    },
+    "medicalCitationsRule": {
+      "maxAgeYears": 5,
+      "citationStandard": "APA 7",
+      "rule": "Cuando un contenido informativo o posteo cite datos estadísticos o afirmaciones médicas puntuales, la fuente debe provenir de instituciones médicas, académicas o científicas verificables (ej. OMS/WHO, MedlinePlus, INSP, revistas arbitradas), tener máximo 5 años de antigüedad respecto al año en curso y citarse en formato APA 7."
+    },
+    "advertisingPermitRule": "Toda pieza debe incluir el Permiso o Aviso de Publicidad COFEPRIS vigente que corresponda tanto al contenido como a la dimensión física/digital del material (permiso para materiales menores a 1 metro vs. mayores a 1 metro)."
+  },
+  "photography_and_imagery": {
+    "uiTabTitle": "2. Fotografía e Imagen",
+    "sourcePages": "Págs. 42–44, 97–98",
+    "generalPhilosophy": "Las fotografías deben conectar emocionalmente mostrando que cuidamos personas reales. Retratar la realidad mexicana/latina en tez de piel y momentos cotidianos, con diversidad de edades y género, proyectando siempre tranquilidad, alivio y calidez.",
+    "colorTemperatureRule": "Homogeneidad en tonos cálidos: blancos cremosos e iluminación natural de día. Incluso en escenas clínicas, consultorios o equipos tecnológicos de gabinete, la luz debe sentirse cálida y acogedora (nunca fría, azulada, oscura ni estéril de hospital sombrío).",
+    "cleanBaseImageRuleForAI": "Al generar fotografías base con IA, producir SIEMPRE fotografía pura y limpia SIN texto incrustado, SIN logotipos, SIN círculos de descuento y SIN dibujar la línea basal verde (esos elementos vectoriales se superponen en diseño o vista previa). Dejar aire visual limpio para titulares/cajas modulares y mantener rostros, ojos y transductores médicos alejados de los bordes de recorte.",
+    "focusGroupWarmthHint": "Evalúa si la imagen transmite calidez, tranquilidad, modernidad digital y cercanía auténtica con familias y médicos en México, o si se siente fría, falsa o ajena.",
+    "dos": [
+      "Personas reales con fenotipo mexicano o latino auténtico.",
+      "Actitud relajada, serena y sonrisas genuinas de alivio y confianza.",
+      "Entornos limpios, ordenados y sin saturación visual.",
+      "Situaciones cotidianas identificables o atención clínica humana y luminosa.",
+      "Iluminación natural de día y balance de blancos cálido.",
+      "Encuadre completo que permita apreciar la acción sin mutilar extremidades.",
+      "Médicos con bata blanca impecable y limpia, preferentemente utilizando tablets o pantallas digitales."
+    ],
+    "donts": [
+      "PROHIBIDO mostrar médicos con estetoscopio en el cuello (regla explícita de marca, Pág. 97).",
+      "PROHIBIDO personas con rasgos evidentemente ajenos al contexto mexicano/latino.",
+      "PROHIBIDO expresiones de angustia, dolor, miedo o malestar físico.",
+      "PROHIBIDO ropa llamativa, desordenada o con logotipos/marcas comerciales visibles.",
+      "PROHIBIDO mostrar exceso de piel o dar impresión de desnudez.",
+      "PROHIBIDO mostrar bebidas alcohólicas o comida poco saludable.",
+      "PROHIBIDO fotografías oscuras, lúgubres o frías.",
+      "PROHIBIDO cortar cabezas, caras o brazos extendidos en el encuadre.",
+      "PROHIBIDO mostrar placas radiográficas físicas impresas a contraluz o agujas perforando piel / sangre explícita."
+    ]
+  },
+  "color_palette": {
+    "uiTabTitle": "3. Paleta de Color y Contrastes",
+    "sourcePages": "Págs. 24, 51, 59, 70",
+    "ambientPromptGuidance": "Para ambientación fotográfica sutil (vestimenta, consultorio o acentos de escena), usar exclusivamente blanco limpio (#FFFFFF), azul claro suave (#BDD4F2 / #EFF9FE) y detalles en azul institucional Chopo (#005FFC / #004699) bajo luz cálida natural. No teñir paredes ni piel de verde brillante ni rosa.",
+    "primaryDigital": [
+      { "id": "bright_blue", "name": "Azul brillante principal", "hex": "#005FFC", "rgb": "R:0 G:95 B:252", "usage": "Titulares sobre fondo claro, acentos primarios y círculos de iconos." },
+      { "id": "basal_green", "name": "Verde brillante (Línea basal)", "hex": "#63CF00", "rgb": "R:99 G:207 B:0", "usage": "Línea basal de pulso, círculos de iconos, viñetas cuadradas de CTA y plecas modulares/regionales." },
+      { "id": "navy_blue", "name": "Azul marino institucional", "hex": "#004699", "rgb": "R:0 G:70 B:153", "usage": "Textos principales de alto contraste sobre fondos claros/verdes, barras y footer web." }
+    ],
+    "secondaryDigital": [
+      { "id": "light_blue_1", "name": "Azul claro 1", "hex": "#98BAF4", "rgb": "R:152 G:186 B:244", "usage": "Subtextos sobre fondos oscuros y acentos secundarios." },
+      { "id": "light_blue_2", "name": "Azul claro 2 (Fondo modular y piezas sin foto)", "hex": "#BDD4F2", "rgb": "R:189 G:212 B:242", "usage": "Color principal obligatorio en piezas sin fotografía y cajas modulares estándar." },
+      { "id": "modular_vibrant_blue", "name": "Azul vibrante modular", "hex": "#81A4EE", "rgb": "R:129 G:164 B:238", "usage": "Variante autorizada para plastas de cajas modulares." },
+      { "id": "ice_blue", "name": "Hielo / Azul muy pálido", "hex": "#EFF9FE", "rgb": "R:239 G:249 B:254", "usage": "Fondos limpios de soporte digital." },
+      { "id": "white", "name": "Blanco", "hex": "#FFFFFF", "rgb": "R:255 G:255 B:255", "usage": "Fondos limpios, logotipo negativo y tipografía sobre fondos oscuros o preciadores rosas/rojos." }
+    ],
+    "promotionalAndButtons": [
+      { "id": "promo_pink", "name": "Rosa / Coral Preciadores (Performance)", "hex": "#F24360", "rgb": "R:242 G:67 B:96", "usage": "Color obligatorio para destacar descuentos, precios y promociones regulares (círculo o caja modular)." },
+      { "id": "seasonal_red", "name": "Rojo Buen Fin / Hot Sale", "hex": "#E20613", "rgb": "R:226 G:6 B:19", "usage": "Exclusivo para campañas estacionales Buen Fin y Hot Sale." },
+      { "id": "mailing_magenta", "name": "Magenta Botones Mailing / E-commerce", "hex": "#D200F4", "rgb": "R:210 G:0 B:244", "usage": "Exclusivo para botones de acción en mailings y módulos de e-commerce." }
+    ],
+    "contrastMatrix": [
+      {
+        "backgroundHex": "#004699",
+        "backgroundName": "Azul marino",
+        "allowedForegrounds": ["#63CF00", "#98BAF4", "#BDD4F2", "#FFFFFF"],
+        "forbiddenForegrounds": ["#005FFC"],
+        "notes": "Excelente legibilidad con texto blanco o azul claro."
+      },
+      {
+        "backgroundHex": "#005FFC",
+        "backgroundName": "Azul brillante",
+        "allowedForegrounds": ["#63CF00", "#98BAF4", "#BDD4F2", "#FFFFFF"],
+        "forbiddenForegrounds": ["#004699"],
+        "notes": "Nunca colocar texto azul marino sobre azul brillante."
+      },
+      {
+        "backgroundHex": "#63CF00",
+        "backgroundName": "Verde brillante",
+        "allowedForegrounds": ["#004699"],
+        "forbiddenForegrounds": ["#005FFC", "#98BAF4", "#BDD4F2"],
+        "notes": "Para texto sobre fondo verde usar exclusivamente Azul marino (#004699). El color Blanco (#FFFFFF) sobre verde #63CF00 está permitido ÚNICAMENTE para iconos, PROHIBIDO para tipografía."
+      },
+      {
+        "backgroundHex": "#98BAF4",
+        "backgroundName": "Azul claro 1",
+        "allowedForegrounds": ["#004699", "#005FFC", "#FFFFFF"],
+        "forbiddenForegrounds": ["#63CF00", "#BDD4F2"],
+        "notes": "Prohibido texto verde sobre azul claro 1."
+      },
+      {
+        "backgroundHex": "#BDD4F2",
+        "backgroundName": "Azul claro 2",
+        "allowedForegrounds": ["#004699", "#005FFC"],
+        "forbiddenForegrounds": ["#63CF00", "#98BAF4", "#FFFFFF"],
+        "notes": "En cajas modulares #BDD4F2, el texto y el logotipo deben ir en azul oscuro/corporativo, NUNCA en blanco ni en verde."
+      },
+      {
+        "backgroundHex": "#EFF9FE",
+        "backgroundName": "Hielo / Azul muy pálido",
+        "allowedForegrounds": ["#004699", "#005FFC", "#63CF00", "#98BAF4"],
+        "forbiddenForegrounds": ["#BDD4F2"],
+        "notes": "Contraste limpio sobre fondo claro."
+      },
+      {
+        "backgroundHex": "#F24360",
+        "backgroundName": "Rosa Preciadores (y Rojo #E20613)",
+        "allowedForegrounds": ["#FFFFFF"],
+        "forbiddenForegrounds": ["#004699", "#005FFC", "#63CF00", "#98BAF4", "#BDD4F2"],
+        "notes": "Sobre preciadores rosas (#F24360) o rojos (#E20613) ÚNICAMENTE se permite texto en Blanco (#FFFFFF)."
+      },
+      {
+        "backgroundHex": "#FFFFFF",
+        "backgroundName": "Blanco",
+        "allowedForegrounds": ["#004699", "#005FFC", "#63CF00", "#98BAF4"],
+        "forbiddenForegrounds": ["#BDD4F2", "#EFF9FE"],
+        "notes": "Evitar azules pálidos sin contraste sobre blanco."
+      }
+    ]
+  },
+  "graphic_design_and_layout": {
+    "uiTabTitle": "4. Diseño Gráfico, Logo y Línea Basal",
+    "sourcePages": "Págs. 11–21, 32–41, 45–71",
+    "usageNote": "Estas reglas geométricas y gráficas se inyectan exclusivamente en el Agente Evaluador (cuando audita artes diseñados de agencia) y guían las plantillas CSS de vista previa de la aplicación. NO se envían al generador de fotografías base.",
+    "logoRules": {
+      "mandatoryDescriptor": "El logotipo de campaña SIEMPRE debe incluir debajo el descriptivo 'Análisis clínicos y estudios especializados' (incluyendo mercados de entrada o no maduros).",
+      "contrastOnPhotos": "En versión blanca sobre foto debe apoyarse con un degradado oscuro sutil detrás. En versión azul sobre zonas claras se puede aclarar ligeramente la zona de la foto para ganar lectura, pero NUNCA llegar a blanco puro al 100%.",
+      "modularLogoColor": "En aplicaciones modulares (sobre pleca azul claro o área clara de imagen), el logotipo siempre debe ser la versión azul corporativo (nunca blanco sobre pleca #BDD4F2).",
+      "placement": "Abajo a la derecha en ejecuciones generales y modulares horizontales; abajo a la izquierda (mínimo 1/3 del ancho) en posteos fijos de redes sociales; centrado abajo junto con legales en pósters de PDV. Solo se permite arriba en la primera tarjeta de un mosaico de redes sociales o en materiales a ras de piso (roll-ups / marquesinas).",
+      "cobrandingRule": "Los cobrandeos (ej. Chopo + aliado) llevan ambos logotipos limpios y separados en el mismo nivel jerárquico superior y NO utilizan la línea basal verde sobre la fotografía para no mezclar identidades."
+    },
+    "typographyRules": {
+      "primaryFontFamily": "Avenir (pesos Book/Light, Medium, Heavy, Black)",
+      "webAlternativeFontFamily": "Roboto (pesos Regular, Medium, Bold, Black) — exclusiva para entorno web e interfaz UI.",
+      "weightHierarchy": {
+        "BLACK": "Encabezados principales (interlineado compacto y sólido).",
+        "HEAVY": "Subtextos y slogan ('Chopo, toda una vida cuidando la vida.').",
+        "MEDIUM": "Cuerpos de texto y Call to Action inferior.",
+        "LIGHT": "Textos legales y permisos al pie."
+      },
+      "visionAuditGuidance": "Al evaluar imágenes rasterizadas (JPG/PNG), auditar que la tipografía sea sans-serif geométrica/limpia (rechazar fuentes serif, manuscritas o decorativas) y que respete estrictamente la jerarquía visual de pesos (título en peso grueso Black, subtexto/slogan en Heavy, cuerpo en Medium y legales pequeños en Light), sin intentar adivinar diferencias microscópicas entre familias sans-serif casi idénticas."
+    },
+    "lineaBasalRules": {
+      "description": "Versión estilizada de la onda de pulso verde (#63CF00) del logotipo de Chopo que representa acompañamiento humano.",
+      "proportionInvariants": [
+        "Crecer o reducir SIEMPRE a proporción exacta.",
+        "PROHIBIDO comprimir la onda horizontalmente o verticalmente.",
+        "PROHIBIDO alterar el grosor uniforme del trazo al escalar."
+      ],
+      "interactionAndSizeRules": [
+        "Debe interactuar tridimensionalmente ('abrazar') a las personas o equipos médicos pasando por delante de un plano y por detrás de otro; PROHIBIDO dejarla flotando aislada en el fondo cuando hay personas o elementos.",
+        "Tamaño armónico: ni diminuta que parezca irrelevante/error, ni gigante pasando por encima de las cabezas y opacando a las personas.",
+        "Al entrelazarla con cuerpos, NO ocultar partes excesivas de la onda central; quien vea la pieza debe entender la silueta de la línea basal completa."
+      ],
+      "allowedAndForbiddenCrops": [
+        "Opción 1 (Ideal): Onda central completa con ambas rectas laterales a cuadro.",
+        "Opción 2 (Permitida): Solo se recorta la bajada/extensión del lado derecho.",
+        "Opción 3 (Permitida): Solo se recorta la bajada/extensión del lado izquierdo.",
+        "PROHIBIDO recortar por ambos lados dejando la onda aislada, recortar el valle inferior de la onda o cortar el trazo en seco a mitad de la imagen."
+      ],
+      "nonAggressionRules": [
+        "PROHIBIDO cruzar o estorbar rostros, ojos o información relevante.",
+        "PROHIBIDO posicionar el valle o trazo sobre el cuello/garganta dando ilusión de que 'ahorca' a la persona.",
+        "PROHIBIDO cruzar de forma tensa pegada a las axilas de los personajes."
+      ]
+    },
+    "modularityRules": {
+      "cornerGeometry": "Toda caja modular se construye con 3 esquinas rectas (90°) y 1 sola esquina redondeada ubicada abajo (la que no esté rebasada), con radio circular perfecto de 10% (hasta 15% en formatos muy pequeños). Si coexisten dos cajas, ambas deben tener exactamente el mismo radio sin deformarse en óvalo.",
+      "noFloatingBoxes": "PROHIBIDO usar cajas modulares aisladas flotando en medio de la foto sin tocar bordes; el módulo debe correr de lado a lado o de arriba a abajo.",
+      "singleAxisOrientation": "La modularidad puede ser vertical u horizontal, pero NUNCA combinar ambas al mismo tiempo.",
+      "maxSizeLimits": "En formatos cuadrados y horizontales, las cajas modulares pueden ocupar como MÁXIMO la mitad (50%) del lienzo. En formatos verticales, pueden crecer de abajo hacia arriba hasta un MÁXIMO de 2/3 de la altura (dejando mínimo 1/3 visible para la fotografía).",
+      "horizontalLayoutAndCtaTab": "En piezas modulares horizontales se prefiere la pleca del lado izquierdo para que la línea basal luzca en la foto derecha, añadiendo un pequeño cuadro/pleca verde junto al CTA (en 1 línea el alto superior es 2x respecto a la distancia base x al fin del redondel; en varias líneas llega al techo de la tipografía superior)."
+    },
+    "pricingAndDiscountsRules": {
+      "mandatoryColor": "Siempre usar Rosa (#F24360) para descuentos y promociones regulares, o Rojo (#E20613) exclusivamente en Buen Fin / Hot Sale, con texto blanco (#FFFFFF).",
+      "circularBadgeBleed": "En versión circular sobre foto, exactamente 1/6 del diámetro del círculo debe ir rebasado en el borde superior o en los laterales, NUNCA rebasado en el borde inferior. Tener el círculo 100% dentro del lienzo solo se acepta como excepción justificada de composición para no tapar rostros.",
+      "modularPromoBox": "Cuando el diseño es modular, los descuentos o precios NO usan círculo sino un bloque rectangular sólido en color rosa (#F24360)."
+    },
+    "iconsLegalsAndNoPhotoRules": {
+      "icons": "Iconografía line-art a 1 solo color en alto contraste dentro de un círculo sólido (ej. icono blanco dentro de círculo verde #63CF00 o azul #005FFC). Es válido que el círculo rebase ligeramente la pleca modular.",
+      "legalsPlacement": "Colocar hasta abajo en peso Light sin protagonismo pero con lectura mínima clara, privilegiando su colocación sobre la zona inferior de la fotografía.",
+      "noPhotoLayouts": "Cuando por espacio o necesidad puntual una pieza no lleve fotografía (ej. apertura de sucursal o croquis), el color principal de fondo debe ser obligatoriamente Azul claro 2 (#BDD4F2)."
+    }
+  },
+  "channels": {
+    "uiTabTitle": "5. Reglas por Canal",
+    "items": {
+      "social_media": {
+        "id": "social_media",
+        "label": "Redes Sociales (Feed 1:1, Vertical 4:5, Carruseles, Historias y Reels/TikTok 9:16)",
+        "sourcePages": "Págs. 82–95",
+        "supportedFormats": ["1:1 (Feed / Mosaico)", "4:5 (Feed vertical y Carruseles IG)", "9:16 (Historias, Reels y TikTok)"],
+        "copyRules": "Textos ágiles, escaneables en menos de 3 segundos (35–45 palabras antes del pie legal). Si el contenido requiere más de 3 líneas informativas o listado de estudios, estructurarlo para diseño modular o carrusel 4:5. En Historias (9:16) NO incluir números telefónicos ni tira de puntos de contacto (usar llamado corto o interacción/link). Cero signos de admiración (¡!). Si cita cifras médicas, incluir fuente <= 5 años en APA 7.",
+        "photoRules": "Generar encuadre limpio acorde a 1:1, 4:5 o 9:16. En formato vertical 9:16 dejar aire limpio arriba (mínimo 250 px) y abajo (mínimo 350 px) y evitar elementos críticos pegados al margen derecho (100 px de botonera en Reels/TikTok). En carruseles 4:5, la primera lámina siempre debe ser fotográfica y humana.",
+        "focusGroupContext": "Imagina que estás haciendo scroll cotidiano en tu celular (Instagram, Facebook, TikTok o LinkedIn) y te aparece esta publicación en tu feed o historias.",
+        "auditorRules": [
+          "En posteos fijos (1:1 y 4:5), el logotipo CHOPO con descriptivo debe ubicarse abajo a la izquierda con un ancho mínimo de 1/3 del lienzo (prohibido arriba a la derecha).",
+          "Tipografía en RRSS: usar Heavy para titulares/conceptos resaltados y Medium para bloques de cuerpo/viñetas en secciones separadas; PROHIBIDO mezclar Heavy y Medium dentro de una misma oración o párrafo continuo.",
+          "Si hay más de 3 líneas de texto informativo en mosaico/post, debe apoyarse en bloques modulares para no saturar la foto.",
+          "Carruseles en formato 4:5 iniciando con fotografía humana en la portada.",
+          "Áreas seguras en 9:16 (lienzo 1080x1920): Historias mantienen zona segura central de 1080x1420 px (250 px libres arriba y 250 px abajo) y NO llevan puntos de contacto telefónicos, dejando aire para stickers sin tapar rostros ni línea basal; Reels/TikTok dejan 220 px arriba, 350 px abajo y 100 px a la derecha libres de texto.",
+          "Subtítulos (captions) en video vertical deben ir en Avenir Black azul oscuro sobre cajas ajustadas de fondo azul claro.",
+          "Íconos propios de interacción RRSS (Compartir —no va en TikTok—, Enviar, Likear, Comentar —solo Reels/TikTok—): NO van en posteos fijos; en carruseles/reels van debajo del CTA y ESTRICTAMENTE PROHIBIDO colocarlos arriba del logotipo de Chopo."
+        ]
+      },
+      "mailing_ecommerce": {
+        "id": "mailing_ecommerce",
+        "label": "Mailings (Email Marketing) y E-commerce",
+        "sourcePages": "Págs. 99–100",
+        "supportedFormats": ["Correo electrónico vertical modular (Mailing)", "Bloques promocionales E-commerce"],
+        "copyRules": "Estructurar asunto (subject) claro sin signos de admiración, preheader complementario y cuerpo escaneable por bloques: 1) Titular hero alineado a la etapa del funnel + slogan, 2) Breve párrafo empático/informativo, 3) Bloques o tarjetas de estudios/perfiles específicos con CTA corto ('Clic aquí', 'Cotiza en línea'), y 4) Cierre con descuento/vigencia y puntos de contacto en orden oficial (App -> Web -> WhatsApp -> Teléfonos).",
+        "photoRules": "Fotografía horizontal limpia y luminosa para el bloque Hero superior del correo, con rostros centrados/despejados y tonos cálidos que permitan integrar la línea basal o titular lateral sin saturación.",
+        "focusGroupContext": "Imagina que recibes este correo electrónico de Laboratorio Médico del Chopo en tu bandeja de entrada del celular o computadora y decides si abrirlo, leerlo y hacer clic para cotizar/agendar.",
+        "auditorRules": [
+          "Los botones de llamado a la acción para módulos de estudios en mailings y e-commerce utilizan el color Magenta autorizado (#D200F4) o bloques modulares con íconos circulares verdes (#63CF00).",
+          "Mantener jerarquía limpia en scroll vertical: Hero superior con logotipo, bloques informativos/estudios, preciador rosa/rojo con texto blanco y footer institucional azul con WhatsApp, App y legales COFEPRIS.",
+          "Cero signos de admiración (¡!) en asunto, preheader, titulares y botones."
+        ]
+      },
+      "web": {
+        "id": "web",
+        "label": "Sitio Web y Banners Digitales (chopo.com.mx)",
+        "sourcePages": "Págs. 101–106",
+        "supportedFormats": ["Hero Banner Carrusel Web (panorámico)", "Banner Promocional Horizontal", "Banner Cuadrado Lateral"],
+        "copyRules": "Textos muy concisos pensados para lectura inmediata en banner web: titular corto alineado al funnel (en un carrusel web al menos un banner lleva 'Toda una vida...', pero no todos tienen que repetirlo para no ser monótonos), beneficio concreto de pago/precio en línea y botón CTA directo (ej. 'Cotiza y agenda tu cita ahora', 'Ver estudio', 'En digital por favor') sin signos de admiración.",
+        "photoRules": "Fotografía panorámica horizontal o cuadrada con amplio espacio limpio de un lado (preferentemente izquierdo para texto o modularidad 50/50) y sujetos humanos cálidos del lado derecho.",
+        "focusGroupContext": "Imagina que entras al sitio web chopo.com.mx desde tu computadora o celular buscando cotizar un estudio y ves este banner principal en la página de inicio.",
+        "auditorRules": [
+          "Tipografía web oficial: familia Roboto (Regular, Medium, Bold, Black) o Avenir en artes gráficos de banner.",
+          "En carruseles web debe existir coherencia con la campaña umbrella ('Toda una vida cuidando la vida'), incluyendo al menos una cabeza con 'Toda una vida...' sin obligar a repetirla en cada slide.",
+          "La línea basal verde no está obligada a repetirse en cada banner inferior de la página si ya protagoniza el Hero superior.",
+          "Tarjetas de estudios destacan el 'Precio en línea' en azul y usan iconografía a 1 solo color alineada al manual."
+        ]
+      },
+      "pdv_sucursal": {
+        "id": "pdv_sucursal",
+        "label": "Punto de Venta en Sucursal — PDV (Pósters, Folletos, Lonas Exteriores y Regionales)",
+        "sourcePages": "Págs. 107–126",
+        "supportedFormats": ["Póster Interior de Sucursal (vertical)", "Folleto / Díptico / Tríptico Informativo", "Lona / Microperforado de Vista Exterior", "Material Regional de Plaza"],
+        "copyRules": "Adaptar densidad según el subformato de sucursal: 1) En Pósters (tanto Póster Interior de Sucursal como Lona/Microperforado Exterior y Póster Regional) el texto debe ser sintético y escaneable de un vistazo (máximo 45–65 palabras antes de contacto y legales: titular + slogan inmediatamente debajo + máximo 1 línea corta o 3–4 viñetas breves de estudios/beneficios sin párrafos densos + CTA claro); 2) En Folleto / Díptico / Tríptico de lectura en mano sí se permite explicar en bloques breves qué incluye el estudio y qué órganos ayuda a cuidar. Presentar los puntos de contacto en barra limpia respetando el orden estricto (App Chopo | chopo.com.mx | WhatsApp | Teléfonos), incluir permiso COFEPRIS vigente (<1m vs >1m) y mantener cero signos de admiración.",
+        "photoRules": "Fotografía vertical o apaisada de alta limpieza donde el encuadre deje margen amplio de seguridad interior ('caja') alrededor de todo el perímetro para que ni cabezas, ni ojos, ni transductores médicos queden cerca de la línea de corte. En pósters seriados centrar a los personajes para permitir continuidad simétrica.",
+        "focusGroupContext": "Imagina que vas caminando frente a una sucursal de Laboratorio Médico del Chopo o estás sentado en la sala de espera y ves este póster en la pared o tomas este folleto impreso.",
+        "auditorRules": [
+          "Regla de tercios en Póster: el área de fotografía debe ocupar como MÍNIMO 1/3 (una tercera parte) de la superficie total del póster (obligatorio en pósters, deseable en folletos/flyers).",
+          "Alineación en PDV: el logotipo de Chopo y la banda inferior de contacto/legales deben estar CENTRADOS respecto al eje del material (prohibido cargarlos a la izquierda o derecha en pósters estándar; los legales pueden ir abajo o en acomodo lateral discreto si ayuda a despejar el CTA).",
+          "Cajas encontradas y radios en PDV: se permite superponer cajas modulares ('cajas encontradas', ej. azul claro + rosa descuento), siempre con 3 esquinas rectas y 1 inferior redondeada con radio circular idéntico de 10% en todas las cajas (prohibido usar radios distintos o deformar el radio en óvalo).",
+          "Materiales Regionales: se permite usar pleca modular en Verde corporativo (#63CF00) con todo el texto en Azul oscuro (#004699) para resaltar mensajes locales.",
+          "Variante tipográfica Exterior vs. Interior: en materiales de vista exterior (lonas, microperforados) SE PERMITE usar Avenir Heavy en cuerpos de texto/listas para lectura lejana; en cambio, en folletos, dípticos y materiales de mano interiores está ESTRICTAMENTE PROHIBIDO usar Heavy en el cuerpo de texto.",
+          "Regla de Folletos (Contraste y Bullets): evitar verde sobre azul oscuro y PROHIBIDO pintar los puntos de viñeta (bullets) de verde con texto azul; tanto el bullet como el texto de la lista deben unificarse en el mismo azul oscuro sobre fondo azul claro.",
+          "Legibilidad de Legales en PDV: deben tener lectura mínima real (escalando proporcionalmente desde mín. 4 pt en tamaño carta hacia arriba en gran formato) y contar con el permiso COFEPRIS correspondiente a menor o mayor de 1 metro."
+        ]
+      }
+    }
+  }
+}

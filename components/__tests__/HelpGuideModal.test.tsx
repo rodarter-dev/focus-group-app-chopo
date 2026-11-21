@@ -30,10 +30,11 @@ vi.mock('lucide-react', () => ({
   Zap: () => <div data-testid="icon-zap" />,
   RotateCcw: () => <div data-testid="icon-rotate-ccw" />,
   Trash2: () => <div data-testid="icon-trash" />,
-  ClipboardList: () => <div data-testid="icon-clipboard-list" />
+  ClipboardList: () => <div data-testid="icon-clipboard-list" />,
+  Palette: () => <div data-testid="icon-palette" />
 }));
 
-describe('HelpGuideModal (Spanish-only Exact Interface Parity)', () => {
+describe('HelpGuideModal (Spanish-only Exact Interface Parity & Manual V4)', () => {
   const onCloseMock = vi.fn();
   const onNavigateModeMock = vi.fn();
   const onOpenRagModalMock = vi.fn();
@@ -52,29 +53,59 @@ describe('HelpGuideModal (Spanish-only Exact Interface Parity)', () => {
     );
   };
 
-  it('renders official Chopo Intelligence Hub workflow and Agency Fast-Track in Quick Flow (ES)', () => {
+  it('renders official Chopo Intelligence Hub workflow, Manual de Marca V4, and Base de Conocimiento (COFEPRIS y Clínico) in Quick Flow (ES)', () => {
     const { container } = renderModal(AppMode.HOME);
 
     expect(screen.getAllByText(/Flujo de Trabajo — Chopo Intelligence Hub/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/100% en español para Laboratorios Chopo/i)).toBeDefined();
+    expect(screen.getByText(/100% en español para Laboratorio Médico del Chopo/i)).toBeDefined();
     expect(screen.getByText(/Atajo Rápido para Agencia \/ Parrilla/i)).toBeDefined();
     expect(screen.getByText(/Ir Directo al Focus Group ➔/i)).toBeDefined();
     expect(screen.getAllByText(/1\. Audiencias/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/2\. Usuarios Sintéticos/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/3\. Brief de Marketing/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/4\. Focus Group/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/📚 Base de Conocimiento \(COFEPRIS y Marca\)/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Manual de Marca V4/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Base de Conocimiento \(COFEPRIS y Clínico\)/i).length).toBeGreaterThan(0);
     expect(container.textContent).not.toMatch(/ES\s*\|\s*EN/i);
     expect(container.textContent).not.toMatch(/Switch Español/i);
+    expect(container.textContent).not.toMatch(/COFEPRIS y Marca/i);
   });
 
-  it('documents exact controls across 1. Audiencias, 2. Usuarios Sintéticos, 3. Brief, and 4. Focus Group without legacy terms', () => {
+  it('documents Manual de Marca V4 5 tabs, 3 segments (B2C/B2D/B2B), Funnel, 4 Channels, and COFEPRIS/Clinical Knowledge Base without jargon', () => {
+    const { container } = renderModal(AppMode.BRAND_MANUAL);
+
+    // Auto-selects Manual de Marca V4 tab when currentMode is BRAND_MANUAL
+    expect(screen.getByText(/Manual de Marca V4 — Laboratorio Médico del Chopo/i)).toBeDefined();
+    expect(screen.getByText(/1\. Identidad y Voz/i)).toBeDefined();
+    expect(screen.getByText(/2\. Fotografía e Imagen/i)).toBeDefined();
+    expect(screen.getByText(/3\. Paleta y Contrastes/i)).toBeDefined();
+    expect(screen.getByText(/4\. Diseño Gráfico y Línea Basal/i)).toBeDefined();
+    expect(screen.getByText(/5\. Reglas por Canal/i)).toBeDefined();
+    expect(screen.getAllByText(/B2C Pacientes/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/B2D Médicos/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/B2B Empresas/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Restaurar Manual V4 Oficial/i)).toBeDefined();
+
+    // Verify no technical jargon leaks
+    expect(container.textContent).not.toMatch(/\bRAG\b|\bJSON\b|\bFirestore\b|\bPII\b/i);
+
+    // Base de Conocimiento (COFEPRIS y Clínico) tab
+    fireEvent.click(screen.getByRole('button', { name: /Base de Conocimiento \(COFEPRIS y Clínico\)/i }));
+    expect(screen.getByText(/Los 3 Pilares Regulatorios y Clínicos Oficiales/i)).toBeDefined();
+    expect(screen.getByText(/Lineamientos Regulatorios COFEPRIS/i)).toBeDefined();
+    expect(screen.getByText(/Catálogo de Estudios y Preparación Clínica/i)).toBeDefined();
+    expect(screen.getByText(/Reglas de Imagen y Realismo Médico/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /Ir al Manual de Marca V4 ➔/i })).toBeDefined();
+  });
+
+  it('documents exact controls across 1. Audiencias, 2. Usuarios Sintéticos, 3. Brief (Funnel & 4 Channels), and 4. Focus Group without legacy terms', () => {
     const { container } = renderModal(AppMode.AUDIENCE_GEN);
 
     // 1. Audiencias
     expect(screen.getByText(/✨ Crear Nuevo Perfil de Audiencia con IA/i)).toBeDefined();
-    expect(screen.getByText(/🏥 Paciente \(B2C\)/i)).toBeDefined();
-    expect(screen.getByText(/🩺 Médico Prescriptor \(B2B\)/i)).toBeDefined();
+    expect(screen.getAllByText(/B2C Pacientes/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/B2D Médicos/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/B2B Empresas/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Generar y Agregar Audiencia/i)).toBeDefined();
     expect(screen.getAllByText(/📜 Historial \/ Versiones/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/🗑️ Vaciar Todos/i).length).toBeGreaterThan(0);
@@ -91,8 +122,15 @@ describe('HelpGuideModal (Spanish-only Exact Interface Parity)', () => {
     expect(screen.getByText(/Siguiente Paso: 3\. Crear Brief de Campaña ➔/i)).toBeDefined();
     expect(screen.getByText(/O ir directo a: 4\. Evaluar en Focus Group ➔/i)).toBeDefined();
 
-    // 3. Brief de Marketing
+    // 3. Brief de Marketing (Funnel & 4 Channels)
     fireEvent.click(screen.getByRole('button', { name: /^3\. Brief de Marketing$/i }));
+    expect(screen.getByText(/Awareness:/i)).toBeDefined();
+    expect(screen.getByText(/Consideration:/i)).toBeDefined();
+    expect(screen.getByText(/Performance:/i)).toBeDefined();
+    expect(screen.getByText(/Redes Sociales:/i)).toBeDefined();
+    expect(screen.getByText(/Mailing \/ E-commerce:/i)).toBeDefined();
+    expect(screen.getByText(/Sitio Web:/i)).toBeDefined();
+    expect(screen.getByText(/PDV Sucursal:/i)).toBeDefined();
     expect(screen.getByText(/Editar Contexto Institucional de Laboratorios Chopo/i)).toBeDefined();
     expect(screen.getAllByText(/Administrar Estudios Clínicos/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Siguiente Paso: 4\. Evaluar esta Campaña en Focus Group ➔/i)).toBeDefined();
@@ -110,19 +148,19 @@ describe('HelpGuideModal (Spanish-only Exact Interface Parity)', () => {
     expect(container.textContent).not.toMatch(/Configurar Estudios/i);
   });
 
-  it('includes updated FAQ on deleting/clearing audiences & synthetic users and stays locked to Mexican Spanish even with stale localStorage', () => {
+  it('includes FAQ on Manual de Marca V4 and stays locked to Mexican Spanish even with stale localStorage', () => {
     renderModal(AppMode.HOME);
     fireEvent.click(screen.getByRole('button', { name: /Dudas Frecuentes \/ Buscador/i }));
 
     expect(
       screen.getByText(
-        /¿Cómo borro o vacío las audiencias o los usuarios sintéticos para empezar desde cero, y cómo los recupero si borré uno por error\?/i
+        /¿Dónde administro la voz de marca, los colores oficiales, la Línea Basal y las reglas por canal/i
       )
     ).toBeDefined();
 
     const searchInput = screen.getByPlaceholderText(/Escribe una palabra clave/i);
-    fireEvent.change(searchInput, { target: { value: 'Rollback' } });
-    expect(screen.getByText(/Incluye: \.\.\./i)).toBeDefined();
+    fireEvent.change(searchInput, { target: { value: 'Manual de Marca V4' } });
+    expect(screen.getAllByText(/Restaurar Manual V4 Oficial/i).length).toBeGreaterThan(0);
 
     cleanup();
 

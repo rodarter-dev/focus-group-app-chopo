@@ -17,18 +17,83 @@ import {
     DEFAULT_CHOPO_RUBRICS
 } from '../services/geminiService';
 import { brandConfig } from '../config';
-import { AppMode, SimulationResult, MarketingBriefData, AcquisitionResult, SavedSimulation, Persona, ABTestResult, FocusGroupRubric, ConfigVersionSnapshot } from '../types';
-import { Users, BarChart2, Save, Download, Play, ShoppingCart, Mail, MessageSquare, Settings, X, ChevronDown, ChevronUp, Sparkles, UserPlus, Zap, Trash2, Edit2, History, MessageCircle, Plus, Info, ShoppingBag, Image, CheckCircle2, XCircle, Loader2, Upload, ClipboardList, RotateCcw } from 'lucide-react';
+import { AppMode, AudienceTrack, BrandChannelKey, SimulationResult, MarketingBriefData, AcquisitionResult, SavedSimulation, Persona, ABTestResult, FocusGroupRubric, ConfigVersionSnapshot } from '../types';
+import { Users, BarChart2, Save, Download, Play, ShoppingCart, Mail, MessageSquare, Settings, X, ChevronDown, ChevronUp, Sparkles, UserPlus, Zap, Trash2, Edit2, History, MessageCircle, Plus, Info, ShoppingBag, Image, CheckCircle2, XCircle, Loader2, Upload, ClipboardList, RotateCcw, Radio } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { SyntheticChat } from './SyntheticChat';
 import { SyntheticInterview } from './SyntheticInterview';
 import { SIMULATION_PRODUCTS, STANDARD_AUDIENCES, localizePersonaLabel, getPersonaInitial } from '../data/simulationData';
 import { useCompanyContext } from '../context/CompanyContext';
 import { useLanguage } from '../context/LanguageContext';
+import { resolveSegmentKey } from '../services/brandManualUtils';
 
 interface SyntheticTestingProps {
     setMode?: (mode: AppMode) => void;
 }
+
+const EVALUATED_CHANNEL_OPTIONS: Array<{
+    key: 'social_media' | 'mailing_ecommerce' | 'web' | 'pdv_sucursal';
+    label: string;
+}> = [
+    { key: 'social_media', label: 'Redes Sociales' },
+    { key: 'mailing_ecommerce', label: 'Mailing / E-commerce' },
+    { key: 'web', label: 'Sitio Web' },
+    { key: 'pdv_sucursal', label: 'PDV Sucursal' }
+];
+
+const inferPersonaTrack = (p: any): AudienceTrack => {
+    if (!p) return 'patient';
+    const rawTrack = String(p.track || '').trim();
+    const rawName = String(p.name || p.baseAudienceName || '');
+    if (rawTrack === 'enterprise' || rawTrack === 'b2b_enterprises') return 'enterprise';
+    if (rawTrack === 'physician' || rawTrack === 'B2D' || rawTrack === 'b2d_doctors') return 'physician';
+    if (rawTrack === 'patient' || rawTrack === 'B2C' || rawTrack === 'b2c_patients') {
+        if (/\[empresa|\bempresa\s*\(?b2b/i.test(rawName)) return 'enterprise';
+        if (/médico\s*b2[bd]|\[médico/i.test(rawName)) return 'physician';
+        return 'patient';
+    }
+    if (/\[empresa|\bempresa\s*\(?b2b/i.test(rawName)) return 'enterprise';
+    if (/\[médico|médico\s*\(?b2[bd]|physician/i.test(rawName)) return 'physician';
+    if (rawTrack) {
+        const seg = resolveSegmentKey(rawTrack);
+        if (seg === 'b2b_enterprises') return 'enterprise';
+        if (seg === 'b2d_doctors') return 'physician';
+    }
+    return 'patient';
+};
+
+const getPersonaSegmentMeta = (p: any) => {
+    const track = inferPersonaTrack(p);
+    if (track === 'physician') {
+        return {
+            track,
+            label: '🩺 Médico (B2D)',
+            shortLabel: 'Médico (B2D)',
+            badgeClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+        };
+    }
+    if (track === 'enterprise') {
+        return {
+            track,
+            label: '🏢 Empresa (B2B)',
+            shortLabel: 'Empresa (B2B)',
+            badgeClass: 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+        };
+    }
+    return {
+        track,
+        label: '🏥 Paciente (B2C)',
+        shortLabel: 'Paciente (B2C)',
+        badgeClass: 'bg-blue-50 text-[#0066FF] border border-blue-200'
+    };
+};
+
+const formatDisplayPersonaLabel = (label: string): string =>
+    label
+        .replace(/\[Médico B2B\]/gi, '[Médico B2D]')
+        .replace(/\(Médico B2B\)/gi, '(Médico B2D)')
+        .replace(/Médico Prescriptor B2B/gi, 'Médico (B2D)')
+        .replace(/Médico B2B/gi, 'Médico (B2D)');
 
 export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
     const { name, description } = useCompanyContext();
@@ -37,6 +102,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
     const [personas, setPersonas] = useState<any[]>([]);
     const [allCatalogPersonas, setAllCatalogPersonas] = useState<any[]>(STANDARD_AUDIENCES);
     const [brief, setBrief] = useState<MarketingBriefData | null>(null);
+    const [selectedChannelKey, setSelectedChannelKey] = useState<BrandChannelKey>('social_media');
     const [activeTab, setActiveTab] = useState<'ACQUISITION' | 'CHAT' | 'EMAIL' | 'BRIEF' | 'PURCHASE' | 'CREATIVE' | 'AB_TEST'>('CHAT');
     const [savedHistory, setSavedHistory] = useState<SavedSimulation[]>([]);
     const [marketingMessages, setMarketingMessages] = useState<string[]>(() => {
@@ -70,7 +136,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
     const [newManualPersona, setNewManualPersona] = useState({
         name: '',
         personaName: '',
-        track: 'patient' as 'patient' | 'physician',
+        track: 'patient' as AudienceTrack,
         age: 42,
         job_title: '',
         demographics: '',
@@ -256,7 +322,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
             "Descuento exclusivo en línea al agendar y pagar en chopo.com.mx",
             "Resultados de HbA1c el mismo día directo en tu WhatsApp y en la App Chopo",
             "Toma de muestra a domicilio sin costo adicional en el Perfil Control Diabetes",
-            "Portal Médico B2B con comparativo histórico de biomarcadores para especialistas",
+            "Portal Médico B2D con comparativo histórico de biomarcadores para especialistas",
             "Paquete Anual de Salud Preventiva Femenina con Mastografía Digital y Check-up"
         ];
     });
@@ -368,6 +434,14 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
 
     const syncStimuliFromBrief = (loadedBrief: MarketingBriefData) => {
         if (!loadedBrief) return;
+
+        // 0. Sync evaluated channel cleanly when Brief includes a V4 channelKey
+        if (
+            loadedBrief.channelKey &&
+            EVALUATED_CHANNEL_OPTIONS.some(c => c.key === loadedBrief.channelKey)
+        ) {
+            setSelectedChannelKey(loadedBrief.channelKey);
+        }
 
         // 1. Sync Key Marketing Messages (BRIEF tab)
         const candidateMessages: string[] = [
@@ -510,6 +584,12 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
             if (data && data.title) {
                 console.log("Refreshed Brief Data:", data);
                 setBrief(data);
+                if (
+                    data.channelKey &&
+                    EVALUATED_CHANNEL_OPTIONS.some(c => c.key === data.channelKey)
+                ) {
+                    setSelectedChannelKey(data.channelKey);
+                }
                 if (shouldAutoSync(data)) {
                     syncStimuliFromBrief(data);
                 }
@@ -639,7 +719,6 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
     const handleStartNewRubric = () => {
         const blankRubric: FocusGroupRubric = {
             id: `rubric_custom_${Date.now()}`,
-            key: `custom_criterion_${Date.now()}`,
             name: '',
             track: 'both',
             weight: 15,
@@ -771,25 +850,37 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
             .split(/\n|,/)
             .map(s => s.trim())
             .filter(Boolean);
+        const defaultJobTitle =
+            newManualPersona.track === 'physician'
+                ? 'Médico Especialista'
+                : newManualPersona.track === 'enterprise'
+                    ? 'Director de Recursos Humanos / Salud Ocupacional'
+                    : 'Paciente';
+        const defaultSegmentTag =
+            newManualPersona.track === 'physician'
+                ? 'Médico (B2D)'
+                : newManualPersona.track === 'enterprise'
+                    ? 'Empresa (B2B)'
+                    : 'Paciente (B2C)';
         const created = {
             id: `aud_custom_${Date.now()}`,
             track: newManualPersona.track,
             name: newManualPersona.name.trim(),
             personaName: newManualPersona.personaName.trim(),
             age: Number(newManualPersona.age) || 40,
-            job_title: newManualPersona.job_title.trim() || (newManualPersona.track === 'physician' ? 'Médico Especialista' : 'Paciente'),
+            job_title: newManualPersona.job_title.trim() || defaultJobTitle,
             demographics: newManualPersona.demographics.trim() || `${newManualPersona.age} años, México`,
-            bio: newManualPersona.bio.trim() || 'Perfil sintético clínico configurado para evaluación en Focus Group.',
+            bio: newManualPersona.bio.trim() || 'Perfil sintético configurado para evaluación en Focus Group.',
             pain_points: painPoints.length > 0 ? painPoints : ['Busca claridad en precios e indicaciones de laboratorio'],
             goals: goals.length > 0 ? goals : ['Resultados digitales confiables en App Chopo'],
             imageUrl: newManualPersona.track === 'physician' ? '/images/audiences/physicians.png' : '/images/audiences/chronic_patients.png',
             details: {
                 age: `${newManualPersona.age} años`,
-                job_title: newManualPersona.job_title.trim(),
+                job_title: newManualPersona.job_title.trim() || defaultJobTitle,
                 bio: newManualPersona.bio.trim(),
                 pain_points: painPoints,
                 goals: goals,
-                lifestyle_tags: [newManualPersona.track === 'physician' ? 'Pista Médico B2B' : 'Pista Paciente B2C', 'Salud Digital']
+                lifestyle_tags: [defaultSegmentTag, 'Salud Digital']
             }
         };
         const updated = [...personas, created];
@@ -1019,7 +1110,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
 
                 const newPersona = {
                     ...seedAudience,
-                    track: seedAudience.track || (seedAudience.name?.toLowerCase().includes('médico') ? 'physician' : 'patient'),
+                    track: inferPersonaTrack(seedAudience),
                     age: details?.age || 40,
                     job_title: details?.job_title || 'Paciente / Profesional',
                     pain_points: details?.pain_points || ['Busca atención rápida y precios transparentes en línea'],
@@ -1111,7 +1202,8 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
             let pool = [...syntheticUsers];
 
             setStatus(t(`Simulando respuestas de ${pool.length} participantes...`, `Simulating ${pool.length} members...`));
-            const results = await simulateMarketingFocusGroup(pool, brief, simulationProducts, emailCampaigns, marketingMessages);
+            const briefWithChannel = { ...brief, channelKey: selectedChannelKey };
+            const results = await simulateMarketingFocusGroup(pool, briefWithChannel, simulationProducts, emailCampaigns, marketingMessages);
             setMemberResults(results);
 
             // Auto Save
@@ -1308,13 +1400,14 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                     id: `${u.id}_creative_${variantName}_${i}`
                 }));
 
-                // Run Sim with Dynamic Rubrics
+                // Run Sim with Dynamic Rubrics and Evaluated Channel (Manual V4)
                 const results = await simulateCreativeFocusGroup(
                     pool,
                     assets,
                     name,
                     rubrics,
-                    brief?.productName || "Check-up Control Diabetes"
+                    brief?.productName || "Check-up Control Diabetes",
+                    selectedChannelKey
                 );
 
                 // Tag results with the audience group
@@ -1603,58 +1696,85 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                         </button>
                     </div>
 
-                    {/* Audience List (Inside Header for Context) */}
-                    <div className={`flex flex-wrap items-center gap-3 pt-4 border-t border-gray-100 mt-2 ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
-                        <div className="flex-shrink-0 text-xs font-bold text-subtext uppercase tracking-wider mr-2">{t('Contexto de Audiencias', 'Audience Context')}</div>
-                        {personas.map((p, i) => {
-                            const userCountForPersona = syntheticUsers.filter(
-                                (u: any) => (u.baseAudienceName || u.name) === p.name || u.personaName === p.personaName
-                            ).length;
-                            return (
-                                <div
-                                    key={i}
-                                    onClick={() => {
-                                        if (isBusy) return;
-                                        setSelectedAudience(p);
-                                        setIsEditingSelectedAudience(false);
-                                        setEditAudienceForm({
-                                            name: p.name || '',
-                                            personaName: p.personaName || '',
-                                            track: p.track || (p.name?.toLowerCase().includes('médico') ? 'physician' : 'patient'),
-                                            age: p.age || parseInt(String(p.details?.age || '42'), 10) || 42,
-                                            job_title: p.job_title || p.details?.job_title || '',
-                                            demographics: p.demographics || '',
-                                            bio: p.bio || p.details?.bio || '',
-                                            pain_points_text: (p.pain_points || p.details?.pain_points || []).join('\n'),
-                                            goals_text: (p.goals || p.details?.goals || []).join('\n')
-                                        });
-                                    }}
-                                    className="flex items-center gap-2 px-3 py-1.5 rounded-full border bg-white border-slate-200 text-[#003B7A] text-sm cursor-pointer hover:border-[#0066FF] hover:shadow-sm transition-all"
-                                    title={t('Ver detalles del perfil clínico', 'View clinical profile details')}
-                                >
-                                    <div className="w-5 h-5 rounded-full bg-gray-50 overflow-hidden flex-shrink-0 border border-gray-100">
-                                        {p.imageUrl ? <img src={p.imageUrl} className="w-full h-full object-cover" /> : <Users size={12} />}
-                                    </div>
-                                    <span className="font-bold text-xs">{localizePersonaLabel(p.name, language)}</span>
-                                    {userCountForPersona > 0 && (
-                                        <span className="px-1.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#0066FF] text-[10px] font-black border border-blue-200">
-                                            {userCountForPersona}
+                    {/* Audience List & Evaluated Channel Selector (Inside Header for Context) */}
+                    <div className={`flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-gray-100 mt-2 ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
+                        <div className="flex flex-wrap items-center gap-2.5">
+                            <div className="flex-shrink-0 text-xs font-bold text-subtext uppercase tracking-wider mr-1">{t('Contexto de Audiencias')}</div>
+                            {personas.map((p, i) => {
+                                const userCountForPersona = syntheticUsers.filter(
+                                    (u: any) => (u.baseAudienceName || u.name) === p.name || u.personaName === p.personaName
+                                ).length;
+                                const segMeta = getPersonaSegmentMeta(p);
+                                return (
+                                    <div
+                                        key={i}
+                                        onClick={() => {
+                                            if (isBusy) return;
+                                            setSelectedAudience(p);
+                                            setIsEditingSelectedAudience(false);
+                                            setEditAudienceForm({
+                                                name: p.name || '',
+                                                personaName: p.personaName || '',
+                                                track: inferPersonaTrack(p),
+                                                age: p.age || parseInt(String(p.details?.age || '42'), 10) || 42,
+                                                job_title: p.job_title || p.details?.job_title || '',
+                                                demographics: p.demographics || '',
+                                                bio: p.bio || p.details?.bio || '',
+                                                pain_points_text: (p.pain_points || p.details?.pain_points || []).join('\n'),
+                                                goals_text: (p.goals || p.details?.goals || []).join('\n')
+                                            });
+                                        }}
+                                        className="flex items-center gap-2 px-3 py-1.5 rounded-full border bg-white border-slate-200 text-[#003B7A] text-sm cursor-pointer hover:border-[#0066FF] hover:shadow-sm transition-all"
+                                        title={t('Ver detalles del perfil')}
+                                    >
+                                        <div className="w-5 h-5 rounded-full bg-gray-50 overflow-hidden flex-shrink-0 border border-gray-100">
+                                            {p.imageUrl ? <img src={p.imageUrl} className="w-full h-full object-cover" /> : <Users size={12} />}
+                                        </div>
+                                        <span className="font-bold text-xs">{formatDisplayPersonaLabel(localizePersonaLabel(p.name, language))}</span>
+                                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${segMeta.badgeClass}`}>
+                                            {segMeta.shortLabel}
                                         </span>
-                                    )}
-                                </div>
-                            );
-                        })}
-                        {activeTab === 'CHAT' && (
-                            <button
-                                type="button"
+                                        {userCountForPersona > 0 && (
+                                            <span className="px-1.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#0066FF] text-[10px] font-black border border-blue-200">
+                                                {userCountForPersona}
+                                            </span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                            {activeTab === 'CHAT' && (
+                                <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => setIsSyntheticUsersModalOpen(true)}
+                                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#EFF6FF] border border-blue-200 text-[#003B7A] hover:bg-blue-100 text-xs font-bold whitespace-nowrap transition-colors"
+                                    title={t('Ver e inspeccionar los participantes sintéticos evaluados en esta sesión')}
+                                >
+                                    <span>{t(`👥 Ver / Inspeccionar Participantes Evaluados (${syntheticUsers.length})`)}</span>
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Compact Evaluated Channel Selector (Manual V4) */}
+                        <div className="flex items-center gap-2 bg-[#EFF9FE] border border-[#BDD4F2] rounded-xl px-3 py-1.5 shrink-0">
+                            <Radio size={14} className="text-[#005FFC] shrink-0" />
+                            <label htmlFor="fg-evaluated-channel" className="text-[11px] font-bold text-[#004699] uppercase tracking-wider whitespace-nowrap">
+                                {t('Canal Evaluado:')}
+                            </label>
+                            <select
+                                id="fg-evaluated-channel"
                                 disabled={isBusy}
-                                onClick={() => setIsSyntheticUsersModalOpen(true)}
-                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#EFF6FF] border border-blue-200 text-[#003B7A] hover:bg-blue-100 text-xs font-bold whitespace-nowrap transition-colors"
-                                title={t('Ver e inspeccionar los participantes sintéticos evaluados en esta sesión', 'View and inspect the synthetic participants evaluated in this session')}
+                                value={selectedChannelKey}
+                                onChange={(e) => setSelectedChannelKey(e.target.value as BrandChannelKey)}
+                                className="bg-white border border-[#BDD4F2] rounded-lg px-2.5 py-1 text-xs font-bold text-[#004699] focus:outline-none focus:ring-2 focus:ring-[#005FFC] cursor-pointer disabled:opacity-50"
                             >
-                                <span>{t(`👥 Ver / Inspeccionar Participantes Evaluados (${syntheticUsers.length})`, `👥 View / Inspect Evaluated Participants (${syntheticUsers.length})`)}</span>
-                            </button>
-                        )}
+                                {EVALUATED_CHANNEL_OPTIONS.map((ch) => (
+                                    <option key={ch.key} value={ch.key}>
+                                        {ch.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1923,7 +2043,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
 
                     {activeTab === 'CHAT' && (
                         <div className="h-full bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                            <SyntheticChat />
+                            <SyntheticChat channelKey={selectedChannelKey} />
                         </div>
                     )}
 
@@ -3136,7 +3256,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                                 {t('Cargar Imagen / Banner', 'Upload Custom Image')}
                                             </button>
                                             <button
-                                                onClick={refreshBriefData}
+                                                onClick={() => refreshBriefData()}
                                                 className="btn-secondary flex items-center gap-2"
                                             >
                                                 <History size={20} />
@@ -3255,7 +3375,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                                         (r.rubricScores || []).forEach((rs: any) => {
                                                             const key = rs.rubricId || rs.rubricKey || rs.rubricName;
                                                             if (!rubricMap[key]) {
-                                                                const matchedRubric = rubrics.find(rub => rub.id === rs.rubricId || rub.key === rs.rubricKey);
+                                                                const matchedRubric = rubrics.find(rub => rub.id === rs.rubricId || (rub as any).key === rs.rubricKey);
                                                                 rubricMap[key] = {
                                                                     name: rs.rubricName || matchedRubric?.name || key,
                                                                     total: 0,
@@ -3581,8 +3701,8 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                             <div className="flex items-center gap-3">
                                 <Users className="text-[#0066FF]" size={26} />
                                 <div>
-                                    <h3 className="text-xl font-bold text-[#003B7A]">{t('Agregar o Restaurar Perfiles de Audiencia', 'Add or Restore Audience Personas')}</h3>
-                                    <p className="text-xs text-subtext">{t('Esquema fijo depurado (Paciente B2C / Médico B2B) con respaldo y rollback en Firestore.', 'Standardized fixed schema (B2C Patient / B2B Physician) with Firestore backup and rollback.')}</p>
+                                    <h3 className="text-xl font-bold text-[#003B7A]">{t('Agregar o Restaurar Perfiles de Audiencia')}</h3>
+                                    <p className="text-xs text-subtext">{t('Esquema estandarizado (Paciente B2C / Médico B2D / Empresa B2B) con respaldo y restauración de versiones.')}</p>
                                 </div>
                             </div>
                             <button disabled={isSavingPersonas || isGeneratingWildcard} onClick={() => setIsAddAudienceModalOpen(false)} className="text-subtext hover:text-heading transition-colors p-2 hover:bg-gray-100 rounded-full disabled:opacity-50"><X size={22} /></button>
@@ -3607,7 +3727,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                                 <img src={std.imageUrl} className="w-full h-full object-cover" alt={std.name} />
                                             </div>
                                             <div className="min-w-0 flex-1">
-                                                <div className="text-[11px] font-black text-heading truncate">{std.name}</div>
+                                                <div className="text-[11px] font-black text-heading truncate">{formatDisplayPersonaLabel(std.name)}</div>
                                                 <div className="text-[10px] font-bold text-subtext truncate">{std.personaName} • {std.job_title}</div>
                                             </div>
                                         </button>
@@ -3659,14 +3779,15 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Pista (Track)', 'Track')}</label>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Segmento')}</label>
                                             <select
                                                 value={newManualPersona.track}
-                                                onChange={e => setNewManualPersona({ ...newManualPersona, track: e.target.value as 'patient' | 'physician' })}
+                                                onChange={e => setNewManualPersona({ ...newManualPersona, track: e.target.value as AudienceTrack })}
                                                 className="input-field text-xs py-2"
                                             >
-                                                <option value="patient">{t('Paciente B2C', 'B2C Patient')}</option>
-                                                <option value="physician">{t('Médico Prescriptor B2B', 'B2B Prescribing Physician')}</option>
+                                                <option value="patient">{t('🏥 Paciente (B2C)')}</option>
+                                                <option value="physician">{t('🩺 Médico (B2D)')}</option>
+                                                <option value="enterprise">{t('🏢 Empresa (B2B)')}</option>
                                             </select>
                                         </div>
                                     </div>
@@ -3738,7 +3859,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                             className="btn-primary text-xs py-2.5 px-5 flex items-center gap-2"
                                         >
                                             <Save size={14} />
-                                            {t('Guardar Perfil en Firestore', 'Save Persona to Firestore')}
+                                            {t('Guardar Perfil')}
                                         </button>
                                     </div>
                                 </div>
@@ -3832,9 +3953,9 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                 </div>
                                 <div>
                                     <div className="flex flex-wrap items-center gap-2 mb-1">
-                                        <h3 className="text-2xl font-black text-heading">{localizePersonaLabel(selectedAudience.name, language)}</h3>
-                                        <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-full uppercase tracking-wider ${selectedAudience.track === 'physician' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-blue-50 text-[#0066FF] border border-blue-200'}`}>
-                                            {selectedAudience.track === 'physician' ? t('Pista Médico B2B', 'B2B Physician Track') : t('Pista Paciente B2C', 'B2C Patient Track')}
+                                        <h3 className="text-2xl font-black text-heading">{formatDisplayPersonaLabel(localizePersonaLabel(selectedAudience.name, language))}</h3>
+                                        <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-full uppercase tracking-wider ${getPersonaSegmentMeta(selectedAudience).badgeClass}`}>
+                                            {getPersonaSegmentMeta(selectedAudience).label}
                                         </span>
                                     </div>
                                     <div className="text-subtext font-bold uppercase tracking-widest text-xs flex items-center gap-2">
@@ -3887,14 +4008,15 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Pista (Track)', 'Track')}</label>
+                                            <label className="block text-[10px] font-black text-[#003B7A] uppercase mb-1">{t('Segmento')}</label>
                                             <select
                                                 value={editAudienceForm.track}
-                                                onChange={e => setEditAudienceForm({ ...editAudienceForm, track: e.target.value })}
+                                                onChange={e => setEditAudienceForm({ ...editAudienceForm, track: e.target.value as AudienceTrack })}
                                                 className="input-field text-xs py-2"
                                             >
-                                                <option value="patient">{t('Paciente B2C', 'B2C Patient')}</option>
-                                                <option value="physician">{t('Médico B2B', 'B2B Physician')}</option>
+                                                <option value="patient">{t('🏥 Paciente (B2C)')}</option>
+                                                <option value="physician">{t('🩺 Médico (B2D)')}</option>
+                                                <option value="enterprise">{t('🏢 Empresa (B2B)')}</option>
                                             </select>
                                         </div>
                                     </div>
@@ -4024,7 +4146,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                     className="px-6 py-2 bg-[#0066FF] text-white rounded-lg font-bold hover:bg-[#004ECC] transition-colors flex items-center gap-2 disabled:opacity-50"
                                 >
                                     <Save size={16} />
-                                    {t('Guardar Cambios en Firestore', 'Save Changes to Firestore')}
+                                    {t('Guardar Cambios')}
                                 </button>
                             )}
                             <button
@@ -4052,7 +4174,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                         {t('Criterios de Evaluación del Focus Group (Rúbricas Dinámicas)', 'Focus Group Evaluation Criteria (Dynamic Rubrics)')}
                                     </h3>
                                     <p className="text-xs text-slate-500">
-                                        {t('Configura las rúbricas ponderadas y anclas de calificación (0–100) con respaldo de versiones en Firestore.', 'Configure weighted rubrics and scoring anchors (0–100) with Firestore version history.')}
+                                        {t('Configura las rúbricas ponderadas y escalas de calificación (0–100) con respaldo de versiones.')}
                                     </p>
                                 </div>
                             </div>
@@ -4127,16 +4249,17 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                         </div>
                                         <div>
                                             <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
-                                                {t('Pista Aplicable (Track)', 'Applicable Track')}
+                                                {t('Segmento Aplicable')}
                                             </label>
                                             <select
-                                                value={editingRubric.track}
-                                                onChange={(e) => setEditingRubric({ ...editingRubric, track: e.target.value as 'patient' | 'physician' | 'both' })}
+                                                value={editingRubric.track === 'all' ? 'both' : editingRubric.track}
+                                                onChange={(e) => setEditingRubric({ ...editingRubric, track: e.target.value as 'both' | 'all' | 'patient' | 'physician' | 'enterprise' })}
                                                 className="input-field text-sm"
                                             >
-                                                <option value="both">{t('Ambas Pistas (Paciente B2C + Médico B2B)', 'Both Tracks (B2C + B2B)')}</option>
-                                                <option value="patient">{t('Solo Paciente B2C', 'B2C Patient Only')}</option>
-                                                <option value="physician">{t('Solo Médico Prescriptor B2B', 'B2B Physician Only')}</option>
+                                                <option value="both">{t('Todos los Segmentos (B2C + B2D + B2B)')}</option>
+                                                <option value="patient">{t('Solo Pacientes (B2C)')}</option>
+                                                <option value="physician">{t('Solo Médicos (B2D)')}</option>
+                                                <option value="enterprise">{t('Solo Empresas (B2B)')}</option>
                                             </select>
                                         </div>
                                         <div>
@@ -4229,7 +4352,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                     <div>
                                         <h4 className="text-sm font-black text-[#003B7A] flex items-center gap-2 uppercase tracking-wider">
                                             <History size={16} className="text-[#0066FF]" />
-                                            {t('🕒 Versiones Guardadas / Rollback', '🕒 Saved Versions / Rollback')}
+                                            {t('🕒 Versiones Guardadas')}
                                         </h4>
                                         <p className="text-xs text-slate-500">
                                             {t('Restaura cualquier versión previa o vuelve a los criterios iniciales por defecto.', 'Restore any previous rubric version or reset to the initial default rubrics.')}
@@ -4603,12 +4726,19 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                         </div>
 
                         <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-[#F8FAFC] space-y-3">
-                            {syntheticUsers.map((u, idx) => (
+                            {syntheticUsers.map((u, idx) => {
+                                const segMeta = getPersonaSegmentMeta(u);
+                                return (
                                 <div key={u.id || idx} className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col gap-2">
                                     <div className="flex flex-wrap items-start justify-between gap-2">
                                         <div>
-                                            <div className="font-bold text-[#003B7A] text-sm">
-                                                {idx + 1}. {localizePersonaLabel(u.name || u.personaName, language)}
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <div className="font-bold text-[#003B7A] text-sm">
+                                                    {idx + 1}. {formatDisplayPersonaLabel(localizePersonaLabel(u.name || u.personaName, language))}
+                                                </div>
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${segMeta.badgeClass}`}>
+                                                    {segMeta.label}
+                                                </span>
                                             </div>
                                             {u.demographics && (
                                                 <div className="text-xs text-slate-500 font-medium mt-0.5">
@@ -4617,7 +4747,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                             )}
                                         </div>
                                         <span className="px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-blue-200 text-[#0066FF] text-[11px] font-bold">
-                                            {localizePersonaLabel(u.baseAudienceName || u.personaName || u.name, language)}
+                                            {formatDisplayPersonaLabel(localizePersonaLabel(u.baseAudienceName || u.personaName || u.name, language))}
                                         </span>
                                     </div>
                                     {u.bio && (
@@ -4626,7 +4756,8 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                         </p>
                                     )}
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
 
                         <div className="px-6 py-4 border-t border-slate-200 bg-white flex items-center justify-between gap-3">

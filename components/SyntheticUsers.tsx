@@ -5,11 +5,40 @@ import { AppMode, CombinedPersona, SyntheticUserProfile } from '../types';
 import { STANDARD_AUDIENCES, localizePersonaLabel } from '../data/simulationData';
 import { useCompanyContext } from '../context/CompanyContext';
 import { useLanguage } from '../context/LanguageContext';
+import { resolveSegmentKey } from '../services/brandManualUtils';
 
 interface SyntheticUsersProps {
   personas: CombinedPersona[];
   setMode?: (mode: AppMode) => void;
 }
+
+type SegmentCode = 'B2C' | 'B2D' | 'B2B';
+
+const getSegmentMeta = (code: SegmentCode) => {
+  if (code === 'B2D') {
+    return {
+      label: '🩺 Médico (B2D)',
+      badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    };
+  }
+  if (code === 'B2B') {
+    return {
+      label: '🏢 Empresa (B2B)',
+      badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+    };
+  }
+  return {
+    label: '🏥 Paciente (B2C)',
+    badgeClass: 'bg-blue-50 text-[#0066FF] border-blue-200'
+  };
+};
+
+const formatDisplayLabel = (label: string): string =>
+  label
+    .replace(/\[Médico B2B\]/gi, '[Médico B2D]')
+    .replace(/\(Médico B2B\)/gi, '(Médico B2D)')
+    .replace(/Médico Prescriptor B2B/gi, 'Médico (B2D)')
+    .replace(/Médico B2B/gi, 'Médico (B2D)');
 
 export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMode }) => {
   const { description: companyDescription } = useCompanyContext();
@@ -22,18 +51,40 @@ export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMod
     ).values()
   );
 
-  const isPersonaB2B = (p: CombinedPersona | any): boolean => {
-    if (!p) return false;
-    if (p.track === 'physician' || (p as any).track === 'B2B') return true;
-    const combinedText = `${p.name || ''} ${p.personaName || ''} ${p.job_title || ''} ${p.details?.job_title || ''}`;
-    return /médico|b2b|physician|oncólog|endocrin|ginecólog|especialista prescriptor|dr\.|dra\./i.test(combinedText);
+  const getPersonaSegmentCode = (p: CombinedPersona | any): SegmentCode => {
+    if (!p) return 'B2C';
+    const rawTrack = String(p.track || '').trim();
+    const rawName = String(p.name || p.baseAudienceName || '');
+    if (rawTrack === 'enterprise' || rawTrack === 'b2b_enterprises') return 'B2B';
+    if (rawTrack === 'physician' || rawTrack === 'B2D' || rawTrack === 'b2d_doctors') return 'B2D';
+    if (rawTrack === 'patient' || rawTrack === 'B2C' || rawTrack === 'b2c_patients') {
+      if (/\[empresa|\bempresa\s*\(?b2b/i.test(rawName)) return 'B2B';
+      if (/médico\s*b2[bd]|\[médico/i.test(rawName)) return 'B2D';
+      return 'B2C';
+    }
+    const combinedText = `${rawName} ${p.personaName || ''} ${p.job_title || ''} ${p.details?.job_title || ''}`;
+    if (rawTrack === 'B2B') {
+      if (/médico|physician|oncólog|endocrin|ginecólog|especialista prescriptor|dr\.|dra\./i.test(combinedText)) {
+        return 'B2D';
+      }
+      return 'B2B';
+    }
+    if (/\[paciente|paciente\s*\(?b2c/i.test(rawName)) return 'B2C';
+    if (/\[médico|médico\s*\(?b2[bd]/i.test(rawName)) return 'B2D';
+    if (/\[empresa|empresa\s*\(?b2b/i.test(rawName)) return 'B2B';
+    const resolved = resolveSegmentKey(rawTrack);
+    if (rawTrack && resolved === 'b2b_enterprises') return 'B2B';
+    if (rawTrack && resolved === 'b2d_doctors') return 'B2D';
+    if (/convenios?\s+empresarial|salud\s+ocupacional|corporativ|empresa\s*\(?b2b/i.test(combinedText)) return 'B2B';
+    if (/médico|b2d|physician|oncólog|endocrin|ginecólog|especialista prescriptor|dr\.|dra\./i.test(combinedText)) return 'B2D';
+    return 'B2C';
   };
 
   const standardNames = new Set(STANDARD_AUDIENCES.map(s => s.name));
   const customPersonas: CombinedPersona[] = allPersonas.filter(p => !standardNames.has(p.name));
   const mergedStandardPersonas: CombinedPersona[] = allPersonas.filter(p => standardNames.has(p.name));
 
-  const [trackFilter, setTrackFilter] = useState<'ALL' | 'B2C' | 'B2B'>('ALL');
+  const [trackFilter, setTrackFilter] = useState<'ALL' | SegmentCode>('ALL');
   const [selectedPersonaNames, setSelectedPersonaNames] = useState<string[]>(() =>
     allPersonas.map(p => p.name)
   );
@@ -213,8 +264,7 @@ export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMod
           </div>
           <p className="text-subtext mt-1">
             {t(
-              'Genera pacientes sintéticos y médicos prescriptores altamente detallados basados en tus audiencias clínicas principales.',
-              'Generate expanded, highly detailed synthetic patients and prescribing physicians based on your core clinical audiences.'
+              'Genera pacientes (B2C), médicos (B2D) y tomadores de decisión empresariales (B2B) sintéticos altamente detallados basados en tus audiencias principales.'
             )}
           </p>
         </div>
@@ -271,14 +321,14 @@ export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMod
             <div className="mb-6">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <label className="form-label mb-0">
-                  {t('Seleccionar Perfiles Base (Paciente B2C / Médico B2B)', 'Select Base Personas (B2C Patient / B2B Physician)')}
+                  {t('Seleccionar Perfiles Base (Paciente B2C / Médico B2D / Empresa B2B)')}
                   <span className="ml-2 text-xs font-bold text-[#0066FF]">
-                    ({selectedPersonaNames.length} {t('seleccionados', 'selected')} × {count} = {selectedPersonaNames.length * count} {t('usuarios a generar', 'users to generate')})
+                    ({selectedPersonaNames.length} {t('seleccionados')} × {count} = {selectedPersonaNames.length * count} {t('usuarios a generar')})
                   </span>
                 </label>
                 <div className="flex flex-wrap items-center gap-2">
-                  {/* Track Filter Pills */}
-                  <div className="inline-flex rounded-lg bg-slate-100 p-0.5 border border-slate-200">
+                  {/* Track Filter Pills (Manual V4: B2C, B2D, B2B) */}
+                  <div className="inline-flex flex-wrap rounded-lg bg-slate-100 p-0.5 border border-slate-200 gap-0.5">
                     <button
                       type="button"
                       disabled={isLoading}
@@ -289,7 +339,7 @@ export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMod
                           : 'text-slate-600 hover:text-[#003B7A]'
                       }`}
                     >
-                      {t('Todos', 'All')}
+                      {t('Todos')}
                     </button>
                     <button
                       type="button"
@@ -301,7 +351,19 @@ export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMod
                           : 'text-slate-600 hover:text-[#0066FF]'
                       }`}
                     >
-                      {t('🏥 Solo Pacientes B2C', '🏥 B2C Patients Only')}
+                      {t('🏥 Solo Pacientes B2C')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => setTrackFilter('B2D')}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
+                        trackFilter === 'B2D'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-emerald-700'
+                      }`}
+                    >
+                      {t('🩺 Solo Médicos B2D')}
                     </button>
                     <button
                       type="button"
@@ -309,11 +371,11 @@ export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMod
                       onClick={() => setTrackFilter('B2B')}
                       className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
                         trackFilter === 'B2B'
-                          ? 'bg-emerald-600 text-white shadow-sm'
-                          : 'text-slate-600 hover:text-emerald-700'
+                          ? 'bg-indigo-700 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-indigo-700'
                       }`}
                     >
-                      {t('🩺 Solo Médicos B2B', '🩺 B2B Physicians Only')}
+                      {t('🏢 Solo Empresas B2B')}
                     </button>
                   </div>
 
@@ -323,7 +385,7 @@ export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMod
                     onClick={() => setSelectedPersonaNames(allPersonas.map(p => p.name))}
                     className="px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-[#003B7A] transition-colors disabled:opacity-50"
                   >
-                    {t('Seleccionar Todos', 'Select All')}
+                    {t('Seleccionar Todos')}
                   </button>
                   <button
                     type="button"
@@ -331,7 +393,7 @@ export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMod
                     onClick={() => setSelectedPersonaNames([])}
                     className="px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-600 transition-colors disabled:opacity-50"
                   >
-                    {t('Limpiar Selección', 'Clear Selection')}
+                    {t('Limpiar Selección')}
                   </button>
                 </div>
               </div>
@@ -339,57 +401,75 @@ export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMod
                 
                 {/* Dynamic Custom Audiences */}
                 <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('Audiencias Personalizadas', 'Custom Audiences')}</h4>
-                  {customPersonas.filter(p => trackFilter === 'ALL' ? true : trackFilter === 'B2B' ? isPersonaB2B(p) : !isPersonaB2B(p)).length === 0 ? (
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('Audiencias Personalizadas')}</h4>
+                  {customPersonas.filter(p => trackFilter === 'ALL' ? true : getPersonaSegmentCode(p) === trackFilter).length === 0 ? (
                     <div className="bg-[#EFF6FF] border border-blue-100 p-3 rounded-md text-sm text-slate-800">
-                      <p className="font-semibold text-[#0066FF] mb-1">{t('No hay audiencias personalizadas adicionales.', 'No additional custom audiences yet.')}</p>
-                      <p className="text-slate-600 text-xs">{t('Cualquier segmento personalizado adicional que crees en la pestaña Audiencias o en Focus Group aparecerá aquí. Usa los Perfiles Base de Chopo a la derecha.', 'Any additional custom segments created in the Audiences or Focus Group tabs will appear here. Use the Chopo Base Profiles on the right.')}</p>
+                      <p className="font-semibold text-[#0066FF] mb-1">{t('No hay audiencias personalizadas adicionales en este filtro.')}</p>
+                      <p className="text-slate-600 text-xs">{t('Cualquier segmento personalizado (B2C, B2D o B2B) que crees en la pestaña Audiencias o en Focus Group aparecerá aquí. Usa los Perfiles Base de Chopo a la derecha.')}</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {customPersonas
-                        .filter(p => trackFilter === 'ALL' ? true : trackFilter === 'B2B' ? isPersonaB2B(p) : !isPersonaB2B(p))
-                        .map((p, i) => (
-                        <label key={`dyn-${i}`} className="flex items-center gap-3 cursor-pointer p-2 hover:bg-slate-50 rounded-md border border-transparent hover:border-slate-200 transition-colors">
-                          <input 
-                            type="checkbox" 
-                            disabled={isLoading}
-                            className="w-4 h-4 text-[#0066FF] rounded border-slate-300 focus:ring-[#0066FF] accent-[#0066FF] disabled:opacity-50"
-                            checked={selectedPersonaNames.includes(p.name)}
-                            onChange={() => togglePersona(p.name)}
-                          />
-                          <div>
-                            <p className="font-medium text-sm text-slate-900">{localizePersonaLabel(p.name, language)}</p>
-                            <p className="text-xs text-slate-500">{localizePersonaLabel(p.personaName, language)}</p>
-                          </div>
-                        </label>
-                      ))}
+                        .filter(p => trackFilter === 'ALL' ? true : getPersonaSegmentCode(p) === trackFilter)
+                        .map((p, i) => {
+                          const segMeta = getSegmentMeta(getPersonaSegmentCode(p));
+                          return (
+                            <label key={`dyn-${i}`} className="flex items-start gap-3 cursor-pointer p-2 hover:bg-slate-50 rounded-md border border-transparent hover:border-slate-200 transition-colors">
+                              <input 
+                                type="checkbox" 
+                                disabled={isLoading}
+                                className="w-4 h-4 mt-0.5 text-[#0066FF] rounded border-slate-300 focus:ring-[#0066FF] accent-[#0066FF] disabled:opacity-50"
+                                checked={selectedPersonaNames.includes(p.name)}
+                                onChange={() => togglePersona(p.name)}
+                              />
+                              <div className="min-w-0">
+                                <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border mb-1 ${segMeta.badgeClass}`}>
+                                  {segMeta.label}
+                                </span>
+                                <p className="font-medium text-sm text-slate-900 leading-snug">{formatDisplayLabel(localizePersonaLabel(p.name, language))}</p>
+                                <p className="text-xs text-slate-500">{localizePersonaLabel(p.personaName, language)}</p>
+                              </div>
+                            </label>
+                          );
+                        })}
                     </div>
                   )}
                 </div>
 
                 {/* Standard Personas */}
                 <div className="md:border-l md:border-slate-100 md:pl-6">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('Perfiles Base de Chopo (B2C y B2B)', 'Chopo Base Profiles (B2C & B2B)')}</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {mergedStandardPersonas
-                      .filter(p => trackFilter === 'ALL' ? true : trackFilter === 'B2B' ? isPersonaB2B(p) : !isPersonaB2B(p))
-                      .map((p, i) => (
-                      <label key={`std-${i}`} className="flex items-center gap-3 cursor-pointer p-2 hover:bg-slate-50 rounded-md border border-transparent hover:border-slate-200 transition-colors">
-                        <input 
-                          type="checkbox" 
-                          disabled={isLoading}
-                          className="w-4 h-4 text-[#0066FF] rounded border-slate-300 focus:ring-[#0066FF] accent-[#0066FF] disabled:opacity-50"
-                          checked={selectedPersonaNames.includes(p.name)}
-                          onChange={() => togglePersona(p.name)}
-                        />
-                        <div>
-                          <p className="font-medium text-sm text-slate-900">{localizePersonaLabel(p.name, language)}</p>
-                          <p className="text-xs text-slate-500">{localizePersonaLabel(p.personaName, language)}</p>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('Perfiles Base de Chopo (B2C, B2D y B2B)')}</h4>
+                  {mergedStandardPersonas.filter(p => trackFilter === 'ALL' ? true : getPersonaSegmentCode(p) === trackFilter).length === 0 ? (
+                    <div className="bg-slate-50 border border-slate-200 p-3 rounded-md text-xs text-slate-600">
+                      {t('No hay perfiles base en este segmento. Crea uno personalizado en el módulo Audiencias.')}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {mergedStandardPersonas
+                        .filter(p => trackFilter === 'ALL' ? true : getPersonaSegmentCode(p) === trackFilter)
+                        .map((p, i) => {
+                          const segMeta = getSegmentMeta(getPersonaSegmentCode(p));
+                          return (
+                            <label key={`std-${i}`} className="flex items-start gap-3 cursor-pointer p-2 hover:bg-slate-50 rounded-md border border-transparent hover:border-slate-200 transition-colors">
+                              <input 
+                                type="checkbox" 
+                                disabled={isLoading}
+                                className="w-4 h-4 mt-0.5 text-[#0066FF] rounded border-slate-300 focus:ring-[#0066FF] accent-[#0066FF] disabled:opacity-50"
+                                checked={selectedPersonaNames.includes(p.name)}
+                                onChange={() => togglePersona(p.name)}
+                              />
+                              <div className="min-w-0">
+                                <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border mb-1 ${segMeta.badgeClass}`}>
+                                  {segMeta.label}
+                                </span>
+                                <p className="font-medium text-sm text-slate-900 leading-snug">{formatDisplayLabel(localizePersonaLabel(p.name, language))}</p>
+                                <p className="text-xs text-slate-500">{localizePersonaLabel(p.personaName, language)}</p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  )}
                 </div>
 
               </div>
@@ -496,29 +576,37 @@ export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMod
               </div>
 
               <div className="grid grid-cols-1 gap-6">
-                {generatedUsers.map((user, idx) => (
+                {generatedUsers.map((user, idx) => {
+                  const segMeta = getSegmentMeta(getPersonaSegmentCode(user));
+                  const displayBaseName = formatDisplayLabel(localizePersonaLabel(user.baseAudienceName || user.name, language));
+                  return (
                   <div key={idx} className="content-card">
-                    <div className="flex justify-between items-start mb-4 pb-4 border-b border-slate-100">
+                    <div className="flex justify-between items-start mb-4 pb-4 border-b border-slate-100 gap-3 flex-wrap">
                       <div>
-                        <h4 className="text-xl font-bold text-heading">{user.name}</h4>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-xl font-bold text-heading">{user.name}</h4>
+                          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${segMeta.badgeClass}`}>
+                            {segMeta.label}
+                          </span>
+                        </div>
                         <p className="text-sm text-subtext font-medium">{user.demographics}</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <button 
-                          onClick={() => setAudienceContextModal({ name: localizePersonaLabel(user.baseAudienceName || user.name, language), bio: user.baseAudienceBio || user.bio })}
+                          onClick={() => setAudienceContextModal({ name: displayBaseName, bio: user.baseAudienceBio || user.bio })}
                           className="px-3 py-1 bg-[#EFF6FF] hover:bg-blue-100 cursor-pointer transition-colors text-[#003B7A] text-xs rounded-full font-bold uppercase border border-blue-200"
-                          aria-label="View Audience Context"
+                          aria-label="Ver contexto de audiencia"
                         >
-                          {localizePersonaLabel(user.baseAudienceName || user.name, language)}
+                          {displayBaseName}
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteSingleUser(idx)}
                           className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-600 border border-slate-200 hover:border-rose-200 text-xs font-bold flex items-center gap-1 transition-colors"
-                          title={t('Eliminar este usuario sintético', 'Delete this synthetic user')}
+                          title={t('Eliminar este usuario sintético')}
                         >
                           <Trash2 size={13} />
-                          <span>{t('Eliminar', 'Delete')}</span>
+                          <span>{t('Eliminar')}</span>
                         </button>
                       </div>
                     </div>
@@ -582,7 +670,8 @@ export const SyntheticUsers: React.FC<SyntheticUsersProps> = ({ personas, setMod
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Bottom Next Step Bar */}

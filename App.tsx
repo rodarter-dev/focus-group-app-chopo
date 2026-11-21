@@ -8,6 +8,7 @@ import { SyntheticChat } from './components/SyntheticChat';
 import { SyntheticTesting } from './components/SyntheticTesting';
 import { Home } from './components/Home';
 import { SyntheticUsers } from './components/SyntheticUsers';
+import { BrandManualView } from './components/BrandManualView';
 import { STANDARD_AUDIENCES } from './data/simulationData';
 import { CompanyProvider } from './context/CompanyContext';
 import { LanguageProvider } from './context/LanguageContext';
@@ -85,6 +86,8 @@ function AppContent() {
         return <SyntheticUsers personas={personas} setMode={setMode} />;
       case AppMode.SYNTHETIC_FOCUS_GROUP:
         return <SyntheticTesting setMode={setMode} />;
+      case AppMode.BRAND_MANUAL:
+        return <BrandManualView />;
       case AppMode.HOME:
       default:
         return (

@@ -9,14 +9,98 @@ import {
   restoreConfigVersion
 } from '../services/geminiService';
 import { brandConfig } from '../config';
-import { Send, Loader2, Globe, Target, Calendar, ShieldCheck, Zap, ArrowLeft, Search, Mail, Youtube, Share2, MessageCircle, ThumbsUp, Sparkles, Heart, FileText, Users, X, ListChecks, Award, Clock, Settings, RotateCcw, Plus, Edit2, Trash2, CheckCircle2, History, Eye, Upload, Image as ImageIcon, ChevronDown, ChevronUp } from 'lucide-react';
-import { AppMode, MarketingBriefData, ClinicalUseCase, ConfigVersionSnapshot } from '../types';
+import { Send, Loader2, Globe, Target, Calendar, ShieldCheck, Zap, ArrowLeft, Search, Mail, Youtube, Share2, MessageCircle, ThumbsUp, Sparkles, Heart, FileText, Users, X, ListChecks, Award, Clock, Settings, RotateCcw, Plus, Edit2, Trash2, CheckCircle2, History, Eye, Upload, Image as ImageIcon, ChevronDown, ChevronUp, LayoutTemplate, Layers } from 'lucide-react';
+import {
+  AppMode,
+  BrandAudienceSegmentKey,
+  BrandChannelKey,
+  ClinicalUseCase,
+  ConfigVersionSnapshot,
+  FunnelStage,
+  MarketingBriefData
+} from '../types';
 import { useCompanyContext } from '../context/CompanyContext';
 import { useLanguage } from '../context/LanguageContext';
+import {
+  CHANNEL_SUBFORMATS,
+  SEGMENT_KEY_TO_TRACK,
+  TRACK_TO_SEGMENT_KEY,
+  buildBrandSlices,
+  resolveSegmentKey
+} from '../services/brandManualUtils';
 
 interface MarketingBriefProps {
   setMode?: (mode: AppMode) => void;
 }
+
+const V4_AUDIENCE_SEGMENTS: Array<{
+  key: BrandAudienceSegmentKey;
+  code: 'B2C' | 'B2D' | 'B2B';
+  label: string;
+  pronounHint: string;
+}> = [
+  { key: 'b2c_patients', code: 'B2C', label: 'B2C — Pacientes (Tú)', pronounHint: 'Tú cercano y empático' },
+  { key: 'b2d_doctors', code: 'B2D', label: 'B2D — Médicos (Tú respetuoso)', pronounHint: 'Tú respetuoso entre colegas' },
+  { key: 'b2b_enterprises', code: 'B2B', label: 'B2B — Empresas (Usted)', pronounHint: 'Usted corporativo y convenios' }
+];
+
+const V4_FUNNEL_STAGES: Array<{
+  key: FunnelStage;
+  label: string;
+  ruleHint: string;
+}> = [
+  {
+    key: 'awareness',
+    label: 'Awareness',
+    ruleHint: 'Titular "Toda una vida..." + CTA discreto abajo'
+  },
+  {
+    key: 'consideration',
+    label: 'Consideration',
+    ruleHint: 'Titular "Toda una vida..." + diferenciador + CTA abajo'
+  },
+  {
+    key: 'performance',
+    label: 'Performance',
+    ruleHint: 'Beneficio directo + CTA arriba, sin signos ¡!'
+  }
+];
+
+const V4_CHANNELS: Array<{
+  key: 'social_media' | 'mailing_ecommerce' | 'web' | 'pdv_sucursal';
+  label: string;
+  shortDesc: string;
+}> = [
+  { key: 'social_media', label: 'Redes Sociales', shortDesc: 'Feed 1:1, 4:5, Historias y Reels' },
+  { key: 'mailing_ecommerce', label: 'Mailing / E-commerce', shortDesc: 'Correo promocional y módulo web' },
+  { key: 'web', label: 'Sitio Web', shortDesc: 'Hero Banner y banner horizontal' },
+  { key: 'pdv_sucursal', label: 'PDV Sucursal', shortDesc: 'Póster, folleto, lona y regional' }
+];
+
+const getChannelDisplayLabel = (channelKey?: string): string => {
+  const found = V4_CHANNELS.find((c) => c.key === channelKey);
+  return found ? found.label : (channelKey || 'Redes Sociales');
+};
+
+const getSegmentDisplayLabel = (segmentKey?: string): string => {
+  const resolved = resolveSegmentKey(segmentKey);
+  const found = V4_AUDIENCE_SEGMENTS.find((s) => s.key === resolved);
+  return found ? found.label : 'B2C — Pacientes (Tú)';
+};
+
+const getFunnelDisplayLabel = (stage?: string): string => {
+  const found = V4_FUNNEL_STAGES.find((f) => f.key === stage);
+  return found ? found.label : 'Performance';
+};
+
+const formatDisplayPersonaName = (rawName?: string): string => {
+  if (!rawName) return '';
+  return rawName
+    .replace(/\[Médico B2B\]/gi, '[Médico B2D]')
+    .replace(/\(Médico B2B\)/gi, '(Médico B2D)')
+    .replace(/Médico Prescriptor B2B/gi, 'Médico (B2D)')
+    .replace(/Médico B2B/gi, 'Médico (B2D)');
+};
 
 const DEFAULT_FALLBACK_USE_CASES: ClinicalUseCase[] = [
   {
@@ -121,7 +205,11 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
   const [useCaseVersions, setUseCaseVersions] = useState<ConfigVersionSnapshot[]>([]);
   const [isSavingUseCase, setIsSavingUseCase] = useState<boolean>(false);
 
-  const [goal, setGoal] = useState("Impulsar la adopción del Check-up Control Diabetes (HbA1c, Química Sanguínea y Microalbuminuria) en Pacientes B2C (prevención empática, precio especial en línea y resultados digitales en App Chopo) y Médicos Prescriptores B2B (precisión diagnóstica acreditada NGSP) bajo lineamientos COFEPRIS.");
+  const [goal, setGoal] = useState("Impulsar la adopción del Check-up Control Diabetes (HbA1c, Química Sanguínea y Microalbuminuria) en Pacientes B2C (prevención empática, precio especial en línea y resultados digitales en App Chopo), Médicos B2D (precisión diagnóstica acreditada NGSP) y Empresas B2B (convenios preventivos) bajo lineamientos COFEPRIS y Manual de Marca V4.");
+  const [audienceSegment, setAudienceSegment] = useState<BrandAudienceSegmentKey>('b2c_patients');
+  const [funnelStage, setFunnelStage] = useState<FunnelStage>('performance');
+  const [channelKey, setChannelKey] = useState<BrandChannelKey>('social_media');
+  const [channelSubformat, setChannelSubformat] = useState<string>(CHANNEL_SUBFORMATS.social_media[0]);
   const [brief, setBrief] = useState<MarketingBriefData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1);
@@ -129,7 +217,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
   const [selectedAudience, setSelectedAudience] = useState<string>("");
   const [isAssetLoading, setIsAssetLoading] = useState(false);
   const [generationStatus, setGenerationStatus] = useState("");
-  const [activeAssetTab, setActiveAssetTab] = useState<'social' | 'search' | 'email' | 'youtube' | 'website'>('social');
+  const [activeAssetTab, setActiveAssetTab] = useState<'v4_modular' | 'social' | 'search' | 'email' | 'youtube' | 'website'>('social');
   const [availableAudiences, setAvailableAudiences] = useState<any[]>([]);
   const [selectedAudienceNames, setSelectedAudienceNames] = useState<string[]>([]);
   const [selectedAudienceModal, setSelectedAudienceModal] = useState<any | null>(null);
@@ -140,9 +228,49 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
   const currentAssets = campaignAssetsMap && selectedAudience ? campaignAssetsMap[selectedAudience] : null;
   const isBusy = isLoading || isAssetLoading || isSavingUseCase || isUploadingEmailImage;
 
-  const isAudienceB2B = (aud: any): boolean => {
-    const rawName: string = aud?.name || '';
-    return /Médico|B2B|Physician/i.test(rawName) || aud?.track === 'physician';
+  const getAudienceSegmentCode = (aud: any): 'B2C' | 'B2D' | 'B2B' => {
+    if (!aud) return 'B2C';
+    const rawTrack = String(aud?.track || '').trim();
+    const rawName = String(aud?.name || '');
+    if (rawTrack === 'enterprise' || rawTrack === 'b2b_enterprises') return 'B2B';
+    if (rawTrack === 'physician' || rawTrack === 'B2D' || rawTrack === 'b2d_doctors') return 'B2D';
+    if (rawTrack === 'patient' || rawTrack === 'B2C' || rawTrack === 'b2c_patients') {
+      if (/\[empresa|\bempresa\s*\(?b2b/i.test(rawName)) return 'B2B';
+      if (/médico\s*b2[bd]|\[médico/i.test(rawName)) return 'B2D';
+      return 'B2C';
+    }
+    if (/\[empresa|\bempresa\s*\(?b2b/i.test(rawName)) return 'B2B';
+    if (/médico|physician|b2d/i.test(rawName)) return 'B2D';
+    const resolved = resolveSegmentKey(rawTrack);
+    if (rawTrack && resolved === 'b2b_enterprises') return 'B2B';
+    if (rawTrack && resolved === 'b2d_doctors') return 'B2D';
+    return 'B2C';
+  };
+
+  const getAudienceSegmentBadge = (aud: any) => {
+    const code = getAudienceSegmentCode(aud);
+    if (code === 'B2D') {
+      return {
+        label: '🩺 Médico (B2D)',
+        className: 'bg-emerald-50 text-emerald-800 border-emerald-200'
+      };
+    }
+    if (code === 'B2B') {
+      return {
+        label: '🏢 Empresa (B2B)',
+        className: 'bg-indigo-50 text-indigo-800 border-indigo-200'
+      };
+    }
+    return {
+      label: '🏥 Paciente (B2C)',
+      className: 'bg-[#EFF6FF] text-[#0066FF] border-blue-100'
+    };
+  };
+
+  const handleChannelChange = (newChannelKey: BrandChannelKey) => {
+    setChannelKey(newChannelKey);
+    const subformats = CHANNEL_SUBFORMATS[newChannelKey] || ['Formato Estándar'];
+    setChannelSubformat(subformats[0]);
   };
 
   const toggleAudienceSelection = (audName: string) => {
@@ -160,18 +288,18 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
   };
 
   const sanitizeVersionLabel = (label?: string): string => {
-    if (!label) return t('Configuración Base por Defecto — Laboratorios Chopo', 'Default Baseline Configuration — Laboratorios Chopo');
+    if (!label) return t('Configuración Base por Defecto — Laboratorio Médico del Chopo');
     if (/MVP|Semilla Oficial/i.test(label)) {
-      return t('Configuración Base por Defecto — Laboratorios Chopo', 'Default Baseline Configuration — Laboratorios Chopo');
+      return t('Configuración Base por Defecto — Laboratorio Médico del Chopo');
     }
     return label;
   };
 
   const formatVersionDate = (ver: ConfigVersionSnapshot): string => {
     const rawDate = ver.timestamp || (ver as any).createdAt;
-    if (!rawDate) return t('Versión base', 'Baseline version');
+    if (!rawDate) return t('Versión base');
     const parsed = new Date(rawDate);
-    if (isNaN(parsed.getTime())) return t('Versión base', 'Baseline version');
+    if (isNaN(parsed.getTime())) return t('Versión base');
     return parsed.toLocaleString(language === 'es' ? 'es-MX' : 'en-US', {
       day: '2-digit',
       month: 'short',
@@ -183,20 +311,27 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
 
   const buildGoalForUseCase = (uc: ClinicalUseCase) => {
     const studiesSummary = (uc.includedStudies || []).slice(0, 2).join(', ');
-    return `Impulsar la adopción de ${uc.studyName}${studiesSummary ? ` (${studiesSummary})` : ''} en Pacientes B2C (precio especial en línea en chopo.com.mx / App Chopo y entrega digital) y Médicos Prescriptores B2B (rigor analítico acreditado) cumpliendo estrictamente ${uc.cofeprisPermitB2C} y las reglas de realismo visual (${uc.fastingRequirement}).`;
+    return `Impulsar la adopción de ${uc.studyName}${studiesSummary ? ` (${studiesSummary})` : ''} en Pacientes B2C (precio especial en línea en chopo.com.mx / App Chopo y entrega digital), Médicos B2D (rigor analítico acreditado) y Empresas B2B (convenios y salud ocupacional) cumpliendo estrictamente ${uc.cofeprisPermitB2C} y las reglas de realismo visual (${uc.fastingRequirement}).`;
   };
 
   const handleSelectUseCase = (uc: ClinicalUseCase) => {
     setSelectedUseCaseId(uc.id);
     setGoal(buildGoalForUseCase(uc));
+    if (uc.track === 'patient' || uc.track === 'physician' || uc.track === 'enterprise') {
+      setAudienceSegment(TRACK_TO_SEGMENT_KEY[uc.track]);
+    }
     if (availableAudiences.length > 0) {
       if (uc.track === 'patient') {
         setSelectedAudienceNames(
-          availableAudiences.filter((a) => !isAudienceB2B(a)).map((a) => a.name)
+          availableAudiences.filter((a) => getAudienceSegmentCode(a) === 'B2C').map((a) => a.name)
         );
       } else if (uc.track === 'physician') {
         setSelectedAudienceNames(
-          availableAudiences.filter((a) => isAudienceB2B(a)).map((a) => a.name)
+          availableAudiences.filter((a) => getAudienceSegmentCode(a) === 'B2D').map((a) => a.name)
+        );
+      } else if (uc.track === 'enterprise') {
+        setSelectedAudienceNames(
+          availableAudiences.filter((a) => getAudienceSegmentCode(a) === 'B2B').map((a) => a.name)
         );
       } else {
         setSelectedAudienceNames(availableAudiences.map((a) => a.name));
@@ -315,48 +450,78 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
     }
   };
 
+  const resolveDefaultAssetTab = (chKey?: string): 'v4_modular' | 'social' | 'search' | 'email' | 'youtube' | 'website' => {
+    if (chKey === 'pdv_sucursal') return 'v4_modular';
+    if (chKey === 'mailing_ecommerce') return 'email';
+    if (chKey === 'web') return 'website';
+    return 'social';
+  };
+
   const handleGenerate = async () => {
     setIsLoading(true);
-    setGenerationStatus(t("Redactando Brief Clínico de Marketing...", "Drafting Clinical Marketing Brief..."));
+    setGenerationStatus(t("Redactando Brief Clínico de Marketing (Manual V4)..."));
     try {
-      // 1. Generate Brief anchored on selected clinical use case and selected audiences
+      // 1. Generate Brief anchored on selected clinical use case, selected audiences, and V4 campaign options
       const studyName = selectedUseCase?.studyName || 'Check-up Control Diabetes';
-      const studyTrack = selectedUseCase?.track || 'both';
+      const studyTrack = SEGMENT_KEY_TO_TRACK[audienceSegment] || selectedUseCase?.track || 'both';
       const targetAudiences = availableAudiences.filter((a) =>
         selectedAudienceNames.includes(a.name)
       );
-      const result = await generateMarketingBrief(description, goal, targetAudiences, studyName, studyTrack);
+      const brandV4Options = {
+        audienceSegment,
+        funnelStage,
+        channelKey,
+        channelSubformat
+      };
+
+      const result = await generateMarketingBrief(
+        description,
+        goal,
+        targetAudiences,
+        studyName,
+        studyTrack,
+        brandV4Options
+      );
 
       if (result) {
-        // 2. Generate Assets immediately
-        setGenerationStatus(t("Diseñando Materiales de Campaña (Social, Buscador, Email, YouTube)...", "Designing Campaign Assets (Social, Search, Email, YouTube)..."));
+        // 2. Generate Assets immediately with V4 Campaign Configuration
+        setGenerationStatus(t("Diseñando Materiales de Campaña (PDV / Canal V4, Social, Buscador, Email, YouTube)..."));
         const productName = result.productName || studyName || `${name} Diagnostic Panel`;
 
         const finalAssetsMap: Record<string, MarketingAssets> = {};
         try {
-          setGenerationStatus(t(`Diseñando Materiales de Campaña (0/${result.audiences.length})...`, `Designing Campaign Assets (0/${result.audiences.length})...`));
+          setGenerationStatus(t(`Diseñando Materiales de Campaña (0/${result.audiences.length})...`));
           
           for (let i = 0; i < result.audiences.length; i++) {
             const aud = result.audiences[i];
-            setGenerationStatus(t(`Diseñando Materiales para ${aud.name} (${i + 1}/${result.audiences.length})...`, `Designing Campaign Assets for ${aud.name} (${i + 1}/${result.audiences.length})...`));
+            setGenerationStatus(t(`Diseñando Materiales para ${aud.name} (${i + 1}/${result.audiences.length})...`));
             
             const verbatimGoal = goal.trim() || result.campaignGoal;
             const combinedGoal = `INSTRUCCIÓN OBLIGATORIA DEL USUARIO (SEGUIR AL PIE DE LA LETRA): ${verbatimGoal} | Audiencia Objetivo: ${aud.name} (${aud.ageRange || ''}) | Ángulo: ${aud.messagingAngle?.es || aud.messagingAngle?.en || ''}`;
-            const assets = await generateMarketingCampaignAssets(productName, combinedGoal, context);
+            const assets = await generateMarketingCampaignAssets(productName, combinedGoal, context, brandV4Options);
             finalAssetsMap[aud.name] = assets;
           }
         } catch (assetErr) {
           console.error("Failed to auto-generate assets:", assetErr);
         }
 
-        // 3. Combine and Save
-        const finalBrief = { ...result, campaignAssetsMap: finalAssetsMap || undefined };
+        // 3. Combine and Save with V4 metadata preserved
+        const finalBrief: MarketingBriefData = {
+          ...result,
+          audienceSegment: result.audienceSegment || audienceSegment,
+          funnelStage: result.funnelStage || funnelStage,
+          channelKey: result.channelKey || channelKey,
+          channelSubformat: result.channelSubformat || channelSubformat,
+          slogan: result.slogan || 'Chopo, toda una vida cuidando la vida.',
+          campaignAssetsMap: finalAssetsMap || undefined
+        };
 
         setBrief(finalBrief);
         if (finalAssetsMap) {
           setCampaignAssetsMap(finalAssetsMap);
           setSelectedAudience(result.audiences[0]?.name || "");
         }
+        setActiveAssetTab(resolveDefaultAssetTab(finalBrief.channelKey));
         setStep(2);
 
         // Background Save
@@ -368,7 +533,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
       }
     } catch (error) {
       console.error(error);
-      alert(t("Error al generar el brief de marketing.", "Failed to generate marketing brief."));
+      alert(t("Error al generar el brief de marketing."));
     } finally {
       setIsLoading(false);
       setGenerationStatus("");
@@ -381,14 +546,20 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
     try {
       const productName = brief.productName || `${name} Diagnostic Panel`;
       const newAssetsMap: Record<string, MarketingAssets> = {};
+      const activeV4Options = {
+        audienceSegment: brief.audienceSegment || audienceSegment,
+        funnelStage: brief.funnelStage || funnelStage,
+        channelKey: brief.channelKey || channelKey,
+        channelSubformat: brief.channelSubformat || channelSubformat
+      };
       
       for (let i = 0; i < brief.audiences.length; i++) {
         const aud = brief.audiences[i];
-        setGenerationStatus(t(`Regenerando Materiales para ${aud.name} (${i + 1}/${brief.audiences.length})...`, `Regenerating Assets for ${aud.name} (${i + 1}/${brief.audiences.length})...`));
+        setGenerationStatus(t(`Regenerando Materiales para ${aud.name} (${i + 1}/${brief.audiences.length})...`));
         
         const verbatimGoal = goal.trim() || brief.campaignGoal;
         const combinedGoal = `INSTRUCCIÓN OBLIGATORIA DEL USUARIO (SEGUIR AL PIE DE LA LETRA): ${verbatimGoal} | Audiencia Objetivo: ${aud.name} (${aud.ageRange || ''}) | Ángulo: ${aud.messagingAngle?.es || aud.messagingAngle?.en || ''}`;
-        const assets = await generateMarketingCampaignAssets(productName, combinedGoal, context);
+        const assets = await generateMarketingCampaignAssets(productName, combinedGoal, context, activeV4Options);
         newAssetsMap[aud.name] = assets;
       }
 
@@ -404,7 +575,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
       }).catch(err => console.error("Failed to save updated brief to server:", err));
     } catch (error) {
       console.error(error);
-      alert(t("Error al regenerar los materiales de campaña.", "Failed to regenerate campaign assets."));
+      alert(t("Error al regenerar los materiales de campaña."));
     } finally {
       setIsAssetLoading(false);
     }
@@ -418,14 +589,21 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
       const data = await res.json();
       if (data) {
         setBrief(data);
+        if (data.audienceSegment) setAudienceSegment(resolveSegmentKey(data.audienceSegment));
+        if (data.funnelStage) setFunnelStage(data.funnelStage);
+        if (data.channelKey) {
+          setChannelKey(data.channelKey);
+          setChannelSubformat(data.channelSubformat || (CHANNEL_SUBFORMATS[data.channelKey] || ['Formato Estándar'])[0]);
+        }
         if (data.campaignAssetsMap) {
           setCampaignAssetsMap(data.campaignAssetsMap);
           if (data.audiences?.length) setSelectedAudience(data.audiences[0].name);
         }
+        setActiveAssetTab(resolveDefaultAssetTab(data.channelKey));
         setStep(2);
       }
     } catch (e) {
-      alert(t("No se encontró ningún brief guardado.", "No saved brief found."));
+      alert(t("No se encontró ningún brief guardado."));
     } finally {
       setIsLoading(false);
     }
@@ -544,15 +722,15 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
           <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
             <div className="flex items-center gap-3">
               <FileText className="text-[#0066FF]" />
-              <h1 className="page-title">{t('Generador de Brief de Marketing', 'Marketing Brief Generator')}</h1>
+              <h1 className="page-title">{t('Generador de Brief de Marketing')}</h1>
             </div>
             <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#EFF6FF] border border-blue-200 text-[#003B7A] text-xs font-bold">
-              <span className="w-2 h-2 rounded-full bg-[#78D600]" />
-              {t('Cumplimiento COFEPRIS • Lineamientos de Marca Chopo', 'COFEPRIS Compliance • Chopo Brand Guidelines')}
+              <span className="w-2 h-2 rounded-full bg-[#63CF00]" />
+              {t('Cumplimiento COFEPRIS • Manual de Marca V4 Chopo')}
             </span>
           </div>
           <p className="text-subtext mt-1">
-            {t('Genera estrategias integrales multicanal y materiales creativos para los segmentos de Pacientes B2C y Médicos B2B.', 'Generate comprehensive multi-channel strategies and creative assets across B2C Patient and B2B Physician tracks.')}
+            {t('Genera estrategias integrales multicanal y materiales creativos alineados al Manual V4 para Pacientes B2C, Médicos B2D y Empresas B2B.')}
           </p>
         </div>
       </div>
@@ -566,23 +744,23 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
             <Loader2 size={20} className="animate-spin text-[#0066FF] shrink-0" />
             <div>
               <p className="text-sm font-bold text-[#003B7A]">
-                {generationStatus || t('Procesando con IA... La edición y selección están bloqueadas temporalmente.', 'AI Processing in progress... Editing and selection are temporarily locked.')}
+                {generationStatus || t('Procesando con IA... La edición y selección están bloqueadas temporalmente.')}
               </p>
               <p className="text-xs text-[#0066FF]">
-                {t('Por favor espera a que finalice la operación actual antes de modificar campos o cambiar de selección.', 'Please wait for the current operation to finish before modifying fields or changing selections.')}
+                {t('Por favor espera a que finalice la operación actual antes de modificar campos o cambiar de selección.')}
               </p>
             </div>
           </div>
           <span className="px-3 py-1 rounded-full bg-white text-[#003B7A] border border-blue-200 text-[11px] font-bold shrink-0">
-            {t('Edición Bloqueada', 'Editing Locked')}
+            {t('Edición Bloqueada')}
           </span>
         </div>
       )}
 
       {step === 1 && (
         <div className={`space-y-8 mb-12 animate-fadeIn ${isBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
-          {/* Card 1 — Objetivo Estratégico de la Campaña y Contexto Institucional */}
-          <div className="bg-white rounded-2xl border border-slate-200 border-t-4 border-t-[#0066FF] p-6 sm:p-8 shadow-sm space-y-5">
+          {/* Card 1 — Objetivo Estratégico, Configuración Manual V4 y Contexto Institucional */}
+          <div className="bg-white rounded-2xl border border-slate-200 border-t-4 border-t-[#0066FF] p-6 sm:p-8 shadow-sm space-y-6">
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] border border-blue-100 flex items-center justify-center text-[#0066FF] shrink-0">
@@ -590,10 +768,10 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-[#003B7A]">
-                    {t('1. Objetivo Estratégico de la Campaña / Promoción', '1. Campaign / Promotion Strategic Objective')}
+                    {t('1. Objetivo Estratégico y Configuración de Campaña')}
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {t('Define la meta comercial, promocional o clínica que deseas impulsar en pacientes B2C y médicos B2B.', 'Define the commercial, promotional, or clinical goal you want to drive across B2C patients and B2B physicians.')}
+                    {t('Define los lineamientos de audiencia, funnel, canal principal y la meta comercial o clínica que deseas impulsar.')}
                   </p>
                 </div>
               </div>
@@ -604,7 +782,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                 className="px-3.5 py-2 rounded-xl bg-[#F8FAFC] hover:bg-[#EFF6FF] text-[#003B7A] border border-slate-200 hover:border-blue-200 text-xs font-bold flex items-center gap-1.5 transition-all"
               >
                 {isContextExpanded ? <ChevronUp size={15} className="text-[#0066FF]" /> : <ChevronDown size={15} className="text-[#0066FF]" />}
-                <span>{t('Editar Contexto Institucional de Laboratorios Chopo', 'Edit Laboratorios Chopo Institutional Context')}</span>
+                <span>{t('Editar Contexto Institucional de Chopo')}</span>
               </button>
             </div>
 
@@ -612,14 +790,14 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
             {!isContextExpanded ? (
               <div className="px-4 py-2.5 rounded-xl bg-[#F8FAFC] border border-slate-200/80 flex items-center justify-between gap-3 text-xs text-slate-600">
                 <div className="truncate">
-                  <span className="font-bold text-[#003B7A] mr-1.5">{t('Contexto Institucional:', 'Institutional Context:')}</span>
+                  <span className="font-bold text-[#003B7A] mr-1.5">{t('Contexto Institucional:')}</span>
                   <span>{context}</span>
                 </div>
               </div>
             ) : (
               <div className="p-4 rounded-xl bg-[#F8FAFC] border border-blue-200 space-y-2 animate-fadeIn">
                 <label className="block text-xs font-bold text-[#003B7A] uppercase tracking-wider">
-                  {t('Contexto Institucional de Laboratorios Chopo', 'Laboratorios Chopo Institutional Context')}
+                  {t('Contexto Institucional de Laboratorio Médico del Chopo')}
                 </label>
                 <textarea
                   rows={2}
@@ -627,17 +805,144 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                   value={context}
                   onChange={(e) => setContext(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#0066FF] resize-y transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                  placeholder={t(`ej. ${brandConfig.companyName} - Diagnóstico Clínico e Imagenología`, `e.g. ${brandConfig.companyName} - Clinical Diagnostics & Imaging`)}
+                  placeholder={t(`ej. ${brandConfig.companyName} - Diagnóstico Clínico e Imagenología`)}
                 />
               </div>
             )}
 
+            {/* Configuración de Campaña (Manual V4) */}
+            <div className="p-5 rounded-2xl bg-[#EFF9FE] border border-[#BDD4F2] space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#BDD4F2]/80">
+                <div className="flex items-center gap-2">
+                  <Layers size={18} className="text-[#005FFC]" />
+                  <h3 className="text-sm font-bold text-[#004699]">
+                    {t('Configuración de Campaña (Manual V4)')}
+                  </h3>
+                </div>
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-white text-[#004699] border border-[#BDD4F2]">
+                  {t('Aplica voz, funnel y formato oficial automáticamente')}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                {/* 1. Segmento de Audiencia */}
+                <div className="bg-white p-4 rounded-xl border border-[#BDD4F2]/80 space-y-2.5">
+                  <label className="block text-xs font-bold text-[#004699] uppercase tracking-wider">
+                    {t('1. Segmento de Audiencia')}
+                  </label>
+                  <div className="space-y-2">
+                    {V4_AUDIENCE_SEGMENTS.map((seg) => {
+                      const isActive = audienceSegment === seg.key;
+                      return (
+                        <button
+                          key={seg.key}
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => setAudienceSegment(seg.key)}
+                          className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
+                            isActive
+                              ? 'bg-[#005FFC] text-white border-[#005FFC] shadow-sm'
+                              : 'bg-[#F8FAFC] hover:bg-[#EFF9FE] text-[#004699] border-slate-200'
+                          }`}
+                        >
+                          <div className="text-xs font-bold">{seg.label}</div>
+                          <div className={`text-[11px] mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
+                            {seg.pronounHint}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Etapa del Funnel */}
+                <div className="bg-white p-4 rounded-xl border border-[#BDD4F2]/80 space-y-2.5">
+                  <label className="block text-xs font-bold text-[#004699] uppercase tracking-wider">
+                    {t('2. Etapa del Funnel')}
+                  </label>
+                  <div className="space-y-2">
+                    {V4_FUNNEL_STAGES.map((stage) => {
+                      const isActive = funnelStage === stage.key;
+                      return (
+                        <button
+                          key={stage.key}
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => setFunnelStage(stage.key)}
+                          className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
+                            isActive
+                              ? 'bg-[#004699] text-white border-[#004699] shadow-sm'
+                              : 'bg-[#F8FAFC] hover:bg-[#EFF9FE] text-[#004699] border-slate-200'
+                          }`}
+                        >
+                          <div className="text-xs font-bold">{stage.label}</div>
+                          <div className={`text-[11px] mt-0.5 leading-snug ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
+                            {stage.ruleHint}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. Canal Principal y Subformato */}
+                <div className="bg-white p-4 rounded-xl border border-[#BDD4F2]/80 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-2.5">
+                    <label className="block text-xs font-bold text-[#004699] uppercase tracking-wider">
+                      {t('3. Canal Principal y Subformato')}
+                    </label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {V4_CHANNELS.map((ch) => {
+                        const isActive = channelKey === ch.key;
+                        return (
+                          <button
+                            key={ch.key}
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleChannelChange(ch.key)}
+                            className={`px-2.5 py-2 rounded-lg text-left border transition-all ${
+                              isActive
+                                ? 'bg-[#005FFC] text-white border-[#005FFC] shadow-sm'
+                                : 'bg-[#F8FAFC] hover:bg-[#EFF9FE] text-[#004699] border-slate-200'
+                            }`}
+                          >
+                            <div className="text-xs font-bold leading-tight">{ch.label}</div>
+                            <div className={`text-[10px] mt-0.5 leading-tight ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
+                              {ch.shortDesc}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#004699] uppercase tracking-wider mb-1.5">
+                      {t('Subformato de Pieza')}
+                    </label>
+                    <select
+                      disabled={isBusy}
+                      value={channelSubformat}
+                      onChange={(e) => setChannelSubformat(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-[#BDD4F2] bg-[#F8FAFC] focus:bg-white text-xs font-bold text-[#004699] focus:outline-none focus:ring-2 focus:ring-[#005FFC]"
+                    >
+                      {(CHANNEL_SUBFORMATS[channelKey] || ['Formato Estándar']).map((sub) => (
+                        <option key={sub} value={sub}>
+                          {sub}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-bold text-[#003B7A] uppercase tracking-wider mb-1">
-                {t('Objetivo Estratégico de la Campaña / Promoción (Paciente B2C / Médico B2B)', 'Strategic Campaign / Promotion Goal (B2C Patient / B2B Physician)')}
+                {t('Objetivo Estratégico de la Campaña / Promoción (B2C / B2D / B2B)')}
               </label>
               <p className="text-xs text-slate-500 mb-2">
-                {t('Se actualiza automáticamente al elegir un estudio clínico abajo, pero puedes personalizar el enfoque comercial, descuento o mensaje clave.', 'Automatically updates when selecting a clinical study below, or customize the commercial, discount, or key message angle.')}
+                {t('Se actualiza automáticamente al elegir un estudio clínico abajo, pero puedes personalizar el enfoque comercial, descuento o mensaje clave.')}
               </p>
               <textarea
                 rows={3}
@@ -645,7 +950,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                 value={goal}
                 onChange={(e) => setGoal(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-[#F8FAFC] focus:bg-white text-sm text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#0066FF] resize-y transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                placeholder={t("Describe lo que deseas lograr con este estudio clínico en pacientes y médicos prescriptores...", "Describe what you want to achieve with this clinical study across patients and prescribing physicians...")}
+                placeholder={t("Describe lo que deseas lograr con este estudio clínico en pacientes, médicos o empresas...")}
               />
             </div>
           </div>
@@ -809,7 +1114,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                     <span className="w-2 h-2 rounded-full bg-[#78D600]" />
                     {selectedAudienceNames.length} {t('de', 'of')} {availableAudiences.length} {t('seleccionadas', 'selected')}
                   </span>
-                  <div className="inline-flex items-center bg-[#F8FAFC] p-1 rounded-xl border border-slate-200 gap-1">
+                  <div className="inline-flex flex-wrap items-center bg-[#F8FAFC] p-1 rounded-xl border border-slate-200 gap-1">
                     <button
                       type="button"
                       disabled={isBusy}
@@ -820,31 +1125,43 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                           : 'text-slate-600 hover:text-[#003B7A] hover:bg-white'
                       }`}
                     >
-                      {t('Todas', 'All')}
+                      {t('Todas')}
                     </button>
                     <button
                       type="button"
                       disabled={isBusy}
                       onClick={() =>
                         setSelectedAudienceNames(
-                          availableAudiences.filter((a) => !isAudienceB2B(a)).map((a) => a.name)
+                          availableAudiences.filter((a) => getAudienceSegmentCode(a) === 'B2C').map((a) => a.name)
                         )
                       }
                       className="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-[#0066FF] hover:bg-white transition-colors disabled:opacity-50"
                     >
-                      {t('Solo Pacientes B2C', 'B2C Patients Only')}
+                      {t('Solo Pacientes B2C')}
                     </button>
                     <button
                       type="button"
                       disabled={isBusy}
                       onClick={() =>
                         setSelectedAudienceNames(
-                          availableAudiences.filter((a) => isAudienceB2B(a)).map((a) => a.name)
+                          availableAudiences.filter((a) => getAudienceSegmentCode(a) === 'B2D').map((a) => a.name)
                         )
                       }
-                      className="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-[#003B7A] hover:bg-white transition-colors disabled:opacity-50"
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-emerald-700 hover:bg-white transition-colors disabled:opacity-50"
                     >
-                      {t('Solo Médicos B2B', 'B2B Physicians Only')}
+                      {t('Solo Médicos B2D')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() =>
+                        setSelectedAudienceNames(
+                          availableAudiences.filter((a) => getAudienceSegmentCode(a) === 'B2B').map((a) => a.name)
+                        )
+                      }
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-indigo-700 hover:bg-white transition-colors disabled:opacity-50"
+                    >
+                      {t('Solo Empresas B2B')}
                     </button>
                   </div>
                 </div>
@@ -855,8 +1172,8 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {availableAudiences.map((aud, index) => {
                   const rawName: string = aud.name || '';
-                  const isB2B = isAudienceB2B(aud);
-                  const cleanedTitle = rawName.replace(/^\[[^\]]+\]\s*/, '').trim() || rawName;
+                  const segBadge = getAudienceSegmentBadge(aud);
+                  const cleanedTitle = formatDisplayPersonaName(rawName).replace(/^\[[^\]]+\]\s*/, '').trim() || formatDisplayPersonaName(rawName);
                   const isSelected = selectedAudienceNames.includes(rawName);
                   return (
                     <div
@@ -876,15 +1193,9 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                       <div className="space-y-2.5">
                         <div className="flex items-center justify-between gap-2">
                           <span
-                            className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md border ${
-                              isB2B
-                                ? 'bg-slate-100 text-[#003B7A] border-slate-200'
-                                : 'bg-[#EFF6FF] text-[#0066FF] border-blue-100'
-                            }`}
+                            className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md border ${segBadge.className}`}
                           >
-                            {isB2B
-                              ? t('Médico Prescriptor B2B', 'B2B Prescribing Physician')
-                              : t('Paciente B2C', 'B2C Patient')}
+                            {segBadge.label}
                           </span>
                           {isSelected ? (
                             <CheckCircle2 size={18} className="text-[#0066FF] shrink-0" />
@@ -899,7 +1210,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
 
                       <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
                         <span className="text-xs text-slate-600 font-medium leading-snug">
-                          {aud.personaName || aud.bio || t('Audiencia Clínica Activa', 'Active Clinical Audience')}
+                          {aud.personaName || aud.bio || t('Audiencia Activa')}
                         </span>
                         <button
                           type="button"
@@ -912,7 +1223,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                           className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0066FF] hover:text-[#003B7A] bg-white hover:bg-[#EFF6FF] px-2.5 py-1 rounded-lg border border-blue-200/80 transition-colors shrink-0 disabled:opacity-50"
                         >
                           <Eye size={13} />
-                          <span>{t('Ver más información', 'More info')}</span>
+                          <span>{t('Ver más información')}</span>
                         </button>
                       </div>
                     </div>
@@ -921,7 +1232,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
               </div>
             ) : (
               <div className="p-6 rounded-xl bg-[#F8FAFC] border border-slate-200 text-xs text-slate-600">
-                {t('El brief generará automáticamente segmentos estratégicos para Paciente B2C y Médico Prescriptor B2B basados en el estudio clínico seleccionado.', 'The brief will automatically generate strategic segments for B2C Patients and B2B Prescribing Physicians based on the selected clinical study.')}
+                {t('El brief generará automáticamente segmentos estratégicos para Pacientes B2C, Médicos B2D y Empresas B2B basados en la configuración de campaña y el estudio clínico seleccionado.')}
               </div>
             )}
 
@@ -1253,29 +1564,97 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                 </section>
               )}
 
-              {/* 9. Campaign Preview (Generated Assets) */}
+              {/* 9. Campaign Preview (Generated Assets & Manual V4 Modular Preview) */}
               <section>
-                <div className="flex items-center justify-between mb-6 border-b-2 border-slate-200 pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-5 border-b-2 border-slate-200 pb-2">
                   <h4 className="section-header uppercase tracking-wide mb-0">
-                    <span className="bg-[#0066FF] text-white w-8 h-8 flex items-center justify-center rounded-md text-sm font-bold">9</span>
-                    {t('Vista Previa Creativa de Campaña', 'Campaign Creative Preview')}
+                    <span className="bg-[#005FFC] text-white w-8 h-8 flex items-center justify-center rounded-md text-sm font-bold">9</span>
+                    {t('Vista Previa Creativa de Campaña')}
                   </h4>
                   {!campaignAssetsMap && (
                     <button
                       onClick={handleRegenerateAssets}
                       disabled={isAssetLoading}
-                      className="bg-[#0066FF] text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-[#004ECC] transition-colors disabled:opacity-50"
+                      className="bg-[#005FFC] text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-[#004699] transition-colors disabled:opacity-50"
                     >
                       {isAssetLoading ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
-                      {isAssetLoading ? t("Regenerando...", "Regenerating...") : t("Regenerar Materiales", "Regenerate Assets")}
+                      {isAssetLoading ? t("Regenerando...") : t("Regenerar Materiales")}
                     </button>
                   )}
                 </div>
 
+                {/* V4 Metadata Badges Bar */}
+                {(() => {
+                  const activeBriefSegment = brief.audienceSegment || audienceSegment;
+                  const activeBriefFunnel = brief.funnelStage || funnelStage;
+                  const activeBriefChannel = brief.channelKey || channelKey;
+                  const activeBriefSubformat = brief.channelSubformat || channelSubformat;
+                  const activeBriefSlogan = brief.slogan || 'Chopo, toda una vida cuidando la vida.';
+                  return (
+                    <div className="mb-6 space-y-4 font-chopo-v4">
+                      <div className="p-4 rounded-2xl bg-[#EFF9FE] border border-[#BDD4F2] flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-[#BDD4F2] text-xs font-medium text-[#004699]">
+                            <span className="font-bold text-[#005FFC]">{t('Segmento:')}</span>
+                            <span>{getSegmentDisplayLabel(activeBriefSegment)}</span>
+                          </span>
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-[#BDD4F2] text-xs font-medium text-[#004699]">
+                            <span className="font-bold text-[#005FFC]">{t('Funnel:')}</span>
+                            <span>{getFunnelDisplayLabel(activeBriefFunnel)}</span>
+                          </span>
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-[#BDD4F2] text-xs font-medium text-[#004699]">
+                            <span className="font-bold text-[#005FFC]">{t('Canal / Subformato:')}</span>
+                            <span>{getChannelDisplayLabel(activeBriefChannel)} · {activeBriefSubformat}</span>
+                          </span>
+                        </div>
+                        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-none rounded-br-2xl bg-[#BDD4F2] text-[#004699] text-xs font-bold">
+                          <span className="w-2 h-2 rounded-full bg-[#63CF00] shrink-0" />
+                          <span>{activeBriefSlogan}</span>
+                        </div>
+                      </div>
+
+                      {/* Pieza Adaptada al Canal Seleccionado (when channelAdaptedCopy is returned) */}
+                      {brief.channelAdaptedCopy && (
+                        <div className="bg-white rounded-2xl border border-[#BDD4F2] overflow-hidden shadow-sm">
+                          <div className="bg-[#004699] text-white px-5 py-3 flex flex-wrap items-center justify-between gap-2 border-b-4 border-b-[#63CF00]">
+                            <div className="flex items-center gap-2">
+                              <LayoutTemplate size={16} className="text-[#63CF00]" />
+                              <span className="text-xs font-bold uppercase tracking-wider">
+                                {t('Pieza Adaptada al Canal Seleccionado')} — {getChannelDisplayLabel(activeBriefChannel)} ({activeBriefSubformat})
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-[#F24360] text-white">
+                              Manual V4
+                            </span>
+                          </div>
+                          <div className="p-5 bg-[#EFF9FE]/50">
+                            <div className="bg-[#BDD4F2] text-[#004699] p-5 rounded-none rounded-br-2xl whitespace-pre-line text-sm font-medium leading-relaxed shadow-sm">
+                              {brief.channelAdaptedCopy}
+                            </div>
+                            {Array.isArray(brief.preFlightComplianceCheck) && brief.preFlightComplianceCheck.length > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {brief.preFlightComplianceCheck.map((checkItem, ci) => (
+                                  <span
+                                    key={ci}
+                                    className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200"
+                                  >
+                                    <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+                                    <span>{checkItem}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {isAssetLoading ? (
                   <div className="bg-white rounded-xl p-12 text-center border border-slate-200">
-                    <Loader2 className="animate-spin mx-auto text-[#0066FF] mb-4" size={48} />
-                    <p className="text-slate-500 font-medium">{t('Creando materiales multicanal basados en el brief...', 'Creating multi-channel assets based on brief...')}</p>
+                    <Loader2 className="animate-spin mx-auto text-[#005FFC] mb-4" size={48} />
+                    <p className="text-slate-500 font-medium">{t('Creando materiales multicanal basados en el brief...')}</p>
                   </div>
                 ) : currentAssets && campaignAssetsMap ? (
                   <div className="bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden flex flex-col">
@@ -1288,11 +1667,11 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                             disabled={isBusy}
                             onClick={() => setSelectedAudience(aud)}
                             className={`px-4 py-2 rounded-full text-xs font-bold transition-all disabled:opacity-50 ${selectedAudience === aud
-                              ? 'bg-[#0066FF] text-white shadow-md'
+                              ? 'bg-[#005FFC] text-white shadow-md'
                               : 'text-subtext hover:text-heading'
                               }`}
                           >
-                            {aud}
+                            {formatDisplayPersonaName(aud)}
                           </button>
                         ))}
                       </div>
@@ -1302,70 +1681,229 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                     <div className="flex border-b border-slate-200 bg-white overflow-x-auto mt-4">
                       <button
                         disabled={isBusy}
+                        onClick={() => setActiveAssetTab('v4_modular')}
+                        className={`flex-1 py-4 px-2 text-sm font-medium flex items-center justify-center gap-2 min-w-[120px] transition-colors disabled:opacity-50 ${activeAssetTab === 'v4_modular' ? 'bg-slate-50 text-[#005FFC] border-t-2 border-[#005FFC] font-bold' : 'text-subtext hover:text-heading'}`}
+                      >
+                        <LayoutTemplate size={18} /> {t('PDV / Canal V4')}
+                      </button>
+                      <button
+                        disabled={isBusy}
                         onClick={() => setActiveAssetTab('social')}
-                        className={`flex-1 py-4 px-2 text-sm font-medium flex items-center justify-center gap-2 min-w-[80px] transition-colors disabled:opacity-50 ${activeAssetTab === 'social' ? 'bg-slate-50 text-[#0066FF] border-t-2 border-[#0066FF]' : 'text-subtext hover:text-heading'}`}
+                        className={`flex-1 py-4 px-2 text-sm font-medium flex items-center justify-center gap-2 min-w-[80px] transition-colors disabled:opacity-50 ${activeAssetTab === 'social' ? 'bg-slate-50 text-[#005FFC] border-t-2 border-[#005FFC] font-bold' : 'text-subtext hover:text-heading'}`}
                       >
                         <Share2 size={18} /> Social
                       </button>
                       <button
                         disabled={isBusy}
                         onClick={() => setActiveAssetTab('search')}
-                        className={`flex-1 py-4 px-2 text-sm font-medium flex items-center justify-center gap-2 min-w-[80px] transition-colors disabled:opacity-50 ${activeAssetTab === 'search' ? 'bg-slate-50 text-[#0066FF] border-t-2 border-[#0066FF]' : 'text-subtext hover:text-heading'}`}
+                        className={`flex-1 py-4 px-2 text-sm font-medium flex items-center justify-center gap-2 min-w-[80px] transition-colors disabled:opacity-50 ${activeAssetTab === 'search' ? 'bg-slate-50 text-[#005FFC] border-t-2 border-[#005FFC] font-bold' : 'text-subtext hover:text-heading'}`}
                       >
-                        <Search size={18} /> {t('Buscador', 'Search')}
+                        <Search size={18} /> {t('Buscador')}
                       </button>
                       <button
                         disabled={isBusy}
                         onClick={() => setActiveAssetTab('email')}
-                        className={`flex-1 py-4 px-2 text-sm font-medium flex items-center justify-center gap-2 min-w-[80px] transition-colors disabled:opacity-50 ${activeAssetTab === 'email' ? 'bg-slate-50 text-[#0066FF] border-t-2 border-[#0066FF]' : 'text-subtext hover:text-heading'}`}
+                        className={`flex-1 py-4 px-2 text-sm font-medium flex items-center justify-center gap-2 min-w-[80px] transition-colors disabled:opacity-50 ${activeAssetTab === 'email' ? 'bg-slate-50 text-[#005FFC] border-t-2 border-[#005FFC] font-bold' : 'text-subtext hover:text-heading'}`}
                       >
                         <Mail size={18} /> Email
                       </button>
                       <button
                         disabled={isBusy}
                         onClick={() => setActiveAssetTab('youtube')}
-                        className={`flex-1 py-4 px-2 text-sm font-medium flex items-center justify-center gap-2 min-w-[80px] transition-colors disabled:opacity-50 ${activeAssetTab === 'youtube' ? 'bg-slate-50 text-[#0066FF] border-t-2 border-[#0066FF]' : 'text-subtext hover:text-heading'}`}
+                        className={`flex-1 py-4 px-2 text-sm font-medium flex items-center justify-center gap-2 min-w-[80px] transition-colors disabled:opacity-50 ${activeAssetTab === 'youtube' ? 'bg-slate-50 text-[#005FFC] border-t-2 border-[#005FFC] font-bold' : 'text-subtext hover:text-heading'}`}
                       >
                         <Youtube size={18} /> YouTube
                       </button>
                       <button
                         disabled={isBusy}
                         onClick={() => setActiveAssetTab('website')}
-                        className={`flex-1 py-4 px-2 text-sm font-medium flex items-center justify-center gap-2 min-w-[80px] transition-colors disabled:opacity-50 ${activeAssetTab === 'website' ? 'bg-slate-50 text-[#0066FF] border-t-2 border-[#0066FF]' : 'text-subtext hover:text-heading'}`}
+                        className={`flex-1 py-4 px-2 text-sm font-medium flex items-center justify-center gap-2 min-w-[90px] transition-colors disabled:opacity-50 ${activeAssetTab === 'website' ? 'bg-slate-50 text-[#005FFC] border-t-2 border-[#005FFC] font-bold' : 'text-subtext hover:text-heading'}`}
                       >
-                        <Globe size={18} /> {t('Sitio Web', 'Website')}
+                        <Globe size={18} /> {t('Sitio Web')}
                       </button>
                     </div>
 
                     {/* Content Area */}
                     <div className="p-8 bg-slate-50 flex items-center justify-center min-h-[500px]">
                       <div className={`w-full flex flex-col items-center ${activeAssetTab === 'website' ? 'max-w-4xl' : 'max-w-lg'}`}>
-                        {/* Social Media Preview */}
-                        {activeAssetTab === 'social' && (
-                          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full">
-                            <div className="p-3 flex items-center gap-3 border-b border-slate-100">
-                              <div className="w-8 h-8 bg-[#0066FF] rounded-full flex items-center justify-center text-white font-bold text-xs">C</div>
-                              <p className="font-bold text-sm text-heading">{brandConfig.companyName}</p>
+                        {/* PDV / Canal V4 Modular Creative Preview (Official Roboto + Modular #BDD4F2/#004699 + #F24360 + SVG Logo) */}
+                        {activeAssetTab === 'v4_modular' && (() => {
+                          const v4Funnel = brief.funnelStage || funnelStage;
+                          const v4Channel = brief.channelKey || channelKey;
+                          const v4Subformat = brief.channelSubformat || channelSubformat;
+                          const v4Slogan = brief.slogan || 'Chopo, toda una vida cuidando la vida.';
+                          const v4Headline =
+                            currentAssets.email?.bannerHeadline ||
+                            currentAssets.search?.headline ||
+                            brief.messaging?.primaryHook?.es ||
+                            brief.productName;
+                          const v4Body =
+                            brief.channelAdaptedCopy ||
+                            currentAssets.social?.caption ||
+                            currentAssets.search?.description ||
+                            '';
+                          const v4CtaText =
+                            currentAssets.email?.ctaText || 'Agenda tu estudio en chopo.com.mx';
+                          const v4Legal =
+                            currentAssets.email?.legalFooter ||
+                            'Consulte a su médico. Permiso de Publicidad COFEPRIS No. 2609152002A00518.';
+                          const isPerformance = v4Funnel === 'performance';
+
+                          return (
+                            <div className="font-chopo-v4 bg-white shadow-lg border border-slate-200 overflow-hidden w-full rounded-none rounded-br-2xl">
+                              {/* Clean Base Photo + Official SVG Logo Overlay + Promo Badge */}
+                              <div className="relative aspect-[4/3] bg-slate-100 overflow-hidden">
+                                {currentAssets.image ? (
+                                  <img
+                                    src={currentAssets.image}
+                                    alt={brief.productName}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">
+                                    {t('Imagen base no disponible')}
+                                  </div>
+                                )}
+
+                                {/* Official SVG Logo Overlay (Clean Vector, Never AI-Drawn) */}
+                                <div className="absolute top-0 left-0 bg-white/95 px-4 py-2.5 rounded-none rounded-br-2xl shadow-sm">
+                                  <img
+                                    src="/images/chopo-logo.svg"
+                                    alt="Laboratorio Médico del Chopo"
+                                    className="h-7 w-auto"
+                                  />
+                                </div>
+
+                                {/* Official Promo Badge (#F24360 background + #FFFFFF text) */}
+                                <div className="absolute top-4 right-0 bg-[#F24360] text-white px-4 py-1.5 rounded-l-full shadow-md text-xs font-bold tracking-wide">
+                                  {v4Subformat}
+                                </div>
+
+                                {/* Basal Green Signature Line (#63CF00) */}
+                                <div className="absolute inset-x-0 bottom-0 h-1.5 bg-[#63CF00]" />
+                              </div>
+
+                              {/* Modular Card Attached to Frame (#BDD4F2 bg + #004699 text, 3 sharp corners + 1 bottom-right rounded) */}
+                              <div className="bg-[#BDD4F2] text-[#004699] p-6 rounded-none rounded-br-2xl space-y-3.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="inline-block bg-[#F24360] text-white text-[11px] font-bold px-3 py-1 rounded-full">
+                                    {t('Precio especial en línea')}
+                                  </span>
+                                  <span className="text-[11px] font-medium uppercase tracking-wider text-[#004699]/80">
+                                    {getChannelDisplayLabel(v4Channel)} • {getFunnelDisplayLabel(v4Funnel)}
+                                  </span>
+                                </div>
+
+                                {/* Headline — Roboto Black (900) */}
+                                <h3 className="text-2xl font-black leading-tight text-[#004699]">
+                                  {v4Headline}
+                                </h3>
+
+                                {/* Slogan — Roboto Bold (700) */}
+                                <p className="text-sm font-bold text-[#005FFC]">
+                                  {v4Slogan}
+                                </p>
+
+                                {/* Funnel-Aware CTA (Performance: CTA prominent above body) */}
+                                {isPerformance && (
+                                  <div className="pt-1">
+                                    <span className="inline-block bg-[#005FFC] text-white text-xs font-medium px-5 py-2.5 rounded-full shadow-sm">
+                                      {v4CtaText}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Body — Roboto Medium (500) */}
+                                <p className="text-sm font-medium text-[#004699] leading-relaxed whitespace-pre-line">
+                                  {v4Body}
+                                </p>
+
+                                {/* Funnel-Aware CTA (Awareness / Consideration: discrete CTA below body) */}
+                                {!isPerformance && (
+                                  <div className="pt-1">
+                                    <span className="inline-block bg-[#004699] text-white text-xs font-medium px-4 py-2 rounded-full">
+                                      {v4CtaText}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Official Contact Bar + Legal — Roboto Light (300) */}
+                                <div className="pt-3 border-t border-[#004699]/20 space-y-1">
+                                  {!brief.channelAdaptedCopy && (
+                                    <p className="text-[11px] font-medium text-[#004699]">
+                                      {buildBrandSlices(null, {
+                                        audienceSegment: brief.audienceSegment || audienceSegment,
+                                        funnelStage: v4Funnel,
+                                        channelKey: v4Channel
+                                      }).dynamicVars.contactBar}
+                                    </p>
+                                  )}
+                                  <p className="text-[10px] font-light text-[#004699]/80 leading-snug">
+                                    {v4Legal}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
-                            <div className="aspect-square bg-slate-100">
+                          );
+                        })()}
+
+                        {/* Social Media Preview (Manual V4 Typography + SVG Logo Overlay + Modular Strip) */}
+                        {activeAssetTab === 'social' && (
+                          <div className="font-chopo-v4 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full">
+                            <div className="p-3 flex items-center justify-between gap-3 border-b border-slate-100">
+                              <div className="flex items-center gap-2.5">
+                                <img
+                                  src="/images/chopo-logo.svg"
+                                  alt="Laboratorio Médico del Chopo"
+                                  className="h-6 w-auto"
+                                />
+                                <span className="text-xs font-bold text-[#004699]">{brandConfig.companyName}</span>
+                              </div>
+                              <span className="text-[10px] font-medium px-2.5 py-0.5 rounded-full bg-[#EFF9FE] text-[#005FFC] border border-[#BDD4F2]">
+                                {brief.channelSubformat || channelSubformat}
+                              </span>
+                            </div>
+                            <div className="relative aspect-square bg-slate-100 overflow-hidden">
                               {currentAssets.image ? (
-                                <img src={currentAssets.image} alt="Campaign" className="w-full h-full object-cover" />
+                                <img src={currentAssets.image} alt="Campaña Chopo" className="w-full h-full object-cover" />
                               ) : (
-                                <div className="w-full h-full flex items-center justify-center text-slate-400">{t('Imagen no disponible', 'Image Failed')}</div>
+                                <div className="w-full h-full flex items-center justify-center text-slate-400">{t('Imagen no disponible')}</div>
                               )}
+                              {/* Official SVG Logo Overlay */}
+                              <div className="absolute top-0 left-0 bg-white/95 px-3 py-2 rounded-none rounded-br-2xl shadow-sm">
+                                <img src="/images/chopo-logo.svg" alt="Chopo" className="h-5 w-auto" />
+                              </div>
+                              {/* Promo Badge (#F24360 + #FFFFFF) */}
+                              <div className="absolute top-3 right-0 bg-[#F24360] text-white px-3 py-1 rounded-l-full text-[11px] font-bold shadow">
+                                {brief.productName}
+                              </div>
+                              {/* Basal Green Accent */}
+                              <div className="absolute inset-x-0 bottom-0 h-1 bg-[#63CF00]" />
+                            </div>
+                            {/* V4 Modular Footer Card (#BDD4F2 + #004699, 3 sharp + 1 bottom-right rounded) */}
+                            <div className="bg-[#BDD4F2] text-[#004699] px-4 py-3 rounded-none rounded-br-2xl">
+                              <p className="text-base font-black leading-snug">
+                                {currentAssets.email?.bannerHeadline || currentAssets.search?.headline || brief.productName}
+                              </p>
+                              <p className="text-xs font-bold text-[#005FFC] mt-0.5">
+                                {brief.slogan || 'Chopo, toda una vida cuidando la vida.'}
+                              </p>
                             </div>
                             <div className="p-4">
                               <div className="flex gap-4 mb-3">
-                                <Heart size={24} className="text-slate-400" />
-                                <MessageCircle size={24} className="text-slate-400" />
-                                <Share2 size={24} className="text-slate-400" />
+                                <Heart size={22} className="text-slate-400" />
+                                <MessageCircle size={22} className="text-slate-400" />
+                                <Share2 size={22} className="text-slate-400" />
                               </div>
-                              <p className="text-sm text-slate-800 mb-2">
-                                <span className="font-bold mr-2 text-heading">{brandConfig.companyName}</span>
+                              <p className="text-sm font-medium text-slate-800 mb-2 leading-relaxed">
+                                <span className="font-bold mr-2 text-[#004699]">{brandConfig.companyName}</span>
                                 {currentAssets.social.caption}
                               </p>
-                              <p className="text-[#0066FF] text-sm font-medium">
+                              <p className="text-[#005FFC] text-xs font-medium">
                                 {currentAssets.social.hashtags.join(' ')}
+                              </p>
+                              <p className="text-[10px] font-light text-slate-500 mt-3 pt-2 border-t border-slate-100">
+                                {currentAssets.email?.legalFooter || 'Consulte a su médico. Permiso de Publicidad COFEPRIS No. 2609152002A00518.'}
                               </p>
                             </div>
                           </div>
@@ -1373,52 +1911,58 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
 
                         {/* Search Ad Preview */}
                         {activeAssetTab === 'search' && (
-                          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 w-full">
+                          <div className="font-chopo-v4 bg-white p-6 rounded-xl shadow-sm border border-slate-200 w-full">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-bold text-slate-900 text-sm">{t('Patrocinado', 'Sponsored')}</span>
+                              <span className="font-bold text-slate-900 text-sm">{t('Patrocinado')}</span>
                               <span className="text-slate-500 text-xs">·</span>
                               <span className="text-slate-500 text-xs">{currentAssets.search.url}</span>
                             </div>
-                            <h3 className="text-xl text-[#0066FF] hover:underline cursor-pointer font-semibold mb-2">
+                            <h3 className="text-xl text-[#005FFC] hover:underline cursor-pointer font-black mb-2">
                               {currentAssets.search.headline}
                             </h3>
-                            <p className="text-slate-600 text-sm leading-relaxed">
+                            <p className="text-slate-700 text-sm font-medium leading-relaxed">
                               {currentAssets.search.description}
+                            </p>
+                            <p className="text-xs font-bold text-[#004699] mt-2">
+                              {brief.slogan || 'Chopo, toda una vida cuidando la vida.'}
                             </p>
 
                             <div className="mt-6 pt-6 border-t border-slate-100">
-                              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('Imagen de Campaña', 'Campaign Image Asset')}</h4>
+                              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('Imagen de Campaña')}</h4>
                               <div className="h-32 w-48 bg-white rounded-lg overflow-hidden border border-slate-200">
-                                {currentAssets.image && <img src={currentAssets.image} className="w-full h-full object-contain" />}
+                                {currentAssets.image && <img src={currentAssets.image} alt={brief.productName} className="w-full h-full object-contain" />}
                               </div>
                             </div>
                           </div>
                         )}
 
-                        {/* Email Preview */}
+                        {/* Email / Mailing Preview (V4 Roboto + Official SVG Logo + Modular Overlay + #D200F4 CTA + Upload Image Button) */}
                         {activeAssetTab === 'email' && (
-                          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full">
+                          <div className="font-chopo-v4 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full">
                             <div className="bg-slate-50 p-3 border-b border-slate-200 text-xs text-slate-500 flex justify-between items-center">
-                              <span className="font-semibold text-slate-700">{t('De:', 'From:')} {brandConfig.companyName}</span>
-                              <span>{t('Justo ahora', 'Just now')}</span>
+                              <div className="flex items-center gap-2">
+                                <img src="/images/chopo-logo.svg" alt="Laboratorio Médico del Chopo" className="h-5 w-auto" />
+                                <span className="font-bold text-[#004699]">{t('De:')} {brandConfig.companyName}</span>
+                              </div>
+                              <span>{t('Justo ahora')}</span>
                             </div>
                             <div className="p-5">
                               <div className="mb-4 pb-4 border-b border-slate-100">
-                                <div className="text-[11px] font-bold uppercase tracking-wider text-[#0066FF] mb-0.5">
-                                  {t('Asunto:', 'Subject:')}
+                                <div className="text-[11px] font-bold uppercase tracking-wider text-[#005FFC] mb-0.5">
+                                  {t('Asunto:')}
                                 </div>
-                                <h3 className="font-bold text-lg text-[#003B7A] leading-snug mb-1.5">
+                                <h3 className="font-black text-lg text-[#004699] leading-snug mb-1.5">
                                   {currentAssets.email.subject}
                                 </h3>
                                 {currentAssets.email.preheader && (
-                                  <p className="text-slate-500 text-xs">
-                                    <span className="font-semibold text-slate-600">{t('Preheader:', 'Preheader:')}</span> {currentAssets.email.preheader}
+                                  <p className="text-slate-500 text-xs font-medium">
+                                    <span className="font-bold text-slate-600">{t('Preheader:')}</span> {currentAssets.email.preheader}
                                   </p>
                                 )}
                               </div>
 
-                              {/* Visual Banner with Non-Invasive Overlay Text & Image Upload */}
-                              <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-100 aspect-[16/10] mb-5 group">
+                              {/* Visual Banner with Official SVG Logo + Upload / Change Image Button */}
+                              <div className="relative rounded-none rounded-br-2xl overflow-hidden border border-slate-200 bg-slate-100 aspect-[16/10] mb-4 group">
                                 {(currentAssets.email.image || currentAssets.image) ? (
                                   <img
                                     src={currentAssets.email.image || currentAssets.image || ''}
@@ -1428,11 +1972,20 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                                 ) : (
                                   <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-2">
                                     <ImageIcon size={32} />
-                                    <span className="text-xs font-medium">{t('Sin imagen de banner', 'No banner image')}</span>
+                                    <span className="text-xs font-medium">{t('Sin imagen de banner')}</span>
                                   </div>
                                 )}
 
-                                {/* Upload / Change Banner Image Button */}
+                                {/* Official SVG Logo Overlaid Top-Left */}
+                                <div className="absolute top-0 left-0 bg-white/95 px-3 py-2 rounded-none rounded-br-2xl shadow-sm z-10">
+                                  <img
+                                    src="/images/chopo-logo.svg"
+                                    alt="Laboratorio Médico del Chopo"
+                                    className="h-5 w-auto"
+                                  />
+                                </div>
+
+                                {/* Upload / Change Banner Image Button (Preserved 100%) */}
                                 <div className="absolute top-3 right-3 z-10">
                                   <input
                                     ref={emailImageInputRef}
@@ -1445,38 +1998,44 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                                     type="button"
                                     disabled={isBusy}
                                     onClick={() => emailImageInputRef.current?.click()}
-                                    className="px-3 py-1.5 rounded-lg bg-white/95 hover:bg-white text-[#003B7A] border border-slate-200 text-xs font-bold shadow-md flex items-center gap-1.5 transition-all"
+                                    className="px-3 py-1.5 rounded-lg bg-white/95 hover:bg-white text-[#004699] border border-slate-200 text-xs font-bold shadow-md flex items-center gap-1.5 transition-all"
                                   >
-                                    <Upload size={13} className="text-[#0066FF]" />
+                                    <Upload size={13} className="text-[#005FFC]" />
                                     {isUploadingEmailImage
-                                      ? t('Subiendo...', 'Uploading...')
-                                      : t('Subir / Cambiar Imagen', 'Upload / Change Image')}
+                                      ? t('Subiendo...')
+                                      : t('Subir / Cambiar Imagen')}
                                   </button>
                                 </div>
 
-                                {/* Non-invasive bottom gradient overlay */}
-                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#003B7A]/90 via-[#003B7A]/45 to-transparent p-5 flex flex-col justify-end">
-                                  <span className="bg-white/95 text-[#003B7A] text-[11px] font-bold px-2.5 py-0.5 rounded-full w-fit mb-1.5 shadow-sm">
-                                    {currentAssets.email.bannerSubheadline || brief.productName}
-                                  </span>
-                                  <h4 className="text-white font-bold text-lg sm:text-xl leading-snug drop-shadow">
-                                    {currentAssets.email.bannerHeadline || currentAssets.search?.headline || currentAssets.email.subject}
-                                  </h4>
-                                </div>
+                                {/* Basal Green Signature Line */}
+                                <div className="absolute inset-x-0 bottom-0 h-1 bg-[#63CF00]" />
                               </div>
 
-                              {/* Concise Companion Copy + CTA + Legal Footer */}
+                              {/* V4 Modular Headline Card (#BDD4F2 + #004699 + #F24360 Promo Badge) */}
+                              <div className="bg-[#BDD4F2] text-[#004699] p-4 rounded-none rounded-br-2xl mb-5 space-y-1.5">
+                                <span className="inline-block bg-[#F24360] text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                                  {currentAssets.email.bannerSubheadline || brief.productName}
+                                </span>
+                                <h4 className="font-black text-lg sm:text-xl leading-snug text-[#004699]">
+                                  {currentAssets.email.bannerHeadline || currentAssets.search?.headline || currentAssets.email.subject}
+                                </h4>
+                                <p className="text-xs font-bold text-[#005FFC]">
+                                  {brief.slogan || 'Chopo, toda una vida cuidando la vida.'}
+                                </p>
+                              </div>
+
+                              {/* Concise Companion Copy + Official Mailing Magenta CTA (#D200F4) + Light Legal Footer */}
                               <div>
-                                <p className="text-slate-800 text-sm leading-relaxed mb-5">
+                                <p className="text-slate-800 text-sm font-medium leading-relaxed mb-5">
                                   {(currentAssets.email.body || '').replace(/\s*Incluye pie legal:[\s\S]*$/i, '').trim()}
                                 </p>
                                 <button
                                   type="button"
-                                  className="w-full py-3 rounded-full font-bold text-sm bg-[#0066FF] text-white hover:bg-[#004ECC] transition-colors shadow-sm"
+                                  className="w-full py-3 rounded-full font-medium text-sm bg-[#D200F4] text-white hover:bg-[#b500d4] transition-colors shadow-sm"
                                 >
-                                  {currentAssets.email.ctaText || t('Agendar Estudio en Línea', 'Book Lab Study Online')}
+                                  {currentAssets.email.ctaText || t('Agendar Estudio en Línea')}
                                 </button>
-                                <p className="text-[11px] text-slate-400 border-t border-slate-100 pt-3 mt-4 leading-relaxed">
+                                <p className="text-[11px] font-light text-slate-500 border-t border-slate-100 pt-3 mt-4 leading-relaxed">
                                   {currentAssets.email.legalFooter || 'Consulte a su médico. Permiso de Publicidad COFEPRIS No. 2609152002A00518.'}
                                 </p>
                               </div>
@@ -1486,25 +2045,32 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
 
                         {/* YouTube Shorts Preview */}
                         {activeAssetTab === 'youtube' && (
-                          <div className="bg-black rounded-2xl shadow-xl overflow-hidden relative aspect-[9/16] max-h-[600px] mx-auto w-full max-w-[340px]">
+                          <div className="font-chopo-v4 bg-black rounded-2xl shadow-xl overflow-hidden relative aspect-[9/16] max-h-[600px] mx-auto w-full max-w-[340px]">
                             {currentAssets.image && (
-                              <img src={currentAssets.image} className="absolute inset-0 w-full h-full object-cover opacity-70" />
+                              <img src={currentAssets.image} alt={brief.productName} className="absolute inset-0 w-full h-full object-cover opacity-70" />
                             )}
                             <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80"></div>
 
+                            <div className="absolute top-3 left-3 bg-white/95 px-2.5 py-1.5 rounded-none rounded-br-xl">
+                              <img src="/images/chopo-logo.svg" alt="Chopo" className="h-4 w-auto" />
+                            </div>
+
                             <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
                               <div className="flex items-center gap-3 mb-4">
-                                <div className="w-10 h-10 bg-[#0066FF] rounded-full flex items-center justify-center font-bold text-xs text-white">C</div>
+                                <div className="w-10 h-10 bg-[#005FFC] rounded-full flex items-center justify-center font-bold text-xs text-white">C</div>
                                 <span className="font-bold text-sm">@{brandConfig.companyName.replace(/\s+/g, '').toLowerCase()}</span>
-                                <button className="bg-white text-black text-xs font-bold px-3 py-1.5 rounded-full">{t('Suscribirse', 'Subscribe')}</button>
+                                <button className="bg-white text-black text-xs font-bold px-3 py-1.5 rounded-full">{t('Suscribirse')}</button>
                               </div>
-                              <p className="text-sm mb-2 font-bold">{currentAssets.youtube.title}</p>
+                              <p className="text-sm mb-1 font-black">{currentAssets.youtube.title}</p>
+                              <p className="text-xs mb-2 font-bold text-[#BDD4F2]">
+                                {brief.slogan || 'Chopo, toda una vida cuidando la vida.'}
+                              </p>
                               <div className="bg-white/20 backdrop-blur-md rounded-lg p-3 mb-4 border border-white/10">
-                                <p className="text-xs text-white/90 font-mono">{t('GUION:', 'SCRIPT:')}</p>
-                                <p className="text-xs italic text-white/80">{currentAssets.youtube.script}</p>
+                                <p className="text-xs text-white/90 font-bold">{t('GUION:')}</p>
+                                <p className="text-xs font-medium text-white/90">{currentAssets.youtube.script}</p>
                               </div>
-                              <button className={`w-full py-3 rounded-lg font-bold text-sm bg-[#0066FF] text-white hover:bg-[#004ECC] transition-colors`}>
-                                {t('Conoce más en chopo.com.mx', 'Learn More at chopo.com.mx')}
+                              <button className="w-full py-3 rounded-lg font-medium text-sm bg-[#005FFC] text-white hover:bg-[#004699] transition-colors">
+                                {t('Conoce más en chopo.com.mx')}
                               </button>
                             </div>
 
@@ -1525,17 +2091,17 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
 
                         {/* Website Preview */}
                         {activeAssetTab === 'website' && (
-                          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full w-full">
-                            {/* Fake Nav */}
-                            <div className="bg-white border-b border-slate-200 h-14 flex items-center justify-between px-4 gap-4 shrink-0 border-t-4 border-t-[#78D600]">
-                              <div className="text-[#0066FF] font-black text-lg tracking-tight">{name}</div>
+                          <div className="font-chopo-v4 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full w-full">
+                            {/* Fake Nav with Official SVG Logo + Basal Green Accent */}
+                            <div className="bg-white border-b border-slate-200 h-14 flex items-center justify-between px-4 gap-4 shrink-0 border-t-4 border-t-[#63CF00]">
+                              <img src="/images/chopo-logo.svg" alt={name} className="h-7 w-auto" />
                               <div className="h-9 bg-slate-100 rounded-full w-full max-w-xs flex items-center px-4 text-slate-500 text-xs font-medium">
-                                <Search size={14} className="mr-2" /> {t('Buscar estudios o check-ups...', 'Search lab tests or check-ups...')}
+                                <Search size={14} className="mr-2" /> {t('Buscar estudios o check-ups...')}
                               </div>
                               <div className="text-slate-600 text-xs font-bold flex items-center gap-4">
-                                <span className="hidden sm:inline">{t('Sucursales', 'Branches')}</span>
-                                <span className="hidden sm:inline">{t('Médicos', 'Physicians')}</span>
-                                <span className="text-[#0066FF]">{t('Resultados', 'Lab Results')}</span>
+                                <span className="hidden sm:inline">{t('Sucursales')}</span>
+                                <span className="hidden sm:inline">{t('Médicos')}</span>
+                                <span className="text-[#005FFC]">{t('Resultados')}</span>
                               </div>
                             </div>
 
@@ -1543,43 +2109,46 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                               {/* Main Product Hero */}
                               <div className="flex flex-col sm:flex-row gap-8 mb-8">
                                 {/* Image Container */}
-                                <div className="w-full sm:w-1/2 aspect-square bg-slate-100 rounded-xl overflow-hidden flex items-center justify-center relative group">
+                                <div className="w-full sm:w-1/2 aspect-square bg-slate-100 rounded-none rounded-br-2xl overflow-hidden flex items-center justify-center relative group">
                                   {currentAssets.image ? (
                                     <img
                                       src={currentAssets.image}
-                                      alt="Clinical Panel"
+                                      alt="Estudio Clínico"
                                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                     />
                                   ) : (
-                                    <div className="text-slate-400 text-sm font-medium">{t('Imagen Clínica', 'Clinical Image')}</div>
+                                    <div className="text-slate-400 text-sm font-medium">{t('Imagen Clínica')}</div>
                                   )}
+                                  <div className="absolute top-3 right-0 bg-[#F24360] text-white px-3 py-1 rounded-l-full text-xs font-bold shadow">
+                                    {t('Precio en Línea')}
+                                  </div>
                                 </div>
 
                                 {/* Product Details */}
                                 <div className="w-full sm:w-1/2 flex flex-col justify-center">
-                                  <div className="text-[#0066FF] text-xs font-bold mb-2 uppercase tracking-wider">{t('Perfil Clínico Acreditado', 'Accredited Clinical Panel')}</div>
-                                  <h1 className="text-3xl font-bold text-heading leading-none tracking-tight mb-2">{brief.productName || t('Perfil Control Diabetes (HbA1c)', 'Diabetes Control Panel (HbA1c)')}</h1>
-                                  <h2 className="text-lg text-subtext font-medium mb-4">{t('Precisión Diagnóstica • Entrega Digital', 'Diagnostic Precision • Digital Delivery')}</h2>
+                                  <div className="text-[#005FFC] text-xs font-bold mb-2 uppercase tracking-wider">{t('Perfil Clínico Acreditado')}</div>
+                                  <h1 className="text-3xl font-black text-[#004699] leading-tight tracking-tight mb-2">{brief.productName || t('Perfil Control Diabetes (HbA1c)')}</h1>
+                                  <h2 className="text-sm font-bold text-[#005FFC] mb-4">{brief.slogan || 'Chopo, toda una vida cuidando la vida.'}</h2>
 
-                                  <div className="mb-6">
-                                    <span className="text-2xl font-bold text-heading">$890.00 MXN</span>
-                                    <span className="text-subtext"> • {t('Precio en Línea', 'Online Price')}</span>
+                                  <div className="mb-5 bg-[#BDD4F2] text-[#004699] px-4 py-3 rounded-none rounded-br-2xl">
+                                    <span className="text-2xl font-black">$890.00 MXN</span>
+                                    <span className="text-xs font-medium ml-2">• {t('Precio especial en línea')}</span>
                                   </div>
 
-                                  <p className="text-base text-slate-800 mb-6 leading-relaxed">
-                                    {currentAssets.search?.description || t("Análisis clínicos acreditados con entrega rápida de resultados digitales.", "Accredited clinical laboratory testing with fast digital results delivery.")}
+                                  <p className="text-sm font-medium text-slate-800 mb-6 leading-relaxed">
+                                    {currentAssets.search?.description || t("Análisis clínicos acreditados con entrega rápida de resultados digitales.")}
                                   </p>
 
                                   <div className="space-y-3">
-                                    <button className="w-full bg-[#0066FF] text-white hover:bg-[#004ECC] py-3.5 rounded-full font-bold text-sm transition-colors">
-                                      {t('Agendar Cita en Línea', 'Schedule Appointment Online')}
+                                    <button className="w-full bg-[#005FFC] text-white hover:bg-[#004699] py-3.5 rounded-full font-medium text-sm transition-colors">
+                                      {t('Agendar Cita en Línea')}
                                     </button>
-                                    <button className="w-full bg-white border border-slate-300 text-slate-900 py-3.5 rounded-full font-bold text-sm hover:bg-slate-50 transition-colors">
-                                      {t('Ver Indicaciones de Ayuno', 'View Fasting Instructions')}
+                                    <button className="w-full bg-white border border-slate-300 text-[#004699] py-3.5 rounded-full font-medium text-sm hover:bg-slate-50 transition-colors">
+                                      {t('Ver Indicaciones de Ayuno')}
                                     </button>
                                   </div>
-                                  <p className="mt-4 text-[11px] text-slate-400 italic">
-                                    {t('Consulte a su médico. Aviso de Publicidad COFEPRIS.', 'Consult your physician. COFEPRIS Advertising Permit Compliant.')}
+                                  <p className="mt-4 text-[11px] font-light text-slate-500">
+                                    {currentAssets.email?.legalFooter || t('Consulte a su médico. Permiso de Publicidad COFEPRIS.')}
                                   </p>
                                 </div>
                               </div>
@@ -1592,7 +2161,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-200 border-dashed rounded-xl p-12 text-center text-slate-500">
-                    <p>{t('Haz clic en "Generar Brief y Materiales" para visualizar esta campaña en todos los canales.', 'Click "Generate Brief & Assets" to visualize this campaign across channels.')}</p>
+                    <p>{t('Haz clic en "Generar Brief y Materiales" para visualizar esta campaña en todos los canales.')}</p>
                   </div>
                 )}
 
@@ -1600,10 +2169,10 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                   <div className="mt-8 p-6 rounded-2xl bg-[#EFF6FF] border border-blue-200 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
                     <div>
                       <h5 className="text-base font-bold text-[#003B7A]">
-                        {t('¿Listo para poner a prueba esta campaña con tus pacientes y médicos sintéticos?', 'Ready to test this campaign with your synthetic patients and physicians?')}
+                        {t('¿Listo para poner a prueba esta campaña con tus pacientes, médicos y empresas sintéticas?')}
                       </h5>
                       <p className="text-xs text-slate-600 mt-1">
-                        {t('Todos los mensajes clave, correos, promociones, estudios e imágenes generados ya están listos en el Focus Group.', 'All generated key messages, emails, promotions, studies, and images are ready in the Focus Group.')}
+                        {t('Todos los mensajes clave, correos, promociones, estudios e imágenes generados ya están listos en el Focus Group.')}
                       </p>
                     </div>
                     <button
@@ -1642,19 +2211,17 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                           </div>
                           <div>
                               <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                                  <span className="px-2.5 py-0.5 bg-[#EFF6FF] text-[#0066FF] text-[11px] font-bold rounded-md border border-blue-100">
-                                    {isAudienceB2B(selectedAudienceModal)
-                                      ? t('Médico Prescriptor B2B', 'B2B Prescribing Physician')
-                                      : t('Paciente B2C', 'B2C Patient')}
+                                  <span className={`px-2.5 py-0.5 text-[11px] font-bold rounded-md border ${getAudienceSegmentBadge(selectedAudienceModal).className}`}>
+                                    {getAudienceSegmentBadge(selectedAudienceModal).label}
                                   </span>
                                   {selectedAudienceModal.isWildcard && (
                                     <span className="px-2.5 py-0.5 bg-blue-50 text-[#003B7A] text-[10px] font-bold rounded-md uppercase tracking-wider border border-blue-100">
-                                      {t('Exploratorio', 'Wildcard')}
+                                      {t('Exploratorio')}
                                     </span>
                                   )}
                               </div>
                               <h3 className="text-xl font-bold text-[#003B7A] leading-snug">
-                                {(selectedAudienceModal.name || '').replace(/^\[[^\]]+\]\s*/, '')}
+                                {formatDisplayPersonaName(selectedAudienceModal.name || '').replace(/^\[[^\]]+\]\s*/, '')}
                               </h3>
                               <div className="text-slate-600 font-semibold text-xs flex items-center gap-2 mt-1">
                                   <span className="w-2 h-2 rounded-full bg-[#78D600]" />
@@ -1880,12 +2447,13 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                         <select
                           disabled={isSavingUseCase}
                           value={editingUseCase.track}
-                          onChange={(e) => setEditingUseCase({ ...editingUseCase, track: e.target.value as 'patient' | 'physician' | 'both' })}
+                          onChange={(e) => setEditingUseCase({ ...editingUseCase, track: e.target.value as 'both' | 'all' | 'patient' | 'physician' | 'enterprise' })}
                           className="input-field text-sm disabled:opacity-60"
                         >
-                          <option value="both">{t('Ambas Pistas (Paciente B2C + Médico B2B)', 'Both Tracks (B2C Patient + B2B Physician)')}</option>
-                          <option value="patient">{t('Solo Paciente B2C', 'B2C Patient Only')}</option>
-                          <option value="physician">{t('Solo Médico B2B', 'B2B Physician Only')}</option>
+                          <option value="both">{t('Todos los Segmentos (B2C + B2D + B2B)')}</option>
+                          <option value="patient">{t('Solo Pacientes (B2C)')}</option>
+                          <option value="physician">{t('Solo Médicos (B2D)')}</option>
+                          <option value="enterprise">{t('Solo Empresas (B2B)')}</option>
                         </select>
                       </div>
                     </div>
@@ -1965,7 +2533,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1.5">
-                          {t('Aviso COFEPRIS B2B', 'COFEPRIS B2B Notice')}
+                          {t('Aviso COFEPRIS B2D (Médicos)')}
                         </label>
                         <input
                           type="text"

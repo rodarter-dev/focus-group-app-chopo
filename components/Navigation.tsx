@@ -20,7 +20,8 @@ import {
   CheckCircle2,
   Trash2,
   FileCheck,
-  HelpCircle
+  HelpCircle,
+  Palette
 } from 'lucide-react';
 import { HelpGuideModal } from './HelpGuideModal';
 import { useCompanyContext } from '../context/CompanyContext';
@@ -76,13 +77,6 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
       descEn: 'Mandatory disclaimers, sanitary permits, and legal restrictions',
       category: 'Regulatorio'
     },
-    '02_chopo_brand_manual.md': {
-      es: 'Manual de Identidad y Marca Chopo',
-      en: 'Chopo Brand & Identity Manual',
-      descEs: 'Tono de comunicación (B2C / B2B), paleta visual y vigencias',
-      descEn: 'Tone of voice (B2C / B2B), visual palette, and promo terms',
-      category: 'Marca'
-    },
     '03_catalogo_estudios_diabetes.md': {
       es: 'Catálogo de Estudios y Preparación Clínica',
       en: 'Clinical Studies & Preparation Catalog',
@@ -114,9 +108,9 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
   };
 
   const sanitizeVersionLabel = (label?: string): string => {
-    if (!label) return t('Configuración Base por Defecto — Laboratorios Chopo', 'Default Baseline Configuration — Laboratorios Chopo');
+    if (!label) return t('Configuración Base por Defecto — Laboratorio Médico del Chopo', 'Default Baseline Configuration — Laboratorio Médico del Chopo');
     if (/MVP|Semilla Oficial/i.test(label)) {
-      return t('Configuración Base por Defecto — Laboratorios Chopo', 'Default Baseline Configuration — Laboratorios Chopo');
+      return t('Configuración Base por Defecto — Laboratorio Médico del Chopo', 'Default Baseline Configuration — Laboratorio Médico del Chopo');
     }
     return label;
   };
@@ -160,8 +154,8 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
       const versionsData = await fetchConfigVersions('rag_docs');
       setRagVersions(versionsData || []);
       setRagStatusMsg(t(
-        'Cambios guardados y sincronizados en Cloud Storage y Firestore.',
-        'Changes saved and synced to Cloud Storage and Firestore.'
+        'Cambios guardados y sincronizados correctamente.',
+        'Changes saved and synced successfully.'
       ));
     } catch (e) {
       alert(t('No se pudieron guardar los cambios.', 'Failed to save changes.'));
@@ -220,8 +214,8 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
         const versionsData = await fetchConfigVersions('rag_docs');
         setRagVersions(versionsData || []);
         setRagStatusMsg(t(
-          `PDF "${uploaded.filename}" procesado, guardado en el bucket y disponible para edición.`,
-          `PDF "${uploaded.filename}" processed, stored in bucket, and ready for editing.`
+          `PDF "${uploaded.filename}" procesado, respaldado y disponible para edición.`,
+          `PDF "${uploaded.filename}" processed, backed up, and ready for editing.`
         ));
       } else {
         const textContent = await new Promise<string>((resolve, reject) => {
@@ -417,8 +411,8 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                       : `text-gray-600 hover:bg-gray-100 hover:text-[#0066FF]`}
                   `}
                 >
-                  <Icon size={20} />
-                  <span>{item.label}</span>
+                  <Icon size={20} className="shrink-0" />
+                  <span className="whitespace-nowrap">{item.label}</span>
                 </button>
               </React.Fragment>
             );
@@ -432,16 +426,36 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
             className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl bg-[#EFF6FF] hover:bg-blue-100 text-[#003B7A] border border-blue-200 transition-all text-xs font-bold shadow-sm"
           >
             <HelpCircle size={17} className="text-[#0066FF] shrink-0" />
-            <span className="truncate">{t('Guía de Uso / Ayuda', 'Help & Usage Guide')}</span>
+            <span className="whitespace-nowrap">{t('Guía de Uso / Ayuda', 'Help & Usage Guide')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode(AppMode.BRAND_MANUAL);
+              setIsMobileMenuOpen(false);
+            }}
+            title={t('Manual de Marca V4 — Laboratorio Médico del Chopo', 'Manual de Marca V4 — Laboratorio Médico del Chopo')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-sm font-bold shadow-sm ${
+              currentMode === AppMode.BRAND_MANUAL
+                ? 'bg-[#005FFC] text-white border-[#005FFC] shadow-md'
+                : 'bg-[#EFF9FE] hover:bg-blue-100/80 text-[#003B7A] border-blue-200 hover:border-[#005FFC]'
+            }`}
+          >
+            <Palette size={18} className={currentMode === AppMode.BRAND_MANUAL ? 'text-white shrink-0' : 'text-[#005FFC] shrink-0'} />
+            <span className="whitespace-nowrap">{t('Manual de Marca V4', 'Manual de Marca V4')}</span>
           </button>
           <button
             type="button"
             onClick={openRagAdminModal}
-            title={t('Base de Conocimiento (COFEPRIS y Marca)', 'Knowledge Base (COFEPRIS & Brand)')}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 hover:bg-blue-50 text-[#003B7A] border border-slate-200 hover:border-blue-200 transition-all text-sm font-semibold shadow-sm"
+            title={t('Base de Conocimiento (COFEPRIS y Clínico)', 'Base de Conocimiento (COFEPRIS y Clínico)')}
+            aria-label={t('Base de Conocimiento (COFEPRIS y Clínico)', 'Base de Conocimiento (COFEPRIS y Clínico)')}
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 text-[#003B7A] border border-slate-200 hover:border-blue-200 transition-all text-left shadow-sm"
           >
             <BookOpen size={18} className="text-[#0066FF] shrink-0" />
-            <span className="whitespace-nowrap">{t('Base de Conocimiento', 'Knowledge Base')}</span>
+            <div className="min-w-0 leading-tight">
+              <span className="block text-sm font-semibold whitespace-nowrap">{t('Base de Conocimiento', 'Base de Conocimiento')}</span>
+              <span className="block text-[11px] font-medium text-slate-500 whitespace-nowrap">{t('(COFEPRIS y Clínico)', '(COFEPRIS y Clínico)')}</span>
+            </div>
           </button>
         </div>
 
@@ -480,12 +494,12 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-[#003B7A]">
-                    {t('Base de Conocimiento (COFEPRIS y Marca)', 'Knowledge Base (COFEPRIS & Brand)')}
+                    {t('Base de Conocimiento (COFEPRIS y Clínico)', 'Base de Conocimiento (COFEPRIS y Clínico)')}
                   </h2>
                   <p className="text-xs text-slate-500">
                     {t(
-                      'Documentos de referencia para validación regulatoria, identidad de marca y criterios clínicos.',
-                      'Reference documents for regulatory compliance, brand identity, and clinical criteria.'
+                      'Documentos y PDFs de referencia para regulación COFEPRIS, catálogo de estudios clínicos y realismo médico.',
+                      'Reference documents and PDFs for COFEPRIS regulations, clinical study catalog, and medical realism.'
                     )}
                   </p>
                 </div>
@@ -531,6 +545,28 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                   <X size={20} />
                 </button>
               </div>
+            </div>
+
+            {/* Brand Manual V4 Callout Banner */}
+            <div className="px-6 py-3 bg-[#EFF9FE] border-b border-[#BDD4F2] flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 text-xs text-[#004699] min-w-0 flex-1">
+                <Palette size={16} className="text-[#005FFC] shrink-0" />
+                <p className="leading-snug">
+                  <strong className="font-bold">Identidad de Marca ahora en sección dedicada:</strong> Las reglas de voz, fotografía, colores, diseño y canales se administran por secciones en <strong className="font-bold">Manual de Marca V4</strong>. Aquí gestionas PDFs y documentos de COFEPRIS, Estudios Clínicos y Realismo Visual.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isRagBusy}
+                onClick={() => {
+                  setIsRagModalOpen(false);
+                  setMode(AppMode.BRAND_MANUAL);
+                  setIsMobileMenuOpen(false);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-[#005FFC] hover:bg-[#004699] text-white text-xs font-bold shadow-sm transition-colors shrink-0 whitespace-nowrap disabled:opacity-50"
+              >
+                {t('Ir al Manual de Marca V4 ➔', 'Ir al Manual de Marca V4 ➔')}
+              </button>
             </div>
 
             {/* Notification Banner */}
@@ -817,7 +853,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                   value={tempName}
                   onChange={(e) => setTempName(e.target.value)}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#0066FF] focus:border-transparent transition-all outline-none font-medium text-gray-900 disabled:opacity-60"
-                  placeholder={t('ej. Laboratorios Chopo', 'e.g. Laboratorios Chopo')}
+                  placeholder={t('ej. Laboratorio Médico del Chopo', 'e.g. Laboratorio Médico del Chopo')}
                 />
               </div>
               

@@ -1,7 +1,20 @@
 import { Schema, Type } from "@google/genai";
 import { brandConfig } from "../config";
 import { getCurrentLanguage } from "../context/LanguageContext";
+import {
+    buildBrandSlices,
+    getSubformatsForChannel,
+    resolveSegmentKey,
+    resolveTrackFromSegment
+} from "./brandManualUtils";
 import type {
+    AudienceTrack,
+    AssetStage,
+    BrandAudienceSegmentKey,
+    BrandChannelKey,
+    BrandManualConfig,
+    BrandManualSlices,
+    FunnelStage,
     MarketingAssets,
     MarketingBriefData,
     CombinedPersona,
@@ -13,6 +26,13 @@ import type {
     ConfigVersionSnapshot
 } from "../types";
 export type {
+    AudienceTrack,
+    AssetStage,
+    BrandAudienceSegmentKey,
+    BrandChannelKey,
+    BrandManualConfig,
+    BrandManualSlices,
+    FunnelStage,
     MarketingAssets,
     FocusGroupRubric,
     RubricScore,
@@ -20,7 +40,16 @@ export type {
     ConfigVersionSnapshot
 };
 
+export interface BrandV4CampaignOptions {
+    audienceSegment?: BrandAudienceSegmentKey;
+    funnelStage?: FunnelStage;
+    channelKey?: BrandChannelKey;
+    channelSubformat?: string;
+}
+
 export const MODEL_TEXT = "gemini-3.5-flash";
+
+const DEFAULT_OFFICIAL_BRAND_NAME = "Laboratorio Médico del Chopo";
 
 const getLanguageInstruction = (): string => {
     const lang = getCurrentLanguage();
@@ -30,30 +59,197 @@ const getLanguageInstruction = (): string => {
     return `\nCRITICAL LANGUAGE RULE: Write all output values and explanations in English.`;
 };
 
+// --- Brand Manual V4 Deterministic Track & Segment Detection (B2C = patient, B2D = physician, B2B = enterprise) ---
+
+const PHYSICIAN_TEXT_REGEX = /\bb2d\b|m[eé]dic|doctor|physician|especialista|cardi[oó]log|ginec[oó]log|onc[oó]log|endocrin[oó]log|prescriptor/i;
+const ENTERPRISE_TEXT_REGEX = /\bb2b\b|empresa|corporativ|recursos humanos|director(?:a)? de rh|salud ocupacional/i;
+
+const stripPatientDoctorMentions = (text: string): string =>
+    text
+        .replace(/\b(?:consulte?|consulta|pide|pidi[oó]|recomiend[ae]|indica|mano de)\s+(?:a\s+)?(?:su|tu)\s+m[eé]dic[oa]\b/gi, '')
+        .replace(/\b(?:su|tu)\s+m[eé]dic[oa]\b/gi, '');
+
+export const detectTrackAndSegment = (
+    input?: {
+        audienceSegment?: BrandAudienceSegmentKey | string;
+        track?: AudienceTrack | string;
+        text?: string;
+    } | string
+): { track: AudienceTrack; audienceSegment: BrandAudienceSegmentKey } => {
+    const opts = typeof input === 'string' ? { text: input } : (input || {});
+    const rawSeg = String(opts.audienceSegment || '').trim().toLowerCase();
+    if (rawSeg === 'b2c_patients' || rawSeg === 'b2d_doctors' || rawSeg === 'b2b_enterprises') {
+        const audienceSegment = resolveSegmentKey(rawSeg);
+        return { track: resolveTrackFromSegment(audienceSegment), audienceSegment };
+    }
+
+    const rawTrack = String(opts.track || '').trim().toLowerCase();
+    const cleanedText = stripPatientDoctorMentions(String(opts.text || ''));
+
+    if (rawTrack === 'physician' || rawTrack === 'b2d' || rawTrack === 'b2d_doctors') {
+        return { track: 'physician', audienceSegment: 'b2d_doctors' };
+    }
+    if (rawTrack === 'enterprise' || rawTrack === 'b2b_enterprises') {
+        return { track: 'enterprise', audienceSegment: 'b2b_enterprises' };
+    }
+    if (rawTrack === 'patient' || rawTrack === 'b2c' || rawTrack === 'b2c_patients') {
+        return { track: 'patient', audienceSegment: 'b2c_patients' };
+    }
+    if (rawTrack === 'b2b') {
+        // Legacy personas tagged (Médico B2B) must still map to physician / b2d_doctors
+        if (PHYSICIAN_TEXT_REGEX.test(cleanedText)) {
+            return { track: 'physician', audienceSegment: 'b2d_doctors' };
+        }
+        return { track: 'enterprise', audienceSegment: 'b2b_enterprises' };
+    }
+
+    if (PHYSICIAN_TEXT_REGEX.test(cleanedText)) {
+        return { track: 'physician', audienceSegment: 'b2d_doctors' };
+    }
+    if (ENTERPRISE_TEXT_REGEX.test(cleanedText)) {
+        return { track: 'enterprise', audienceSegment: 'b2b_enterprises' };
+    }
+    return { track: 'patient', audienceSegment: 'b2c_patients' };
+};
+
+const detectPersonaTrack = (persona: any): { track: AudienceTrack; audienceSegment: BrandAudienceSegmentKey } =>
+    detectTrackAndSegment({
+        track: persona?.track,
+        text: `${persona?.name || ''} ${persona?.job_title || persona?.details?.job_title || ''}`
+    });
+
+const buildCleanPhotoDirective = (photoSlice?: BrandManualSlices['photoSlice']): string => {
+    if (!photoSlice) {
+        return 'Fotografía pura y limpia, iluminación natural cálida de día, personas mexicanas reales en actitud tranquila, sin estetoscopio en el cuello de médicos, sin placas radiográficas físicas impresas, sin agujas perforando piel ni sangre explícita, sin texto incrustado, sin logotipos y sin líneas o gráficos vectoriales.';
+    }
+    const parts: string[] = [];
+    if (photoSlice.colorTemperatureRule) parts.push(String(photoSlice.colorTemperatureRule));
+    if (photoSlice.cleanBaseImageRuleForAI) parts.push(String(photoSlice.cleanBaseImageRuleForAI));
+    if (photoSlice.ambientPromptGuidance) parts.push(String(photoSlice.ambientPromptGuidance));
+    if (photoSlice.channelPhotoRules) parts.push(String(photoSlice.channelPhotoRules));
+    if (Array.isArray(photoSlice.donts) && photoSlice.donts.length > 0) {
+        parts.push(`Restricciones estrictas: ${photoSlice.donts.join('; ')}`);
+    }
+    return parts.length > 0
+        ? parts.join(' ')
+        : 'Fotografía pura y limpia, iluminación natural cálida de día, personas mexicanas reales en actitud tranquila, sin estetoscopio en el cuello de médicos, sin placas radiográficas físicas impresas, sin agujas ni sangre, sin texto incrustado, sin logotipos y sin gráficos vectoriales.';
+};
+
+const resolveAspectRatioForSubformat = (channelSubformat?: string, channelKey?: BrandChannelKey): string => {
+    const sub = String(channelSubformat || '').toLowerCase();
+    if (/9:16|historia|reel|tiktok/.test(sub)) return '9:16';
+    if (/4:5|p[oó]ster|folleto|d[ií]ptico|tr[ií]ptico/.test(sub)) return '3:4';
+    if (/hero|horizontal|banner|mailing|lona|microperforado/.test(sub)) return '16:9';
+    if (channelKey === 'web' || channelKey === 'mailing_ecommerce') return '16:9';
+    if (channelKey === 'pdv_sucursal') return '3:4';
+    return '1:1';
+};
+
+// --- Brand Manual V4 API Client + 30s Lightweight Cache ---
+
+const BRAND_MANUAL_CACHE_TTL_MS = 30_000;
+let cachedBrandManual: BrandManualConfig | null = null;
+let cachedBrandManualFetchedAt = 0;
+let inFlightBrandManualPromise: Promise<BrandManualConfig | null> | null = null;
+
+const extractBrandManualCandidate = (payload: any): BrandManualConfig | null => {
+    if (!payload || typeof payload !== 'object') return null;
+    const candidate = payload.brandManual || payload.manual || payload.data || payload;
+    if (
+        candidate &&
+        typeof candidate === 'object' &&
+        !Array.isArray(candidate) &&
+        (candidate.identity_and_voice || candidate.photography_and_imagery || candidate.metadata?.id === 'chopo_brand_manual_v4')
+    ) {
+        return candidate as BrandManualConfig;
+    }
+    return null;
+};
+
+export const invalidateBrandManualCache = (): void => {
+    cachedBrandManual = null;
+    cachedBrandManualFetchedAt = 0;
+    inFlightBrandManualPromise = null;
+};
+
+export const fetchBrandManual = async (forceRefresh: boolean = false): Promise<BrandManualConfig | null> => {
+    const now = Date.now();
+    if (!forceRefresh && cachedBrandManual && (now - cachedBrandManualFetchedAt) < BRAND_MANUAL_CACHE_TTL_MS) {
+        return cachedBrandManual;
+    }
+    if (!forceRefresh && inFlightBrandManualPromise) {
+        return inFlightBrandManualPromise;
+    }
+
+    const requestPromise = (async (): Promise<BrandManualConfig | null> => {
+        try {
+            const res = await fetch('/api/config/brand-manual');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const parsed = extractBrandManualCandidate(data);
+            if (parsed) {
+                cachedBrandManual = parsed;
+                cachedBrandManualFetchedAt = Date.now();
+                return parsed;
+            }
+            return null;
+        } catch (e) {
+            console.warn('Failed to fetch Brand Manual V4 from /api/config/brand-manual:', e);
+            return cachedBrandManual || null;
+        } finally {
+            inFlightBrandManualPromise = null;
+        }
+    })();
+
+    inFlightBrandManualPromise = requestPromise;
+    return requestPromise;
+};
+
+export const saveBrandManual = async (
+    manual: BrandManualConfig,
+    label?: string
+): Promise<BrandManualConfig> => {
+    const res = await fetch('/api/config/brand-manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manual, label })
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to save brand manual');
+    }
+    const data = await res.json();
+    const saved = extractBrandManualCandidate(data) || manual;
+    cachedBrandManual = saved;
+    cachedBrandManualFetchedAt = Date.now();
+    inFlightBrandManualPromise = null;
+    return saved;
+};
+
 // --- Fallback Official Rubrics (Used if /api/rubrics is unreachable) ---
 export const DEFAULT_CHOPO_RUBRICS: FocusGroupRubric[] = [
     {
         id: "clarity_3s",
         name: "Claridad y Concisión (3 seg de Scroll)",
-        track: "both",
+        track: "all",
         weight: 25,
-        evaluationQuestion: "¿Se entiende en 3 segundos de scroll en el celular qué estudio se anuncia y cuál es el beneficio principal sin saturar de texto?",
+        evaluationQuestion: "¿Se entiende en 3 segundos qué estudio o solución se anuncia y cuál es el beneficio principal sin saturar de texto?",
         scoringAnchors: {
-            low_0_to_40: "El texto es demasiado largo (más de 3-4 líneas comerciales), parece un folleto o instructivo de sucursal (menciona batas, reglas internas o párrafos densos) y da flojera leerlo en redes sociales.",
+            low_0_to_40: "El texto es demasiado largo (más de 3-4 líneas comerciales en formatos rápidos), parece un folleto denso o instructivo de sucursal y da flojera leerlo.",
             mid_41_to_79: "El mensaje se entiende pero tiene palabras de más o el beneficio principal no destaca en la primera línea.",
-            high_80_to_100: "Mensaje directo, ágil y escaneable en menos de 3 segundos: gancho claro en la primera línea y llamado a la acción inmediato."
+            high_80_to_100: "Mensaje directo, ágil y escaneable en segundos: gancho claro en la primera línea y llamado a la acción inmediato."
         }
     },
     {
         id: "visual_trust_warmth",
-        name: "Confianza Visual y Realismo Clínico",
-        track: "both",
+        name: "Confianza Visual y Calidez Humana",
+        track: "all",
         weight: 25,
-        evaluationQuestion: "¿La imagen y el tono transmiten la confianza, modernidad tecnológica y calidez de 'Tu laboratorio de cabecera'?",
+        evaluationQuestion: "¿La imagen y el tono transmiten la confianza, calidez humana, modernidad digital y cercanía de Laboratorio Médico del Chopo?",
         scoringAnchors: {
-            low_0_to_40: "La imagen se ve falsa, fría, anticuada (ej. doctores viendo placas radiográficas físicas viejas a contraluz), muestra agujas/sangre o tiene errores de vestimenta/equipo médico.",
-            mid_41_to_79: "Imagen aceptable pero genérica de foto de stock sin identidad clara de Chopo.",
-            high_80_to_100: "Fotografía auténtica, luminosa y moderna (entrega digital en App/tablet, vestimenta y equipo correctos, paleta azul/blanco Chopo) que inspira tranquilidad."
+            low_0_to_40: "La imagen se ve falsa, fría, oscura, anticuada (ej. placas radiográficas físicas a contraluz), muestra agujas/sangre o tiene inconsistencias clínicas.",
+            mid_41_to_79: "Imagen aceptable pero genérica de foto de stock sin calidez o identidad clara.",
+            high_80_to_100: "Fotografía auténtica, luminosa y cálida con personas reales en México y enfoque digital moderno que inspira tranquilidad."
         }
     },
     {
@@ -61,7 +257,7 @@ export const DEFAULT_CHOPO_RUBRICS: FocusGroupRubric[] = [
         name: "Atractivo Promocional y Facilidad Digital",
         track: "patient",
         weight: 25,
-        evaluationQuestion: "¿Qué tan fácil y conveniente se percibe agendar/pagar en línea (chopo.com.mx o App Chopo) y recibir resultados digitales?",
+        evaluationQuestion: "¿Qué tan fácil y conveniente se percibe agendar/pagar en línea (App Chopo o chopo.com.mx) y recibir resultados digitales?",
         scoringAnchors: {
             low_0_to_40: "No queda claro cómo agendar en línea, no menciona el beneficio de resultados digitales en la App/celular, o parece que hay que ir a hacer fila para cotizar.",
             mid_41_to_79: "Menciona el sitio web pero no resalta la comodidad de pagar en línea o consultar resultados en el celular.",
@@ -73,11 +269,11 @@ export const DEFAULT_CHOPO_RUBRICS: FocusGroupRubric[] = [
         name: "Intención de Agendar Estudio",
         track: "patient",
         weight: 25,
-        evaluationQuestion: "Con base en tus necesidades personales y familiares, ¿qué tan probable es que detengas el scroll y entres a chopo.com.mx o la App para agendar?",
+        evaluationQuestion: "Con base en tus necesidades personales y familiares, ¿qué tan probable es que te detengas y entres a la App Chopo o chopo.com.mx para agendar?",
         scoringAnchors: {
-            low_0_to_40: "Pasaría de largo el anuncio ('scroll past') porque me aburrió, me generó desconfianza o no conecta con mi necesidad de salud.",
+            low_0_to_40: "Pasaría de largo el anuncio porque me aburrió, me generó desconfianza o no conecta con mi necesidad de salud.",
             mid_41_to_79: "Me llama la atención el estudio pero lo dejaría para después.",
-            high_80_to_100: "Detendría el scroll y haría clic en este momento para cotizar o agendar mi estudio en línea."
+            high_80_to_100: "Me detendría y entraría en este momento para cotizar o agendar mi estudio en línea."
         }
     },
     {
@@ -97,11 +293,35 @@ export const DEFAULT_CHOPO_RUBRICS: FocusGroupRubric[] = [
         name: "Intención de Prescribir / Recomendar a Pacientes",
         track: "physician",
         weight: 25,
-        evaluationQuestion: "¿Qué tan probable es que recomiendes o envíes a tus pacientes a realizarse este estudio en Laboratorios Médicos El Chopo?",
+        evaluationQuestion: "¿Qué tan probable es que recomiendes o envíes a tus pacientes a realizarse este estudio en Laboratorio Médico del Chopo?",
         scoringAnchors: {
             low_0_to_40: "No lo recomendaría porque el anuncio confunde al paciente o muestra inconsistencias clínicas.",
             mid_41_to_79: "Lo consideraría como una opción más entre varios laboratorios.",
             high_80_to_100: "Lo recomendaría activamente a mis pacientes por su confiabilidad, accesibilidad y facilidad de consulta digital de resultados."
+        }
+    },
+    {
+        id: "enterprise_solution_fit",
+        name: "Solidez Corporativa y Salud Ocupacional",
+        track: "enterprise",
+        weight: 25,
+        evaluationQuestion: "Como responsable de empresa o Recursos Humanos, ¿el mensaje transmite cobertura, orden operativo y respaldo institucional para cuidar a sus colaboradores?",
+        scoringAnchors: {
+            low_0_to_40: "Tono informal o genérico que no aborda necesidades corporativas de cobertura, convenios ni reportes claros.",
+            mid_41_to_79: "Mensaje comprensible pero poco diferenciado frente a otros proveedores de salud ocupacional.",
+            high_80_to_100: "Proyecta solidez institucional, trato respetuoso, cobertura nacional y agilidad en programas preventivos empresariales."
+        }
+    },
+    {
+        id: "enterprise_action_intent",
+        name: "Intención de Solicitar Cotización o Convenio",
+        track: "enterprise",
+        weight: 25,
+        evaluationQuestion: "¿Qué tan probable es que solicite información o un convenio corporativo en chopo.com.mx/empresas a partir de este material?",
+        scoringAnchors: {
+            low_0_to_40: "No contactaría porque no explica beneficios concretos para la empresa ni facilita un canal claro.",
+            mid_41_to_79: "Lo guardaría como referencia para revisarlo más adelante.",
+            high_80_to_100: "Solicitaría una cotización o reunión corporativa de inmediato para evaluar un convenio."
         }
     }
 ];
@@ -179,7 +399,7 @@ export const saveUseCases = async (useCases: ClinicalUseCase[], label?: string):
 };
 
 export const fetchConfigVersions = async (
-    entityType: 'personas' | 'rubrics' | 'use_cases' | 'prompts' | 'rag_docs'
+    entityType: 'personas' | 'rubrics' | 'use_cases' | 'prompts' | 'rag_docs' | 'brand_manual'
 ): Promise<ConfigVersionSnapshot[]> => {
     try {
         const res = await fetch(`/api/config-versions/${entityType}`);
@@ -193,7 +413,7 @@ export const fetchConfigVersions = async (
 };
 
 export const restoreConfigVersion = async (
-    entityType: 'personas' | 'rubrics' | 'use_cases' | 'prompts' | 'rag_docs',
+    entityType: 'personas' | 'rubrics' | 'use_cases' | 'prompts' | 'rag_docs' | 'brand_manual',
     versionId: string
 ): Promise<any> => {
     const res = await fetch('/api/config-versions/restore', {
@@ -202,7 +422,11 @@ export const restoreConfigVersion = async (
         body: JSON.stringify({ entityType, versionId })
     });
     if (!res.ok) throw new Error(`Failed to restore ${entityType} version ${versionId}`);
-    return res.json();
+    const result = await res.json();
+    if (entityType === 'brand_manual') {
+        invalidateBrandManualCache();
+    }
+    return result;
 };
 
 export const fetchRagDocs = async (): Promise<Record<string, string>> => {
@@ -219,7 +443,6 @@ export const fetchRagDocs = async (): Promise<Record<string, string>> => {
     }
     return {
         '01_cofepris_lineamientos.md': '# Lineamientos COFEPRIS\n- Permiso de Publicidad COFEPRIS No. 2609152002A00518\n- Consulte a su médico.\n- Responsable Sanitario: Q.F.B. Jessica Alejandra Rivera Domínguez, Céd. Prof. 3602644, Univ. Simón Bolívar.',
-        '02_chopo_brand_manual.md': '# Manual de Identidad y Marca Laboratorios Médicos El Chopo\n- Paleta Azul Chopo (#004B87 / #0066FF) y Blanco Clínico (#FFFFFF).\n- Precio especial exclusivo pagando en línea en chopo.com.mx o App Chopo.',
         '03_catalogo_estudios_diabetes.md': '# Catálogo de Estudios y Preparación Clínica\n- Check-up Control Diabetes (HbA1c, Química Sanguínea y EGO/Microalbuminuria).\n- Ayuno obligatorio de 8 a 12 horas.',
         '04_reglas_realismo_clinico_y_operativo.md': '# Reglas de Imagen y Realismo Clínico\n- Resultados 100% digitales en App Chopo / smartphone / tablet (prohibido placas físicas a contraluz).\n- Prohibido mostrar agujas perforando la piel o sangre explícita.'
     };
@@ -283,11 +506,10 @@ export const retrieveRagContext = async (
         useCase: null,
         chunks: [],
         combinedContext: `
-        - COF-001/002/003: Incluir "Consulte a su médico", Permiso de Publicidad COFEPRIS No. 243300201A1842 y Responsable Sanitario: Dr. Alejandro Rivera Gómez, Médico Cirujano (UNAM), Cédula Profesional 3918472.
+        - COF-001/002/003: Incluir leyenda precautoria del segmento, Permiso/Aviso de Publicidad COFEPRIS vigente y Responsable Sanitario con Cédula Profesional.
         - COF-004/005/006/007: Prohibido prometer curas, autodiagnóstico o tono alarmista. Todo en español claro.
-        - BRD-001/004/005: Paleta Azul Chopo (#004B87), Blanco Clínico (#FFFFFF) y Rojo Acento (#E30613). Fotografía auténtica sin agujas ni sangre explícita y sin texto incrustado. Especificar vigencia y exclusividad en línea (chopo.com.mx / App Chopo).
         - CLN-001/002: Check-up Control Diabetes requiere ayuno de 8 a 12 h (HbA1c aislada no requiere ayuno estricto).
-        - RLM-001..004: Entrega de resultados 100% digital en App Chopo / tablet / smartphone (PROHIBIDO mostrar placas radiográficas físicas impresas a contraluz). Paciente en ropa casual para toma de muestra sanguínea y bata clínica en estudios de imagenología.
+        - RLM-001..004: Entrega de resultados 100% digital en App Chopo / tablet / smartphone (PROHIBIDO mostrar placas radiográficas físicas impresas a contraluz, PROHIBIDO agujas perforando la piel o sangre explícita). Paciente en ropa casual para toma de muestra sanguínea y bata clínica en estudios de imagenología.
         `
     };
 };
@@ -297,6 +519,11 @@ export const evaluateCreativeCompliance = async (payload: {
     imageUrl?: string | null;
     track?: string;
     clinicalLine?: string;
+    audienceSegment?: BrandAudienceSegmentKey;
+    funnelStage?: FunnelStage;
+    channelKey?: BrandChannelKey;
+    channelSubformat?: string;
+    assetStage?: AssetStage;
 }): Promise<any> => {
     const res = await fetch('/api/evaluator/single-check', {
         method: 'POST',
@@ -500,30 +727,49 @@ export const fileToGenerativePart = (file: File): Promise<string> => {
 
 export const generateAudienceSegments = async (context: string): Promise<any[]> => {
     try {
+        const brandManual = await fetchBrandManual();
+        const b2cSlices = buildBrandSlices(brandManual, { audienceSegment: 'b2c_patients' });
+        const b2dSlices = buildBrandSlices(brandManual, { audienceSegment: 'b2d_doctors' });
+        const b2bSlices = buildBrandSlices(brandManual, { audienceSegment: 'b2b_enterprises' });
+        const officialName = b2cSlices.dynamicVars.officialName;
+        const slogan = b2cSlices.dynamicVars.slogan;
+
+        const segmentsOverview = {
+            purpose: b2cSlices.segmentContext.purpose,
+            segments: [
+                b2cSlices.segmentContext.segment,
+                b2dSlices.segmentContext.segment,
+                b2bSlices.segmentContext.segment
+            ].filter(Boolean)
+        };
+
         const response = await callGenAiProxy("generateContent", {
             model: 'gemini-3-flash-preview',
             contents: {
                 parts: [{
                     text: `
-                    Eres un experto en investigación de mercados médicos y comportamiento del consumidor en salud en México para Laboratorios Médicos El Chopo ("Tu laboratorio de cabecera").
+                    Eres un experto en investigación de mercados médicos y comportamiento del consumidor en salud en México para ${officialName} ("${slogan}").
                     Contexto Institucional: ${context}
-                    
-                    Tarea: Crea exactamente 3 segmentos de audiencia clínica altamente relevantes para Laboratorios Chopo en México (combinando Pista Paciente B2C y Pista Médico B2B).
-                    
+
+                    Contexto estratégico de segmentos extraído del Manual de Marca:
+                    ${JSON.stringify(segmentsOverview, null, 2)}
+
+                    Tarea: Crea exactamente 3 segmentos de audiencia clínica altamente relevantes en México cubriendo los 3 tracks oficiales: Paciente B2C ("patient"), Médico B2D ("physician") y Empresa B2B ("enterprise").
+
                     Reglas estrictas:
                     - 100% datos sintéticos (cero datos personales reales).
-                    - Contexto cultural y socioeconómico auténtico de México (CDMX, Guadalajara, Monterrey, Puebla, Querétaro).
-                    - Psicología realista de consumidores y médicos reales viendo publicidad en su celular: evalúan claridad comercial, facilidad digital (App Chopo / chopo.com.mx), calidez visual y confianza institucional.
-                    
+                    - Contexto cultural, clínico y socioeconómico auténtico de México (CDMX, Guadalajara, Monterrey, Puebla, Querétaro, Mérida, Hermosillo, Tuxtla Gutiérrez, etc.).
+                    - Psicología realista de pacientes, médicos o responsables de salud empresarial reales viendo comunicación en su celular, correo o sucursal: evalúan claridad comercial, facilidad digital (App Chopo / chopo.com.mx), calidez visual y confianza diagnóstica (nunca hablan con voz corporativa de marca ni actúan como inspectores legales).
+
                     Devuelve un arreglo JSON válido con objetos que sigan esta estructura exacta:
                     [
                         {
                             "track": "patient",
-                            "name": "[Paciente B2C] Nombre del Segmento",
+                            "name": "Nombre del Segmento (Paciente B2C)",
                             "personaName": "Nombre Completo (Edad, Ciudad)",
                             "bio": "Descripción de 2 oraciones...",
                             "demographics": "Rango de edad, Ciudad, NSE...",
-                            "imagePrompt": "Retrato fotográfico realista de una persona mexicana en entorno cotidiano o clínico moderno iluminado, sin texto incrustado..."
+                            "imagePrompt": "Retrato fotográfico realista y cálido de una persona mexicana en entorno cotidiano o clínico luminoso, sin estetoscopio en médicos y sin texto incrustado..."
                         }
                     ]
                     No uses bloques markdown.
@@ -545,38 +791,50 @@ export const generateAudienceSegments = async (context: string): Promise<any[]> 
 
 export const generateSyntheticPersona = async (personaName: string, audienceName: string, context: string): Promise<any> => {
     try {
-        const isPhysician = audienceName.toLowerCase().includes('médico') || audienceName.toLowerCase().includes('b2b') || audienceName.toLowerCase().includes('physician');
+        const { track: resolvedTrack, audienceSegment } = detectTrackAndSegment({ text: audienceName });
+        const brandManual = await fetchBrandManual();
+        const slices = buildBrandSlices(brandManual, { audienceSegment, track: resolvedTrack });
+        const { officialName, slogan, segmentLabel } = slices.dynamicVars;
+
         const prompt = `
-        Eres un analista experto en investigación médica y de salud en México para Laboratorios Médicos El Chopo ("Tu laboratorio de cabecera").
+        Eres un analista experto en investigación médica y comportamiento del consumidor en salud en México para ${officialName} ("${slogan}").
         Genera el perfil detallado para la siguiente persona sintética bajo nuestro esquema fijo depurado.
+
+        Contexto estratégico del segmento objetivo extraído del Manual de Marca:
+        ${JSON.stringify(slices.segmentContext, null, 2)}
 
         **Contexto Institucional:**
         ${context}
 
         **Segmento de Audiencia:**
-        ${audienceName} (${isPhysician ? 'Pista Médico B2B' : 'Pista Paciente B2C'})
+        ${audienceName} (${segmentLabel} — track "${resolvedTrack}")
 
         **Nombre de la Persona:**
         ${personaName}
+
+        Reglas estrictas:
+        - 100% datos sintéticos (cero datos personales reales).
+        - Contexto cultural, clínico y socioeconómico auténtico de México.
+        - Psicología realista viendo comunicación en su celular, correo o sucursal (nunca hablan con voz corporativa de marca ni actúan como inspectores legales).
 
         **Requisitos de Salida (Esquema Fijo Depurado):**
         Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta:
         {
             "name": "${personaName}",
-            "track": "${isPhysician ? 'physician' : 'patient'}",
+            "track": "${resolvedTrack}",
             "age": 42,
-            "job_title": "Ocupación o Especialidad Médica",
-            "bio": "Biografía realista en 2 oraciones sobre su relación con el cuidado de la salud, estudios de laboratorio y uso digital.",
+            "job_title": "Ocupación, Especialidad Médica o Cargo Corporativo",
+            "bio": "Biografía realista en 2 oraciones sobre su relación con el cuidado de la salud, estudios diagnósticos y uso digital.",
             "income": "Nivel de ingreso mensual estimado en MXN",
             "lifestyle_tags": ["tag1", "tag2", "tag3", "tag4"],
             "preferred_products": ["Check-up Control Diabetes", "Hemoglobina Glicosilada (HbA1c)", "Check-up Completo Chopo"],
             "pain_points": [
-                "Punto de dolor realista al ver publicidad médica o acudir al laboratorio 1",
+                "Punto de dolor realista al ver comunicación de salud o coordinar estudios 1",
                 "Punto de dolor 2",
                 "Punto de dolor 3"
             ],
             "goals": [
-                "Objetivo práctico de salud o consulta digital 1",
+                "Objetivo práctico de salud, clínica o salud ocupacional 1",
                 "Objetivo 2"
             ]
         }
@@ -602,12 +860,28 @@ export const generateSyntheticPersona = async (personaName: string, audienceName
 
 export const generateSingleAudienceFromPrompt = async (
     promptText: string,
-    track: 'B2C' | 'B2B',
+    track: 'B2C' | 'B2D' | 'B2B',
     companyDescription: string
 ): Promise<CombinedPersona> => {
-    const isB2B = track === 'B2B';
-    const trackSuffix = isB2B ? '(Médico B2B)' : '(Paciente B2C)';
-    const internalTrack: 'physician' | 'patient' = isB2B ? 'physician' : 'patient';
+    const normalizedTrackCode: 'B2C' | 'B2D' | 'B2B' =
+        track === 'B2D' ? 'B2D' : track === 'B2B' ? 'B2B' : 'B2C';
+    const internalTrack: AudienceTrack =
+        normalizedTrackCode === 'B2D'
+            ? 'physician'
+            : normalizedTrackCode === 'B2B'
+                ? 'enterprise'
+                : 'patient';
+    const audienceSegment: BrandAudienceSegmentKey = resolveSegmentKey(internalTrack);
+    const trackSuffix =
+        internalTrack === 'physician'
+            ? '(Médico B2D)'
+            : internalTrack === 'enterprise'
+                ? '(Empresa B2B)'
+                : '(Paciente B2C)';
+
+    const brandManual = await fetchBrandManual();
+    const slices = buildBrandSlices(brandManual, { audienceSegment, track: internalTrack });
+    const { officialName, slogan, segmentLabel, primaryDestination } = slices.dynamicVars;
 
     const singleAudienceSchema: Schema = {
         type: Type.OBJECT,
@@ -659,34 +933,65 @@ export const generateSingleAudienceFromPrompt = async (
         required: ["name", "personaName", "demographics", "bio", "imagePrompt", "details"]
     };
 
+    const trackRoleExample =
+        internalTrack === 'physician'
+            ? {
+                trackDesc: `B2D (${segmentLabel}) — Médico Prescriptor / Especialista / Profesional de la Salud en México (track: "physician")`,
+                nameEx: `Médico General Recién Egresado ${trackSuffix}`,
+                personaEx: 'Dr. Sebastián Mora, 26',
+                jobHint: 'Especialidad o práctica clínica en México (consultorio, hospital o clínica).',
+                productsHint: 'Check-up Control Diabetes, Hemoglobina Glicosilada HbA1c, Perfil Cardiometabólico, Rayos X de Tórax Digital, Resonancia Magnética, Biomarcadores Especializados'
+            }
+            : internalTrack === 'enterprise'
+                ? {
+                    trackDesc: `B2B (${segmentLabel}) — Responsable de Recursos Humanos / Salud Ocupacional / Compras Corporativas en Empresas de México (track: "enterprise")`,
+                    nameEx: `Directora de Recursos Humanos Manufactura ${trackSuffix}`,
+                    personaEx: 'Lic. Claudia Herrera, 41',
+                    jobHint: 'Cargo corporativo (Dirección de RH, Salud Ocupacional, Bienestar Organizacional o Compras Corporativas).',
+                    productsHint: 'Check-up Ejecutivo Corporativo, Exámenes Médicos de Admisión y Periódicos, Check-up Control Diabetes Corporativo, Convenio Alianza por tu Bienestar, Campañas de Prevención en Sitio'
+                }
+                : {
+                    trackDesc: `B2C (${segmentLabel}) — Paciente / Consumidor de Salud y Prevención en México (track: "patient")`,
+                    nameEx: `Mujer Embarazada Primeriza ${trackSuffix}`,
+                    personaEx: 'Mariana Ríos, 29',
+                    jobHint: 'Ocupación realista en México.',
+                    productsHint: 'Check-up Control Diabetes, Hemoglobina Glicosilada HbA1c, Check-up Completo Chopo, Mastografía Digital + Ultrasonido, Ultrasonido Obstétrico, Química Sanguínea de 45 elementos, Perfil Tiroideo'
+                };
+
     const prompt = `
-    Eres el Director de Investigación de Mercados Clínicos y Comportamiento del Consumidor de Laboratorios Médicos El Chopo ("Tu laboratorio de cabecera").
-    Construye exactamente 1 perfil de audiencia clínico completo (CombinedPersona) en español de México (es-MX) a partir de la descripción en lenguaje natural del usuario y la pista seleccionada.
+    Eres un experto en investigación de mercados médicos y comportamiento del consumidor en salud en México para ${officialName} ("${slogan}").
+    Construye exactamente 1 perfil de audiencia sintético completo (CombinedPersona) en español de México (es-MX) para la pista "${internalTrack}" a partir de la descripción del usuario.
+
+    Contexto estratégico del segmento objetivo extraído del Manual de Marca:
+    ${JSON.stringify(slices.segmentContext, null, 2)}
 
     **Contexto Institucional:**
-    ${companyDescription || "Laboratorios Médicos El Chopo - Diagnóstico clínico e imagenología en México"}
+    ${companyDescription || `${officialName} - Diagnóstico clínico e imagenología en México`}
 
     **Pista Seleccionada:**
-    ${isB2B ? 'B2B — Médico Prescriptor / Especialista / Profesional de la Salud en México' : 'B2C — Paciente / Consumidor de Salud y Prevención en México'}
+    ${trackRoleExample.trackDesc}
 
     **Descripción de la Audiencia Solicitada por el Usuario:**
     "${promptText}"
 
     **Reglas Estrictas de Construcción:**
-    1. "name": Nombre claro y ejecutivo del segmento incluyendo entre paréntesis "${trackSuffix}" al final (ejemplo: "${isB2B ? 'Médico General Recién Egresado (Médico B2B)' : 'Mujer Embarazada Primeriza (Paciente B2C)'}").
-    2. "personaName": Nombre representativo mexicano con edad (ejemplo: "${isB2B ? 'Dr. Sebastián Mora, 26' : 'Mariana Ríos, 29'}").
-    3. "demographics": Rango de edad, ocupación/especialidad, ciudad/zona en México (CDMX, Guadalajara, Monterrey, Puebla, Querétaro, etc.) y nivel socioeconómico (NSE).
-    4. "bio": Historia clínica, contexto profesional y estilo de vida detallado (3 a 4 oraciones realistas).
-    5. "imagePrompt": Prompt fotográfico realista para retrato de estudio o entorno clínico/cotidiano iluminado en México, sin texto incrustado, sin agujas perforando la piel y sin placas físicas viejas.
+    - 100% datos sintéticos (cero datos personales reales).
+    - Contexto cultural, clínico y socioeconómico auténtico de México (CDMX, Guadalajara, Monterrey, Puebla, Querétaro, Mérida, Hermosillo, Tuxtla Gutiérrez, etc.).
+    - Psicología realista de pacientes, médicos o responsables de salud empresarial reales viendo comunicación en su celular, correo o sucursal: evalúan claridad comercial, facilidad digital (App Chopo / ${primaryDestination}), calidez visual y confianza diagnóstica (nunca hablan con voz corporativa de marca ni actúan como inspectores legales).
+    1. "name": Nombre claro y ejecutivo del segmento incluyendo al final exactamente "${trackSuffix}" (ejemplo: "${trackRoleExample.nameEx}").
+    2. "personaName": Nombre representativo mexicano con edad (ejemplo: "${trackRoleExample.personaEx}").
+    3. "demographics": Rango de edad, ocupación/especialidad/cargo, ciudad/zona en México y nivel socioeconómico (NSE).
+    4. "bio": Historia, contexto profesional/familiar y relación con la salud detallada (3 a 4 oraciones realistas).
+    5. "imagePrompt": Prompt fotográfico realista y cálido para retrato natural de esta persona mexicana en entorno cotidiano, consultorio luminoso u oficina en México, sin estetoscopio en el cuello si es médico, sin texto incrustado, sin agujas perforando la piel y sin placas físicas viejas.
     6. "details":
-       - "age": Edad numérica (ej. 26).
-       - "income": Rango de ingreso mensual estimado en MXN o nivel socioeconómico (ej. "$28,000 - $45,000 MXN/mes (NSE C+)").
-       - "job_title": Ocupación o especialidad médica (con mención de cédula o ámbito clínico si es B2B).
-       - "bio": Resumen de su relación con estudios diagnósticos, uso digital (App Chopo / chopo.com.mx) y toma de decisiones (2 a 3 oraciones).
-       - "pain_points": 3 a 4 dolores o barreras reales frente a estudios clínicos o publicidad médica en celular.
-       - "goals": 3 a 4 motivadores o metas claras de salud / práctica médica.
+       - "age": Edad numérica realista.
+       - "income": Rango de ingreso mensual estimado en MXN o nivel socioeconómico.
+       - "job_title": ${trackRoleExample.jobHint}
+       - "bio": Resumen de su relación con estudios diagnósticos, uso digital (App Chopo / ${primaryDestination}) y toma de decisiones (2 a 3 oraciones).
+       - "pain_points": 3 a 4 dolores o barreras reales frente a estudios clínicos, convenios o publicidad de salud.
+       - "goals": 3 a 4 motivadores o metas claras de salud, práctica clínica o bienestar corporativo.
        - "lifestyle_tags": 4 a 5 etiquetas cortas del perfil.
-       - "preferred_products": 3 a 5 estudios diagnósticos o check-ups de Laboratorios Chopo altamente afines al perfil (ej. Check-up Control Diabetes, Hemoglobina Glicosilada HbA1c, Check-up Completo Chopo, Mastografía Digital + Ultrasonido, Ultrasonido Obstétrico / Prenatal, Química Sanguínea de 45 elementos, Perfil Tiroideo, Biomarcadores / Marcadores Tumorales, Rayos X de Tórax Digital).
+       - "preferred_products": 3 a 5 estudios, check-ups o programas afines (${trackRoleExample.productsHint}).
        - "charts": { "brand_affinity": { "labels": ["Calidad Analítica", "Precio / Promoción", "Rapidez Digital", "Cercanía Sucursal"], "data": [n1, n2, n3, n4] } } con valores numéricos realistas de 0 a 100.
 
     Devuelve únicamente el objeto JSON válido.
@@ -707,28 +1012,66 @@ export const generateSingleAudienceFromPrompt = async (
     const raw = JSON.parse(cleanText);
 
     const rawName = String(raw.name || promptText.slice(0, 48)).trim();
-    const normalizedName = /\((?:Paciente\s*B2C|Médico\s*B2B|B2C|B2B)\)/i.test(rawName) || rawName.startsWith('[')
-        ? rawName
-        : `${rawName} ${trackSuffix}`;
+    const hasExpectedTag =
+        internalTrack === 'physician'
+            ? /\((?:M[eé]dico\s*B2D|B2D)\)/i.test(rawName)
+            : internalTrack === 'enterprise'
+                ? /\((?:Empresa\s*B2B|B2B)\)/i.test(rawName)
+                : /\((?:Paciente\s*B2C|B2C)\)/i.test(rawName);
+    const cleanedRawName = rawName
+        .replace(/\s*\((?:Paciente\s*B2C|M[eé]dico\s*B2[BD]|Empresa\s*B2B|B2C|B2D|B2B)\)\s*$/i, '')
+        .trim();
+    const normalizedName = hasExpectedTag ? rawName : `${cleanedRawName || rawName} ${trackSuffix}`;
 
-    const age = Number(raw.details?.age) || (isB2B ? 34 : 36);
-    const jobTitle = String(raw.details?.job_title || (isB2B ? 'Médico Prescriptor' : 'Profesionista')).trim();
-    const personaName = String(raw.personaName || (isB2B ? `Dr. Alejandro Vega, ${age}` : ` Sofía Méndez, ${age}`)).trim();
+    const age = Number(raw.details?.age) || (internalTrack === 'enterprise' ? 40 : internalTrack === 'physician' ? 34 : 36);
+    const defaultJobTitle =
+        internalTrack === 'physician'
+            ? 'Médico Prescriptor'
+            : internalTrack === 'enterprise'
+                ? 'Director de Recursos Humanos y Salud Ocupacional'
+                : 'Profesionista';
+    const jobTitle = String(raw.details?.job_title || defaultJobTitle).trim();
+    const defaultPersonaName =
+        internalTrack === 'physician'
+            ? `Dr. Alejandro Vega, ${age}`
+            : internalTrack === 'enterprise'
+                ? `Lic. Claudia Herrera, ${age}`
+                : `Sofía Méndez, ${age}`;
+    const personaName = String(raw.personaName || defaultPersonaName).trim();
     const bio = String(raw.bio || raw.details?.bio || promptText).trim();
-    const demographics = String(raw.demographics || `${age} años, Urbano México, ${isB2B ? 'Médico B2B' : 'Paciente B2C'}`).trim();
+    const defaultDemographicsLabel =
+        internalTrack === 'physician'
+            ? 'Médico B2D'
+            : internalTrack === 'enterprise'
+                ? 'Empresa B2B'
+                : 'Paciente B2C';
+    const demographics = String(raw.demographics || `${age} años, Urbano México, ${defaultDemographicsLabel}`).trim();
     const painPoints = Array.isArray(raw.details?.pain_points) && raw.details.pain_points.length > 0
         ? raw.details.pain_points
         : ['Falta de tiempo para trámites presenciales', 'Información confusa sobre requisitos de ayuno o preparación'];
     const goals = Array.isArray(raw.details?.goals) && raw.details.goals.length > 0
         ? raw.details.goals
-        : ['Recibir resultados digitales confiables en la App Chopo', 'Agendar en línea de forma rápida y con precio transparente'];
+        : internalTrack === 'enterprise'
+            ? ['Implementar convenios preventivos ágiles para colaboradores', 'Contar con reportes claros y cobertura nacional confiable']
+            : ['Recibir resultados digitales confiables en la App Chopo', 'Agendar en línea de forma rápida y con precio transparente'];
     const lifestyleTags = Array.isArray(raw.details?.lifestyle_tags) && raw.details.lifestyle_tags.length > 0
         ? raw.details.lifestyle_tags
-        : [isB2B ? 'Práctica Clínica' : 'Salud Preventiva', 'Resultados Digitales', 'App Chopo'];
+        : internalTrack === 'physician'
+            ? ['Práctica Clínica', 'Resultados Digitales', 'Precisión Diagnóstica']
+            : internalTrack === 'enterprise'
+                ? ['Salud Ocupacional', 'Bienestar Corporativo', 'Cobertura Nacional']
+                : ['Salud Preventiva', 'Resultados Digitales', 'App Chopo'];
     const preferredProducts = Array.isArray(raw.details?.preferred_products) && raw.details.preferred_products.length > 0
         ? raw.details.preferred_products
-        : ['Check-up Completo Chopo', 'Química Sanguínea de 45 elementos', 'Check-up Control Diabetes'];
-    const defaultAffinityData = isB2B ? [96, 76, 92, 85] : [92, 90, 89, 88];
+        : internalTrack === 'enterprise'
+            ? ['Check-up Ejecutivo Corporativo', 'Exámenes Médicos Periódicos', 'Check-up Control Diabetes']
+            : ['Check-up Completo Chopo', 'Química Sanguínea de 45 elementos', 'Check-up Control Diabetes'];
+    const defaultAffinityData =
+        internalTrack === 'physician'
+            ? [96, 76, 92, 85]
+            : internalTrack === 'enterprise'
+                ? [94, 88, 93, 90]
+                : [92, 90, 89, 88];
 
     return {
         id: `aud_${internalTrack}_${Date.now()}`,
@@ -745,7 +1088,7 @@ export const generateSingleAudienceFromPrompt = async (
         preferred_products: preferredProducts,
         imagePrompt: String(
             raw.imagePrompt ||
-            `Retrato fotográfico realista de estudio de ${personaName}, ${jobTitle} en México, iluminación cálida y profesional, sin texto incrustado`
+            `Retrato fotográfico realista y cálido de ${personaName}, ${jobTitle} en México, luz natural de día, sin estetoscopio en médicos, sin texto incrustado`
         ).trim(),
         imageUrl: '',
         isStandard: false,
@@ -778,34 +1121,46 @@ export const generateSyntheticUsersBatch = async (
     additionalClinicalContext?: string
 ): Promise<any[]> => {
     try {
-        const isPhysician =
-            basePersona?.track === 'physician' ||
-            /médico|b2b|physician/i.test(String(basePersona?.name || ''));
+        const { track: resolvedTrack, audienceSegment } = detectPersonaTrack(basePersona);
+        const brandManual = await fetchBrandManual();
+        const slices = buildBrandSlices(brandManual, { audienceSegment, track: resolvedTrack });
+        const { officialName, slogan, segmentLabel, segmentCode, primaryDestination } = slices.dynamicVars;
+
         const extraContextBlock = additionalClinicalContext && additionalClinicalContext.trim()
-            ? `\n        **CONTEXTO CLÍNICO O DE CAMPAÑA ADICIONAL PARA VARIAR LOS PERFILES DEL LOTE:**\n        CONTEXTO CLÍNICO O DE CAMPAÑA ADICIONAL PARA VARIAR LOS PERFILES DEL LOTE: "${additionalClinicalContext.trim()}". Asegúrate de que los ${count} usuarios sintéticos reflejen este contexto con matices individuales distintos sin ser clones idénticos.\n`
+            ? `\n        **CONTEXTO CLÍNICO O DE CAMPAÑA ADICIONAL PARA VARIAR LOS PERFILES DEL LOTE:**\n        "${additionalClinicalContext.trim()}". Asegúrate de que los ${count} usuarios sintéticos reflejen este contexto con matices individuales distintos sin ser clones idénticos.\n`
             : '';
 
         const prompt = `
-        You are an expert market researcher for Laboratorios Médicos El Chopo. Based on the provided base persona and company context, generate exactly ${count} unique synthetic user profiles. Each user should inherit the high-level traits of the base persona (${isPhysician ? 'B2B Prescribing Physician' : 'B2C Patient'}) but have distinct details.
+        Eres un experto en investigación de mercados médicos y comportamiento del consumidor en salud en México para ${officialName} ("${slogan}").
+        Con base en la audiencia semilla y el contexto del segmento, genera exactamente ${count} perfiles sintéticos únicos para la pista "${resolvedTrack}" (${segmentCode} — ${segmentLabel}). Cada perfil hereda el arquetipo general pero con historia, ciudad de México, edad y matices individuales distintos.
 
-        **Company Context:**
-        ${companyDescription}
+        Contexto estratégico del segmento objetivo extraído del Manual de Marca:
+        ${JSON.stringify(slices.segmentContext, null, 2)}
 
-        **Base Persona:**
+        **Contexto Institucional:**
+        ${companyDescription || officialName}
+
+        **Audiencia Base:**
         Name: ${basePersona.name || basePersona.personaName}
         Representative Archetype: ${basePersona.personaName || ''}
-        Track: ${isPhysician ? 'physician' : 'patient'}
+        Track: ${resolvedTrack}
         Bio: ${basePersona.bio || (basePersona.details ? basePersona.details.bio : '')}
         Demographics: ${basePersona.demographics || (basePersona.details ? basePersona.details.age : '')}
         Pain Points: ${JSON.stringify(basePersona.pain_points || basePersona.details?.pain_points || [])}
         Goals: ${JSON.stringify(basePersona.goals || basePersona.details?.goals || [])}
         Preferred Studies: ${JSON.stringify(basePersona.preferred_products || basePersona.details?.preferred_products || [])}
         ${extraContextBlock}
+
+        Reglas estrictas:
+        - 100% datos sintéticos (cero datos personales reales).
+        - Contexto cultural, clínico y socioeconómico auténtico de México (CDMX, Guadalajara, Monterrey, Puebla, Querétaro, Mérida, Hermosillo, Tuxtla Gutiérrez, etc.).
+        - Psicología realista de pacientes, médicos o responsables de salud empresarial reales viendo comunicación en su celular, correo o sucursal (nunca hablan con voz corporativa de marca ni actúan como inspectores legales).
+
         **Output Requirements:**
         Generate ONLY a valid JSON array of ${count} objects, with each object following this exact structure:
         {
             "name": "Unique Fake Name",
-            "track": "${isPhysician ? 'physician' : 'patient'}",
+            "track": "${resolvedTrack}",
             "personaName": "${basePersona.name || basePersona.personaName}",
             "bio": "Unique 1-2 sentence bio tailored to this specific generated person${additionalClinicalContext?.trim() ? ' incorporating the additional clinical context' : ''}.",
             "demographics": "Specific age, location in Mexico, and profile",
@@ -813,26 +1168,26 @@ export const generateSyntheticUsersBatch = async (
             "goals": ["goal 1", "goal 2"],
             "cognitiveStyle": {
                 "informationDensityPreference": "e.g. Concisa y directa en celular",
-                "primaryTrustSignal": "e.g. Prestigio Chopo y resultados digitales en App",
+                "primaryTrustSignal": "e.g. Trayectoria diagnóstica y resultados digitales en App Chopo",
                 "decisionVelocity": "e.g. Rápida si el beneficio es claro",
                 "riskTolerance": "e.g. Baja ante mensajes alarmistas"
             },
             "lifestyleFriction": {
                 "dailyGrindContext": "e.g. Horario laboral ocupado",
-                "financialMindset": "e.g. Busca promociones claras pagando en línea",
-                "brandLoyaltyQuotient": "e.g. Alta hacia Tu laboratorio de cabecera",
-                "householdPowerDynamic": "e.g. Decisor de salud familiar"
+                "financialMindset": "e.g. Busca promociones claras o convenios transparentes",
+                "brandLoyaltyQuotient": "e.g. Alta hacia ${officialName}",
+                "householdPowerDynamic": "e.g. Decisor de salud familiar, clínico o corporativo"
             },
             "digitalFootprint": {
                 "last3SearchQueries": ["query 1", "query 2", "query 3"],
-                "unsubscribeTrigger": "Anuncios largos tipo folleto médico",
-                "platformEcosystem": "App Chopo / WhatsApp / Instagram",
-                "recentBigLifeEvent": "Check-up preventivo anual"
+                "unsubscribeTrigger": "Anuncios largos tipo folleto denso",
+                "platformEcosystem": "App Chopo / ${primaryDestination} / WhatsApp / Redes",
+                "recentBigLifeEvent": "Check-up preventivo o evaluación clínica reciente"
             },
             "psychographicFlavor": {
                 "theOneLuxury": "Salud preventiva sin filas",
-                "aspirationVsReality": "Quiere cuidarse sin perder toda la mañana",
-                "socialCauseAlignment": "Prevención de diabetes familiar"
+                "aspirationVsReality": "Quiere resultados confiables sin perder toda la mañana",
+                "socialCauseAlignment": "Prevención oportuna y bienestar integral"
             }
         }
         ${getLanguageInstruction()}
@@ -854,8 +1209,19 @@ export const generateSyntheticUsersBatch = async (
     }
 };
 
-export const generateImageFromPrompt = async (prompt: string): Promise<string> => {
-    const imgData = await generateImage(prompt, 'gemini-2.5-flash-image');
+export const generateImageFromPrompt = async (
+    prompt: string,
+    aspectRatio: string = "1:1",
+    channelKey?: BrandChannelKey
+): Promise<string> => {
+    const brandManual = await fetchBrandManual();
+    const slices = buildBrandSlices(brandManual, { channelKey });
+    const cleanDirective = buildCleanPhotoDirective(slices.photoSlice);
+    const trimmedPrompt = String(prompt || '').trim();
+    const finalPrompt = trimmedPrompt.includes(cleanDirective.slice(0, 48))
+        ? trimmedPrompt
+        : `${trimmedPrompt}. ${cleanDirective}`;
+    const imgData = await generateImage(finalPrompt, 'gemini-2.5-flash-image', aspectRatio);
     if (imgData) {
         return `data:image/jpeg;base64,${imgData}`;
     }
@@ -865,103 +1231,148 @@ export const generateImageFromPrompt = async (prompt: string): Promise<string> =
 export const generateMarketingCampaignAssets = async (
     productName: string,
     targetAudience: string,
-    context: string
+    context: string,
+    brandV4Options?: BrandV4CampaignOptions
 ): Promise<MarketingAssets> => {
-    const isB2B =
-        targetAudience.toLowerCase().includes('médico') ||
-        targetAudience.toLowerCase().includes('b2b') ||
-        targetAudience.toLowerCase().includes('especialista') ||
-        targetAudience.toLowerCase().includes('physician');
+    const { track: resolvedTrack, audienceSegment } = detectTrackAndSegment({
+        audienceSegment: brandV4Options?.audienceSegment,
+        text: `${targetAudience || ''} ${context || ''}`
+    });
+    const funnelStage: FunnelStage = brandV4Options?.funnelStage || 'performance';
+    const channelKey: BrandChannelKey = brandV4Options?.channelKey || 'social_media';
 
-    const track = isB2B ? 'physician' : 'patient';
-    const ragData = await retrieveRagContext(productName, track);
+    const [brandManual, ragData] = await Promise.all([
+        fetchBrandManual(),
+        retrieveRagContext(productName, resolvedTrack, targetAudience)
+    ]);
+    const slices = buildBrandSlices(brandManual, {
+        audienceSegment,
+        track: resolvedTrack,
+        funnelStage,
+        channelKey
+    });
+    const channelSubformat =
+        brandV4Options?.channelSubformat ||
+        getSubformatsForChannel(slices.channelKey, brandManual)[0] ||
+        'Post / Carrusel 4:5';
+    const isStorySubformat = /historia|story/i.test(channelSubformat);
+
+    const {
+        officialName,
+        slogan,
+        contactBar,
+        pronoun,
+        segmentCode,
+        segmentLabel,
+        primaryDestination,
+        precautionaryLegend,
+        channelLabel
+    } = slices.dynamicVars;
+
     const useCase = ragData.useCase;
+    const isPhysician = resolvedTrack === 'physician';
 
-    const cofeprisPermit = isB2B
+    const cofeprisPermit = isPhysician
         ? (useCase?.cofeprisPermitB2B || 'Aviso de Publicidad COFEPRIS No. 243300202A0911')
-        : (useCase?.cofeprisPermitB2C || 'Permiso de Publicidad COFEPRIS No. 243300201A1842');
-    const mandatoryLegend = isB2B
-        ? 'Información exclusiva para profesionales de la salud.'
-        : 'Consulte a su médico.';
+        : (useCase?.cofeprisPermitB2C || 'Permiso de Publicidad COFEPRIS No. 2609152002A00518');
+    const mandatoryLegend = precautionaryLegend;
     const responsableSanitario =
         useCase?.responsableSanitario ||
-        'Responsable Sanitario: Dr. Alejandro Rivera Gómez, Médico Cirujano (UNAM), Cédula Profesional 3918472.';
+        'Responsable Sanitario: Q.F.B. Jessica Alejandra Rivera Domínguez, Céd. Prof. 3602644, Univ. Simón Bolívar.';
     const promoText =
         useCase?.defaultPromoText ||
-        'Precio especial exclusivo pagando en línea en chopo.com.mx o App Chopo. Vigencia al 31 de diciembre de 2026.';
+        `Precio especial exclusivo pagando en línea en ${primaryDestination} o App Chopo.`;
+
+    const funnelRule = slices.voiceAndFunnelSlice.funnelStage || {};
+    const citationRule = slices.voiceAndFunnelSlice.medicalCitationsRule || {};
 
     const copyPromise = callGenAiProxy("generateContent", {
         model: 'gemini-3-flash-preview',
         contents: {
             parts: [{
                 text: `
-                Eres el Director Creativo y Médico de Laboratorios Chopo ("Tu laboratorio de cabecera").
-                Diseña una campaña multicanal de alta conversión y alto impacto emocional para el estudio "${productName}" dirigida a "${targetAudience}" (${isB2B ? 'Pista Médico B2B' : 'Pista Paciente B2C'}).
+                Eres el Director Creativo y Médico de ${officialName} ("${slogan}").
+                Debes diseñar los activos multicanal y el prompt de fotografía base limpia para el estudio o paquete "${productName}" cumpliendo de forma estricta e innegociable con los 2 bloques determinísticos del Manual de Marca V4 y el contexto clínico/regulatorio RAG.
+
+                === 1. REGLAS VERBALES, DE FUNNEL Y DE CANAL DEL MANUAL DE MARCA (${officialName}) ===
+                ${JSON.stringify(slices.voiceAndFunnelSlice, null, 2)}
+
+                === 2. REGLAS DE FOTOGRAFÍA BASE E ILUMINACIÓN DEL MANUAL DE MARCA ===
+                ${JSON.stringify(slices.photoSlice, null, 2)}
+
+                === 3. CATÁLOGO CLÍNICO, COFEPRIS Y REALISMO MÉDICO OPERATIVO (RAG) ===
+                ${ragData.combinedContext}
 
                 **Contexto Institucional:**
-                ${brandConfig.companyName || "Laboratorios Chopo"} - ${context}
+                ${officialName} (${brandConfig.companyName || officialName}) - ${context}
 
-                **INSTRUCCIÓN OBLIGATORIA DEL USUARIO (REGLA SUPREMA — SEGUIR AL PIE DE LA LETRA):**
+                **INSTRUCCIÓN OBLIGATORIA DEL USUARIO (REGLA SUPREMA — SEGUIR AL PIE DE LA LETRA SIN VIOLAR INVARIANTES DE MARCA NI COFEPRIS):**
                 """
                 ${targetAudience}
                 """
-                ⚠️ ATENCIÓN CRÍTICA: Debes obedecer AL 100% Y AL PIE DE LA LETRA todas las instrucciones específicas que el usuario haya escrito arriba (sobre qué debe decir o mostrar el email, el post de redes sociales, la promoción, el tono, el enfoque visual o el mensaje). PROHIBIDO ignorar, contradecir o cambiar lo que el usuario pidió específicamente. Si el usuario pidió incluir algo específico en el email o en la imagen, DEBE aparecer exactamente como lo solicitó.
 
-                === REGLAS OFICIALES DE CUMPLIMIENTO RAG (COFEPRIS, MARCA CHOPO, CLÍNICA Y REALISMO VISUAL) ===
-                ${ragData.combinedContext}
-
-                === PARÁMETROS OBLIGATORIOS DEL CASO DE USO ===
+                === PARÁMETROS ACTIVOS DE LA CAMPAÑA ===
                 - Estudio / Paquete: ${productName}
-                - Condición Promocional (BRD-005): ${promoText}
-                - Leyenda Precautoria (COF-002): ${mandatoryLegend}
-                - Folio COFEPRIS (COF-001): ${cofeprisPermit}
-                - Responsable Sanitario (COF-003): ${responsableSanitario}
+                - Segmento de Audiencia: ${slices.audienceSegment} (${segmentCode} — ${segmentLabel})
+                - Pronombre Obligatorio del Segmento: ${pronoun}
+                - Destino Digital Principal: ${primaryDestination}
+                - Etapa del Funnel: ${slices.funnelStage}
+                - Canal y Subformato Seleccionado: ${slices.channelKey} (${channelLabel}) — ${channelSubformat}
+                - Slogan Obligatorio (incluir una sola vez): "${slogan}"
+                - Barra Oficial de Contacto (sin numerar): ${contactBar}
+                - Condición Promocional: ${promoText}
+                - Leyenda Precautoria del Segmento: ${mandatoryLegend}
+                - Permiso / Aviso COFEPRIS a incluir textualmente: ${cofeprisPermit}
+                - Responsable Sanitario a incluir textualmente: ${responsableSanitario}
 
-                REGLAS CRÍTICAS DE ESTILO PUBLICITARIO (02_campaign_creator):
-                1. BREVEDAD, EMPATÍA Y PUNCH COMERCIAL EN REDES SOCIALES (social.caption):
-                   - Máximo 35 a 45 palabras comerciales ANTES del pie legal obligatorio (salvo que el usuario pida otra extensión en su instrucción).
-                   - Línea 1: Gancho empático/consciente + valor real de "${productName}" siguiendo fielmente la instrucción del usuario.
-                   - Línea 2: Llamado a la acción directo con la condición promocional en línea (${promoText}).
-                   - Línea 3 (Pie legal obligatorio compacto): "${mandatoryLegend} ${cofeprisPermit}. ${responsableSanitario}"
-                2. CORREO ELECTRÓNICO TIPO BANNER VISUAL MODERNO (email):
-                   - La mayoría de los correos de marketing modernos NO son bloques largos de texto plano: son un **Banner Visual con texto corto no invasivo integrado** + un mensaje breve y personalizado de 2 a 3 líneas.
-                   - OBEDECE AL PIE DE LA LETRA cualquier instrucción que el usuario haya dado para el correo.
-                   - Estructura obligatoria del objeto "email":
-                     * "subject": Asunto personalizado y directo (fiel al prompt del usuario).
-                     * "preheader": Texto corto de vista previa (10 a 15 palabras).
-                     * "bannerHeadline": Titular corto y no invasivo que va sobre la imagen/banner del correo (4 a 8 palabras máximo, con alto impacto visual y fiel a la instrucción del usuario).
-                     * "bannerSubheadline": Subtítulo breve o beneficio clave en 1 línea corta para el cintillo del banner (ej. "${productName} • Beneficio exclusivo en línea").
-                     * "body": Texto breve, cálido y directo de acompañamiento debajo del banner (máximo 25 a 45 palabras, salvo que el usuario haya pedido algo distinto; NUNCA escribas las palabras literales "Incluye pie legal:").
-                     * "ctaText": Texto del botón de acción (ej. "Agendar Estudio en Línea").
+                REGLAS OBLIGATORIAS DE EJECUCIÓN (02_campaign_creator):
+                1. INVARIANTES VERBALES DE MARCA (CERO EXCEPCIONES):
+                   - CERO SIGNOS DE ADMIRACIÓN: Queda estrictamente prohibido usar "¡" o "!" en titulares, cuerpos, correos, asuntos, preheaders, botones CTA o guiones, incluso en Performance o descuentos.
+                   - PRIMERA PERSONA PLURAL ("NOSOTROS"): Habla siempre desde "nosotros" (ej. "Te acompañamos...", "Cuidamos..."). Prohibido hablar de la marca en tercera persona.
+                   - PRONOMBRE EXACTO SEGÚN SEGMENTO (${segmentCode}): Usa estrictamente "${pronoun}" respetando las guías de tono de este segmento en la sección 1.
+                   - TITULAR SEGÚN ETAPA DEL FUNNEL (${slices.funnelStage}): ${funnelRule.headlineRule || 'Respeta estrictamente las reglas de titular de la etapa del funnel seleccionada sin signos de admiración.'}
+                   - FOCO Y CTA DEL FUNNEL: ${funnelRule.bodyFocus || ''} ${funnelRule.ctaPlacementAndStyle || ''}
+                   - SLOGAN Y CONTACTO: Incluye exactamente el slogan "${slogan}" una sola vez. ${isStorySubformat ? 'Por ser Historia, NO incluyas teléfonos ni barra completa de contacto.' : `Cuando incluyas canales de contacto, escríbelos en una barra limpia y natural (sin numerarlos con 1., 2., 3., 4.) respetando el orden oficial: ${contactBar}.`}
+                   - CITAS MÉDICAS: Si citas datos o estadísticas médicas, usa fuente verificable <= ${citationRule.maxAgeYears ?? 5} años en formato ${citationRule.citationStandard || 'APA 7'}.
+                   - Prohibido meter instructivos operativos internos de sucursal ("te damos bata desechable", "quítate objetos metálicos") en copies comerciales.
+                2. REDES SOCIALES (social.caption) Y ADAPTACIÓN AL CANAL (${channelSubformat}):
+                   - Aplica las reglas de copy del canal: ${slices.voiceAndFunnelSlice.channelCopyRules || 'Textos sintéticos y escaneables.'}
+                   - En redes sociales, mantén 35 a 45 palabras comerciales ANTES de la barra de contacto y pie legal compacto: "${mandatoryLegend} ${cofeprisPermit}. ${responsableSanitario}"
+                3. CORREO ELECTRÓNICO TIPO BANNER VISUAL MODERNO (email):
+                   - Obedece las reglas verbales (cero signos de admiración, 1a persona plural, pronombre "${pronoun}", slogan "${slogan}") y cualquier instrucción específica del usuario.
+                   - Estructura obligatoria de "email":
+                     * "subject": Asunto directo y claro (sin signos de admiración).
+                     * "preheader": Texto corto de vista previa (10 a 15 palabras, sin signos de admiración).
+                     * "bannerHeadline": Titular corto no invasivo (4 a 8 palabras, acorde a la etapa "${slices.funnelStage}", sin signos de admiración).
+                     * "bannerSubheadline": Subtítulo breve o beneficio clave (sin signos de admiración).
+                     * "body": Mensaje breve, cálido y directo (25 a 45 palabras, salvo instrucción distinta del usuario; sin signos de admiración; nunca escribas "Incluye pie legal:").
+                     * "ctaText": Texto del botón CTA en verbo concreto sin signos de admiración (ej. "Cotiza y agenda en línea").
                      * "legalFooter": "${mandatoryLegend} ${cofeprisPermit}. ${responsableSanitario}"
-                3. DIRECCIÓN DE ARTE Y REALISMO VISUAL PARA LA IMAGEN / BANNER (imagePrompt):
-                   - OBEDECE PRIMERO Y AL PIE DE LA LETRA EL ENFOQUE CREATIVO DEL USUARIO Y EL SEGMENTO (${isB2B ? 'Médico B2B' : 'Paciente B2C'}):
-                   - PROHIBIDO generar fotos genéricas y frías de catálogo donde solo aparece un médico posando junto a una máquina con una tablet, a menos que la audiencia sea exclusivamente Médico B2B o el usuario lo pida expresamente.
-                   - Si la audiencia es PACIENTE B2C (ej. Mujeres / Prevención de Cáncer de Mama / Mastografía Digital + Ultrasonido):
-                     * El protagonista visual DEBE ser la paciente mujer mexicana (ej. 35-50 años) transmitiendo prevención oportuna, amor propio, tranquilidad familiar y el valor de detectar a tiempo.
-                     * Si el objetivo pide "enfoque rosa" o concientización sobre cáncer de mama: usa una dirección de arte editorial cálida y empática con sutiles acentos en tonos rosa suave/cálido combinados con la limpieza clínica de Chopo (luz natural cálida, listón o prenda en tono rosa sutil, abrazo familiar o acompañamiento humano cálido de una especialista mujer, sin ser explícito ni alarmista).
-                   - Composición pensada para funcionar también como **Banner de Email Marketing** (con aire visual limpio para que el cintillo de texto no invasivo luzca profesional).
-                   - Reglas negativas estrictas (RLM-001 a RLM-004): PROHIBIDO mostrar placas radiográficas físicas impresas a contraluz, PROHIBIDO mostrar agujas perforando la piel o sangre explícita, PROHIBIDO texto deformado incrustado en la foto.
+                4. PROMPT DE FOTOGRAFÍA BASE LIMPIA ("imagePrompt" para Flujo 2B — SIN ELEMENTOS DE DISEÑO GRÁFICO):
+                   - Aplica ÚNICAMENTE las reglas fotográficas de la sección 2 (fotografía pura, realista, tonos cálidos con luz natural de día, personas mexicanas/latinas reales en actitud tranquila y relajada, ambientación acorde a ambientPromptGuidance y reglas fotográficas del canal "${channelSubformat}").
+                   - Si aparecen médicos, deben portar bata blanca impecable usando tablet o pantalla digital, y PROHÍBE EXPLÍCITAMENTE cualquier estetoscopio colgado en el cuello.
+                   - Exige el equipo médico exacto para "${productName}" y resultados 100% digitales (cero placas radiográficas físicas impresas a contraluz, cero agujas perforando piel o sangre explícita, cero cabezas o rostros cortados).
+                   - PROHÍBE EXPLÍCITAMENTE texto incrustado, letras, logotipos, círculos de descuento y líneas verdes vectoriales en la foto generada, dejando aire visual limpio y margen interior de seguridad acorde a "${channelSubformat}".
 
                 Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura:
                 {
-                    "imagePrompt": "Descripción fotográfica editorial detallada en español, 100% fiel a la instrucción del usuario, con composición limpia tipo banner y sin texto incrustado...",
+                    "imagePrompt": "Descripción fotográfica base pura y limpia en español siguiendo la sección 2, sin texto incrustado, sin logotipos, sin línea basal vectorial y sin estetoscopios en médicos...",
                     "social": {
                         "caption": "...",
-                        "hashtags": ["#Chopo", "#TuLaboratorioDeCabecera", "#DetecciónOportuna"]
+                        "hashtags": ["#Chopo", "#CuidandoLaVida", "#PrevencionOportuna"]
                     },
                     "search": {
-                        "headline": "Título corto (máx 30 caracteres)",
-                        "description": "Descripción persuasiva con precio especial en línea en chopo.com.mx. ${mandatoryLegend}",
-                        "url": "chopo.com.mx/estudios/${productName.replace(/\s+/g, '-').toLowerCase()}"
+                        "headline": "Título corto sin signos de admiración (máx 30 caracteres)",
+                        "description": "Descripción persuasiva en 1a persona plural sin signos de admiración hacia ${primaryDestination}. ${mandatoryLegend}",
+                        "url": "${primaryDestination}/estudios/${productName.replace(/\s+/g, '-').toLowerCase()}"
                     },
                     "email": {
                         "subject": "...",
                         "preheader": "...",
-                        "bannerHeadline": "Titular corto no invasivo para el banner del correo (4-8 palabras)",
-                        "bannerSubheadline": "Subtítulo corto del cintillo del banner",
-                        "body": "Mensaje corto y personalizado (25-45 palabras, fiel a la instrucción del usuario)...",
-                        "ctaText": "Agendar Estudio en Línea",
+                        "bannerHeadline": "Titular corto no invasivo para el banner del correo (sin signos de admiración)",
+                        "bannerSubheadline": "Subtítulo corto del cintillo del banner (sin signos de admiración)",
+                        "body": "Mensaje breve y personalizado en 1a persona plural sin signos de admiración...",
+                        "ctaText": "Cotiza y agenda en línea",
                         "legalFooter": "${mandatoryLegend} ${cofeprisPermit}. ${responsableSanitario}"
                     },
                     "youtube": {
@@ -969,9 +1380,9 @@ export const generateMarketingCampaignAssets = async (
                         "script": "..."
                     },
                     "recommendations": [
-                        { "name": "Estudio o Check-up Complementario 1 acorde a ${productName}", "price": "Precio especial en línea", "imagePrompt": "Fotografía editorial luminosa en México acorde al estudio 1, sin texto incrustado..." },
-                        { "name": "Estudio o Check-up Complementario 2 acorde a ${productName}", "price": "Agenda en App Chopo", "imagePrompt": "Fotografía editorial luminosa en México acorde al estudio 2, sin texto incrustado..." },
-                        { "name": "Estudio o Check-up Complementario 3 acorde a ${productName}", "price": "Exclusivo en chopo.com.mx", "imagePrompt": "Fotografía editorial luminosa en México acorde al estudio 3, sin texto incrustado..." }
+                        { "name": "Estudio o Check-up Complementario 1 acorde a ${productName}", "price": "Precio especial en línea", "imagePrompt": "Fotografía base limpia y cálida en México acorde al estudio 1, sin texto ni logotipos incrustados..." },
+                        { "name": "Estudio o Check-up Complementario 2 acorde a ${productName}", "price": "Agenda en App Chopo", "imagePrompt": "Fotografía base limpia y cálida en México acorde al estudio 2, sin texto ni logotipos incrustados..." },
+                        { "name": "Estudio o Check-up Complementario 3 acorde a ${productName}", "price": "Exclusivo en ${primaryDestination}", "imagePrompt": "Fotografía base limpia y cálida en México acorde al estudio 3, sin texto ni logotipos incrustados..." }
                     ]
                 }
                 No uses bloques markdown.
@@ -988,21 +1399,24 @@ export const generateMarketingCampaignAssets = async (
         const cleanCopyText = copyText.replace(/```json|```/g, '').trim();
         const data = JSON.parse(cleanCopyText);
 
-        const visualSafetySuffix = ", fotografía editorial hiperrealista en México, iluminación cálida y profesional, estética publicitaria empática, SIN placas radiográficas físicas impresas a contraluz, SIN agujas ni sangre explícita, SIN texto incrustado";
+        const cleanPhotoDirective = buildCleanPhotoDirective(slices.photoSlice);
+        const mainAspectRatio = resolveAspectRatioForSubformat(channelSubformat, slices.channelKey);
 
-        const allImagePrompts: { type: string, prompt: string, rec?: any }[] = [];
+        const allImagePrompts: { type: string; prompt: string; aspectRatio: string; rec?: any }[] = [];
 
         if (data.imagePrompt) {
             allImagePrompts.push({
                 type: 'MAIN',
-                prompt: data.imagePrompt + visualSafetySuffix
+                prompt: `${data.imagePrompt}. ${cleanPhotoDirective}`,
+                aspectRatio: mainAspectRatio
             });
         }
 
         for (const rec of (data.recommendations || [])) {
             allImagePrompts.push({
                 type: 'REC',
-                prompt: (rec.imagePrompt || `${rec.name} en Laboratorios Chopo`) + visualSafetySuffix,
+                prompt: `${rec.imagePrompt || `Escena cálida y luminosa en México para ${rec.name}`}. ${cleanPhotoDirective}`,
+                aspectRatio: '1:1',
                 rec
             });
         }
@@ -1013,7 +1427,7 @@ export const generateMarketingCampaignAssets = async (
         for (let i = 0; i < allImagePrompts.length; i += imageBatchSize) {
             const batch = allImagePrompts.slice(i, i + imageBatchSize);
             const batchResults = await Promise.all(batch.map(async (item) => {
-                const img = await generateImageFromPrompt(item.prompt);
+                const img = await generateImageFromPrompt(item.prompt, item.aspectRatio, slices.channelKey);
                 if (item.type === 'MAIN') return { type: 'MAIN', img };
                 return {
                     type: 'REC',
@@ -1036,14 +1450,14 @@ export const generateMarketingCampaignAssets = async (
         return {
             image: mainImage,
             social: data.social || { caption: "", hashtags: [] },
-            search: data.search || { headline: productName, description: "", url: "chopo.com.mx" },
+            search: data.search || { headline: productName, description: "", url: primaryDestination },
             email: {
                 subject: data.email?.subject || productName,
                 preheader: data.email?.preheader || "",
                 bannerHeadline: data.email?.bannerHeadline || data.search?.headline || productName,
                 bannerSubheadline: data.email?.bannerSubheadline || promoText,
                 body: data.email?.body || "",
-                ctaText: data.email?.ctaText || "Agendar Estudio en Línea",
+                ctaText: data.email?.ctaText || "Cotiza y agenda en línea",
                 legalFooter: data.email?.legalFooter || `${mandatoryLegend} ${cofeprisPermit}. ${responsableSanitario}`,
                 image: mainImage || undefined
             },
@@ -1059,23 +1473,31 @@ export const generateMarketingCampaignAssets = async (
 
 export const generateMarketingCopy = async (productName: string, personaName: string): Promise<any> => {
     try {
+        const { track: resolvedTrack, audienceSegment } = detectTrackAndSegment({ text: personaName });
+        const brandManual = await fetchBrandManual();
+        const slices = buildBrandSlices(brandManual, { audienceSegment, track: resolvedTrack, channelKey: 'web' });
+        const { officialName, slogan, pronoun } = slices.dynamicVars;
+
         const response = await callGenAiProxy("generateContent", {
             model: 'gemini-3-flash-preview',
             contents: {
                 parts: [{
                     text: `
-                    Product: ${productName}
-                    Target Persona: ${personaName}
-                    
-                    Write a catchy headline and a persuasive subheadline for a landing page targeting this persona.
-                    Also provide a Spanish translation for both.
-                    
+                    Marca: ${officialName} ("${slogan}")
+                    Producto / Estudio: ${productName}
+                    Audiencia Objetivo: ${personaName} (Pronombre obligatorio: ${pronoun})
+
+                    Reglas verbales:
+                    ${JSON.stringify(slices.voiceAndFunnelSlice, null, 2)}
+
+                    Redacta un titular claro y un subtítulo persuasivo para página web dirigidos a esta audiencia en 1a persona plural ("nosotros"), usando el pronombre "${pronoun}" y con CERO signos de admiración (¡!). Proporciona también su versión en inglés.
+
                     Return JSON:
                     {
-                        "headline": "English Headline",
-                        "subheadline": "English Subhead",
-                        "headline_es": "Spanish Headline",
-                        "subheadline_es": "Spanish Subhead"
+                        "headline": "English Headline without exclamation marks",
+                        "subheadline": "English Subhead without exclamation marks",
+                        "headline_es": "Titular en español sin signos de admiración",
+                        "subheadline_es": "Subtítulo en español sin signos de admiración"
                     }
                     Do not use markdown.
                 ` }]
@@ -1088,7 +1510,7 @@ export const generateMarketingCopy = async (productName: string, personaName: st
         return JSON.parse(cleanText);
     } catch (error) {
         console.error("Copy generation error:", error);
-        return { headline: "Welcome", subheadline: "Check out our products." };
+        return { headline: "Preventive care you can trust", subheadline: "Schedule your diagnostic study online." };
     }
 };
 
@@ -1097,45 +1519,143 @@ export const generateMarketingBrief = async (
     goal: string,
     sourceAudiences?: any[],
     studyName: string = 'Check-up Control Diabetes',
-    track: string = 'both'
-): Promise<any> => {
+    track: string = 'both',
+    brandV4Options?: BrandV4CampaignOptions
+): Promise<MarketingBriefData | null> => {
     try {
         const timestamp = new Date().toLocaleString();
-        const ragData = await retrieveRagContext(studyName, track, goal);
-        const useCase = ragData.useCase;
+        const firstAudience = Array.isArray(sourceAudiences) && sourceAudiences.length > 0 ? sourceAudiences[0] : null;
+        const explicitTrack = track && track !== 'both' && track !== 'all' ? track : firstAudience?.track;
+        const detectionText = [
+            firstAudience?.name || '',
+            firstAudience?.job_title || firstAudience?.details?.job_title || '',
+            goal || ''
+        ].join(' ');
 
-        const audienceContext = sourceAudiences && sourceAudiences.length > 0 
-            ? `\n**Audiencias Objetivo Seleccionadas (${sourceAudiences.length}):**\n${sourceAudiences.map((aud, i) => `\n${i+1}. Nombre: ${aud.name} (${aud.personaName || ''})\n   Pista: ${aud.track || 'patient'}\n   Bio: ${aud.bio}\n   Demografía: ${aud.demographics}`).join('\n')}\n`
+        const { track: resolvedTrack, audienceSegment } = detectTrackAndSegment({
+            audienceSegment: brandV4Options?.audienceSegment,
+            track: explicitTrack,
+            text: detectionText
+        });
+        const funnelStage: FunnelStage = brandV4Options?.funnelStage || 'performance';
+        const channelKey: BrandChannelKey = brandV4Options?.channelKey || 'social_media';
+
+        const [brandManual, ragData] = await Promise.all([
+            fetchBrandManual(),
+            retrieveRagContext(studyName, resolvedTrack, goal)
+        ]);
+        const slices = buildBrandSlices(brandManual, {
+            audienceSegment,
+            track: resolvedTrack,
+            funnelStage,
+            channelKey
+        });
+        const channelSubformat =
+            brandV4Options?.channelSubformat ||
+            getSubformatsForChannel(slices.channelKey, brandManual)[0] ||
+            'Post / Carrusel 4:5';
+        const isStorySubformat = /historia|story/i.test(channelSubformat);
+
+        const {
+            officialName,
+            slogan,
+            contactBar,
+            pronoun,
+            segmentCode,
+            segmentLabel,
+            primaryDestination,
+            precautionaryLegend,
+            channelLabel
+        } = slices.dynamicVars;
+
+        const useCase = ragData.useCase;
+        const effectiveStudyName = useCase?.studyName || studyName;
+        const cofeprisPermit = resolvedTrack === 'physician'
+            ? (useCase?.cofeprisPermitB2B || 'Aviso de Publicidad COFEPRIS No. 243300202A0911')
+            : (useCase?.cofeprisPermitB2C || 'Permiso de Publicidad COFEPRIS No. 2609152002A00518');
+        const responsableSanitario =
+            useCase?.responsableSanitario ||
+            'Responsable Sanitario: Q.F.B. Jessica Alejandra Rivera Domínguez, Céd. Prof. 3602644, Univ. Simón Bolívar.';
+        const promoText =
+            useCase?.defaultPromoText ||
+            `Precio especial exclusivo pagando en línea en ${primaryDestination} o App Chopo.`;
+
+        const funnelRule = slices.voiceAndFunnelSlice.funnelStage || {};
+        const citationRule = slices.voiceAndFunnelSlice.medicalCitationsRule || {};
+
+        const audienceContext = sourceAudiences && sourceAudiences.length > 0
+            ? `\n**Audiencias Objetivo Seleccionadas (${sourceAudiences.length}):**\n${sourceAudiences.map((aud, i) => `\n${i + 1}. Nombre: ${aud.name} (${aud.personaName || ''})\n   Pista: ${detectPersonaTrack(aud).track}\n   Bio: ${aud.bio}\n   Demografía: ${aud.demographics}`).join('\n')}\n`
             : "";
 
         const prompt = `
-        Eres el Agente Estratégico de Marketing Clínico y Cumplimiento de Laboratorios Médicos El Chopo ("Tu laboratorio de cabecera").
-        Crea un Marketing Brief integral anclado en nuestra Base de Conocimiento Oficial (RAG) para el estudio "${useCase?.studyName || studyName}".
-        
+        Eres el Director Estratégico de Marketing Clínico, Creatividad y Cumplimiento de ${officialName} ("${slogan}").
+        Crea un Marketing Brief integral y la pieza principal adaptada al canal ("channelAdaptedCopy") para el estudio o paquete "${effectiveStudyName}", cumpliendo de forma estricta e innegociable con los 2 bloques determinísticos del Manual de Marca V4 y la base clínica/regulatoria RAG.
+
+        === 1. REGLAS VERBALES, DE FUNNEL Y DE CANAL DEL MANUAL DE MARCA (${officialName}) ===
+        ${JSON.stringify(slices.voiceAndFunnelSlice, null, 2)}
+
+        === 2. REGLAS DE FOTOGRAFÍA BASE E ILUMINACIÓN DEL MANUAL DE MARCA ===
+        ${JSON.stringify(slices.photoSlice, null, 2)}
+
+        === 3. CATÁLOGO CLÍNICO, COFEPRIS Y REALISMO MÉDICO OPERATIVO (RAG) ===
+        ${ragData.combinedContext}
+
         **Contexto Institucional:** ${context}
-        **Estudio / Caso de Uso Principal:** ${useCase?.studyName || studyName}
+        **Estudio / Caso de Uso Principal:** ${effectiveStudyName}
         **Estudios que incluye:** ${(useCase?.includedStudies || []).join(', ')}
-        **Requisito de Ayuno (CLN-002):** ${useCase?.fastingRequirement || 'Ayuno obligatorio de 8 a 12 horas'}
+        **Requisito de Ayuno (CLN-002):** ${useCase?.fastingRequirement || 'Consultar preparación clínica aplicable'}
+        **Segmento de Audiencia Activo:** ${slices.audienceSegment} (${segmentCode} — ${segmentLabel} | Pronombre obligatorio: "${pronoun}" | Destino: ${primaryDestination})
+        **Etapa del Funnel:** ${slices.funnelStage}
+        **Canal y Subformato:** ${slices.channelKey} (${channelLabel}) — ${channelSubformat}
+        **Condición Promocional:** ${promoText}
+        **Permiso / Aviso COFEPRIS:** ${cofeprisPermit}
+        **Leyenda Precautoria del Segmento:** ${precautionaryLegend}
+        **Responsable Sanitario:** ${responsableSanitario}
         **Objetivo de la Campaña:** ${goal}
         ${audienceContext}
 
-        === BASE DE CONOCIMIENTO RAG (COFEPRIS, MANUAL DE MARCA CHOPO, CATÁLOGO CLÍNICO Y REALISMO VISUAL) ===
-        ${ragData.combinedContext}
-        
-        CRÍTICO: Sigue exactamente la estructura de 8 secciones en JSON. Asegura que:
-        - "productName" sea exactamente "${useCase?.studyName || studyName}".
-        - OBEDECE FIELMENTE las instrucciones creativas, emocionales y de enfoque indicadas en "Objetivo de la Campaña" (${goal}).
-        - NO fuerces ni inventes una duración fija de "8 semanas" en "assumptions.timeline" ni en "phases" a menos que el usuario lo haya escrito explícitamente en el Objetivo de la Campaña. Si el usuario no especifica semanas exactas, define un ciclo flexible o por etapas estratégicas ("Etapa Inicial: Concientización", "Etapa Central: Conversión y Agenda Digital", "Etapa Continua: Seguimiento Preventivo") o acorde a la temporalidad natural del estudio (ej. Campaña Mensual / Permanente).
-        - "assumptions.mitigationStrategy" detalle explícitamente el cumplimiento de COF-001 (${useCase?.cofeprisPermitB2C || 'Permiso COFEPRIS No. 2609152002A00518'} / ${useCase?.cofeprisPermitB2B || 'Aviso COFEPRIS No. 243300202A0911'}), COF-002 ("Consulte a su médico"), COF-003 (${useCase?.responsableSanitario || 'Responsable Sanitario con Cédula Profesional'}), CLN-002 (preparación exacta) y RLM-001..004 (cero placas físicas a contraluz, cero agujas explícitas, entrega 100% digital en App Chopo).
-        
+        REGLAS OBLIGATORIAS DE EJECUCIÓN (02_campaign_creator):
+        1. INVARIANTES VERBALES DE MARCA (CERO EXCEPCIONES):
+           - CERO SIGNOS DE ADMIRACIÓN: Queda estrictamente prohibido usar "¡" o "!" en titulares, messaging, hooks, channelAdaptedCopy, llamadas a la acción o textos comerciales, incluso en Performance o descuentos.
+           - PRIMERA PERSONA PLURAL ("NOSOTROS"): Habla siempre desde "nosotros" en mensajes comerciales y channelAdaptedCopy (prohibido hablar de la marca en tercera persona).
+           - PRONOMBRE EXACTO SEGÚN AUDIENCIA (${segmentCode}): Usa estrictamente "${pronoun}".
+           - TITULAR Y HOOK SEGÚN ETAPA DEL FUNNEL (${slices.funnelStage}): ${funnelRule.headlineRule || 'Alinea el titular a la etapa del funnel seleccionada sin signos de admiración.'}
+           - FOCO Y CTA DEL FUNNEL: ${funnelRule.bodyFocus || ''} ${funnelRule.ctaPlacementAndStyle || ''}
+           - SLOGAN Y BARRA DE CONTACTO: Incluye exactamente el slogan "${slogan}" una sola vez. ${isStorySubformat ? 'Por ser Historia, NO incluyas teléfonos ni barra de contacto.' : `Cuando incluyas puntos de contacto, escríbelos en barra limpia y natural (sin numerar 1., 2., 3., 4.) en orden oficial: ${contactBar}.`}
+           - CITAS MÉDICAS: Si citas estadísticas médicas, usa fuente verificable <= ${citationRule.maxAgeYears ?? 5} años en formato ${citationRule.citationStandard || 'APA 7'}.
+        2. ADAPTACIÓN AL CANAL EN "channelAdaptedCopy" (${slices.channelKey} — ${channelSubformat}):
+           - Redacta en "channelAdaptedCopy" una pieza completa y autocontenida lista para evaluarse tal cual: titular arriba una sola vez (acorde a "${slices.funnelStage}"), slogan "${slogan}" una sola vez, cuerpo conciso acorde a "${channelSubformat}" (${slices.voiceAndFunnelSlice.channelCopyRules || ''}), ${isStorySubformat ? 'sin teléfonos por ser Historia,' : `barra de contacto oficial (${contactBar}),`} y pie legal completo al cierre (${cofeprisPermit}. ${precautionaryLegend} ${responsableSanitario}).
+           - Prohibido meter instructivos operativos internos de sucursal ("te damos bata desechable", "quítate objetos metálicos") en copies comerciales.
+        3. ESTRUCTURA DEL BRIEF:
+           - "productName" y "studyName" deben ser exactamente "${effectiveStudyName}".
+           - "companyName" debe ser exactamente "${officialName}".
+           - OBEDECE FIELMENTE las instrucciones creativas y de enfoque indicadas en "Objetivo de la Campaña" (${goal}) respetando siempre las invariantes de marca y COFEPRIS.
+           - NO fuerces ni inventes una duración fija de "8 semanas" en "assumptions.timeline" ni en "phases" a menos que el usuario lo haya escrito explícitamente en el Objetivo de la Campaña.
+           - "assumptions.mitigationStrategy" debe detallar explícitamente el cumplimiento de COFEPRIS (${cofeprisPermit}, "${precautionaryLegend}", ${responsableSanitario}), preparación clínica (CLN-002), invariantes verbales del Manual de Marca V4 (cero signos de admiración, 1a persona plural, pronombre "${pronoun}", slogan "${slogan}") y fotografía base limpia (tonos cálidos, cero estetoscopios en médicos, cero placas físicas a contraluz, cero agujas/sangre, cero texto o vectores incrustados).
+           - "preFlightComplianceCheck" debe listar de 5 a 7 verificaciones concretas confirmando el cumplimiento verbal, de funnel, de canal, COFEPRIS, clínico y de fotografía base limpia.
+
         Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura:
         {
             "title": "Marketing Brief: [Título Estratégico de la Campaña]",
             "timestamp": "${timestamp}",
             "campaignGoal": "${goal}",
-            "productName": "${useCase?.studyName || studyName}",
-            "studyName": "${useCase?.studyName || studyName}",
-            "companyName": "Laboratorios Médicos El Chopo",
+            "productName": "${effectiveStudyName}",
+            "studyName": "${effectiveStudyName}",
+            "companyName": "${officialName}",
+            "track": "${resolvedTrack}",
+            "audienceSegment": "${slices.audienceSegment}",
+            "funnelStage": "${slices.funnelStage}",
+            "channelKey": "${slices.channelKey}",
+            "channelSubformat": "${channelSubformat}",
+            "slogan": "${slogan}",
+            "channelAdaptedCopy": "Pieza completa y autocontenida lista para el canal ${channelSubformat} sin signos de admiración...",
+            "preFlightComplianceCheck": [
+                "Cero signos de admiración verificados en titulares, cuerpo y CTA",
+                "Primera persona plural (Nosotros) y pronombre ${pronoun} verificados para ${segmentCode}",
+                "Titular alineado a etapa ${slices.funnelStage} y slogan oficial incluido una sola vez",
+                "Pie legal COFEPRIS, leyenda precautoria del segmento y Responsable Sanitario incluidos",
+                "Fotografía base limpia (luz cálida, sin estetoscopios en médicos, sin placas físicas ni texto incrustado)"
+            ],
             "assumptions": {
                 "budget": "...",
                 "timeline": "...",
@@ -1149,7 +1669,7 @@ export const generateMarketingBrief = async (
             "audiences": [
                 {
                     "name": "[Nombre de la Audiencia]",
-                    "sourceSegment": "[Pista Paciente B2C o Pista Médico B2B]",
+                    "sourceSegment": "${segmentLabel}",
                     "ageRange": "...",
                     "painPoints": ["...", "..."],
                     "drivers": ["...", "..."],
@@ -1196,15 +1716,37 @@ export const generateMarketingBrief = async (
         const parsed = JSON.parse(cleanText);
         if (parsed && typeof parsed === 'object') {
             parsed.campaignGoal = goal;
+            parsed.companyName = parsed.companyName || officialName;
+            parsed.productName = parsed.productName || effectiveStudyName;
+            parsed.studyName = parsed.studyName || effectiveStudyName;
+            parsed.track = brandV4Options?.audienceSegment
+                ? resolvedTrack
+                : (['both', 'all', 'patient', 'physician', 'enterprise'].includes(track) ? track : resolvedTrack);
+            parsed.audienceSegment = parsed.audienceSegment || slices.audienceSegment;
+            parsed.funnelStage = parsed.funnelStage || slices.funnelStage;
+            parsed.channelKey = parsed.channelKey || slices.channelKey;
+            parsed.channelSubformat = parsed.channelSubformat || channelSubformat;
+            parsed.slogan = parsed.slogan || slogan;
+            parsed.channelAdaptedCopy = parsed.channelAdaptedCopy || '';
+            parsed.preFlightComplianceCheck = Array.isArray(parsed.preFlightComplianceCheck)
+                ? parsed.preFlightComplianceCheck
+                : [];
         }
-        return parsed;
+        return parsed as MarketingBriefData;
     } catch (error) {
         console.error("Brief generation error:", error);
         return null;
     }
 };
 
-export const generatePersonaChatResponse = async (persona: any, brief: any, message: string, chatHistory: { role: string, parts: { text: string }[] }[], simulationContext?: any): Promise<string> => {
+export const generatePersonaChatResponse = async (
+    persona: any,
+    brief: any,
+    message: string,
+    chatHistory: { role: string; parts: { text: string }[] }[],
+    simulationContext?: any,
+    channelKey?: BrandChannelKey
+): Promise<string> => {
     try {
         const personaName = persona.personaName || persona.name || 'Participante';
         const demographics = persona.demographics || `${persona.age || persona.details?.age || 40} años`;
@@ -1212,6 +1754,18 @@ export const generatePersonaChatResponse = async (persona: any, brief: any, mess
         const painPoints = (persona.pain_points || persona.details?.pain_points || []).join('; ');
         const goals = (persona.goals || persona.details?.goals || []).join('; ');
         const studyName = brief?.productName || brief?.studyName || 'Check-up Control Diabetes';
+        const { track: personaTrack, audienceSegment } = detectPersonaTrack(persona);
+
+        const effectiveChannelKey: BrandChannelKey = channelKey || brief?.channelKey || 'social_media';
+        const brandManual = await fetchBrandManual();
+        const slices = buildBrandSlices(brandManual, {
+            audienceSegment,
+            track: personaTrack,
+            channelKey: effectiveChannelKey
+        });
+        const { officialName } = slices.dynamicVars;
+        const { channelLabel } = slices.focusGroupSlice;
+        const adCopy = brief?.channelAdaptedCopy || brief?.campaignAssets?.social?.caption || '';
 
         let rubricSummaryText = '';
         if (simulationContext) {
@@ -1222,7 +1776,7 @@ export const generatePersonaChatResponse = async (persona: any, brief: any, mess
             } else {
                 rubricSummaryText = `
                 - Atractivo Visual / Confianza: ${simulationContext.visualAppeal}/100
-                - Apego a Marca Chopo: ${simulationContext.brandFit}/100
+                - Apego a Marca: ${simulationContext.brandFit}/100
                 - Claridad en 3 seg (Stopping Power): ${simulationContext.stoppingPower}/100
                 - Intención de Acción: ${simulationContext.conversionLikelihood}/100
                 `;
@@ -1230,12 +1784,18 @@ export const generatePersonaChatResponse = async (persona: any, brief: any, mess
         }
 
         const personaContext = `
-        Estás interpretando en primera persona a "${personaName}" (${demographics}).
+        Estás interpretando en primera persona a "${personaName}" (${demographics}, pista: ${personaTrack}).
         Biografía y contexto: ${bio}
         Puntos de dolor: ${painPoints}
         Objetivos: ${goals}
 
-        Acabas de participar en un Focus Group de Laboratorios Médicos El Chopo viendo una campaña para "${studyName}" en tu celular.
+        Acabas de participar en un Focus Group de ${officialName} evaluando este material para "${studyName}" en el canal "${channelLabel}".
+        === CONTEXTO DEL CANAL Y ESENCIA DE MARCA ===
+        ${JSON.stringify(slices.focusGroupSlice, null, 2)}
+        ${adCopy ? `
+        === MATERIAL EVALUADO ===
+        ${adCopy}
+        ` : ''}
         ${simulationContext ? `
         Tu comentario inicial fue: "${simulationContext.feedback || ''}".
         Tu calificación global ponderada fue: ${simulationContext.weightedOverallScore ?? simulationContext.conversionLikelihood ?? 75}/100.
@@ -1245,8 +1805,8 @@ export const generatePersonaChatResponse = async (persona: any, brief: any, mess
         ` : ''}
 
         REGLAS DE INTERPRETACIÓN (04_focus_group_1on1_chat):
-        Responde en primera persona, como un consumidor o médico real viendo redes sociales en su celular (NUNCA actúes como inspector legal ni pidas que un anuncio de redes sociales tenga manuales de procedimiento o batas; prefiere anuncios cortos, claros, con facilidad digital en App Chopo y visualmente atractivos).
-        Si te preguntan por qué diste cierta calificación en alguna rúbrica, explícalo desde tu personalidad y tus razones anteriores sin contradecirte. Sé conciso (2 a 3 oraciones).
+        Responde en primera persona, en español natural de México acorde a tu perfil real (paciente, médico o directivo empresarial en México), manteniendo coherencia con tus calificaciones anteriores.
+        NUNCA actúes como inspector legal de COFEPRIS ni diseñador gráfico corporativo; habla desde tu experiencia humana y práctica en el canal "${channelLabel}". Sé directo y conciso (2 a 4 oraciones).
         ${getLanguageInstruction()}
         `;
 
@@ -1270,16 +1830,33 @@ export const generatePersonaChatResponse = async (persona: any, brief: any, mess
 // --- Synthetic Focus Group & Simulation Logic ---
 
 export const generateEmailBodies = async (headlines: string[], brief: MarketingBriefData): Promise<{ [headline: string]: string }> => {
+    const { track: resolvedTrack, audienceSegment } = detectTrackAndSegment({
+        audienceSegment: brief.audienceSegment,
+        track: brief.track,
+        text: `${brief.audiences?.[0]?.name || ''} ${brief.campaignGoal || ''}`
+    });
+    const brandManual = await fetchBrandManual();
+    const slices = buildBrandSlices(brandManual, {
+        audienceSegment,
+        track: resolvedTrack,
+        funnelStage: brief.funnelStage || 'performance',
+        channelKey: 'mailing_ecommerce'
+    });
+    const { officialName, slogan, pronoun, primaryDestination, precautionaryLegend } = slices.dynamicVars;
+
     try {
         const prompt = `
-        Eres el Director de Email Marketing de ${brandConfig.companyName || "Laboratorios Chopo"} ("Tu laboratorio de cabecera").
-        
+        Eres el Director de Email Marketing de ${officialName} ("${slogan}").
+
+        === REGLAS VERBALES Y DE CANAL DEL MANUAL DE MARCA ===
+        ${JSON.stringify(slices.voiceAndFunnelSlice, null, 2)}
+
         **Estudio / Producto:** ${brief.productName}
-        **Audiencia Objetivo:** ${brief.audiences?.[0]?.name || "Paciente / Médico Chopo"}
+        **Audiencia Objetivo:** ${brief.audiences?.[0]?.name || slices.dynamicVars.segmentLabel} (Pronombre obligatorio: ${pronoun})
         **Instrucción / Objetivo del Usuario (SEGUIR AL PIE DE LA LETRA):** ${brief.campaignGoal}
 
         **Tarea:**
-        Para CADA uno de los siguientes asuntos de correo, redacta un mensaje breve, directo y de alto impacto (máximo 35 a 45 palabras, pensado para acompañar un banner visual de correo) siguiendo estrictamente las instrucciones de "${brief.campaignGoal}".
+        Para CADA uno de los siguientes asuntos de correo, redacta un mensaje breve, empático y directo en primera persona plural ("nosotros") usando el pronombre "${pronoun}" y con CERO signos de admiración (¡!) (máximo 35 a 45 palabras, pensado para acompañar un banner visual de correo) siguiendo estrictamente las instrucciones de "${brief.campaignGoal}".
 
         **Asuntos de Correo:**
         ${JSON.stringify(headlines)}
@@ -1303,39 +1880,57 @@ export const generateEmailBodies = async (headlines: string[], brief: MarketingB
     } catch (error) {
         console.error("Email body generation error:", error);
         const fallback: any = {};
-        headlines.forEach(h => fallback[h] = `Agenda tu estudio en línea en chopo.com.mx o en la App Chopo con precio especial y recibe tus resultados digitales. Consulte a su médico.`);
+        headlines.forEach(h => fallback[h] = `Te acompañamos con estudios confiables en línea a través de ${primaryDestination} o App Chopo, con resultados digitales. ${precautionaryLegend}`);
         return fallback;
     }
 };
 
 export const generateWildcardAudience = async (context: string, existingAudiences: string[]): Promise<any> => {
     try {
+        const brandManual = await fetchBrandManual();
+        const b2cSlices = buildBrandSlices(brandManual, { audienceSegment: 'b2c_patients' });
+        const b2dSlices = buildBrandSlices(brandManual, { audienceSegment: 'b2d_doctors' });
+        const b2bSlices = buildBrandSlices(brandManual, { audienceSegment: 'b2b_enterprises' });
+        const { officialName, slogan } = b2cSlices.dynamicVars;
+
+        const segmentsOverview = {
+            purpose: b2cSlices.segmentContext.purpose,
+            segments: [
+                b2cSlices.segmentContext.segment,
+                b2dSlices.segmentContext.segment,
+                b2bSlices.segmentContext.segment
+            ].filter(Boolean)
+        };
+
         const response = await callGenAiProxy("generateContent", {
             model: 'gemini-3-flash-preview',
             contents: {
                 parts: [{
                     text: `
-                    You are a creative strategist looking for "Blue Ocean" opportunities for Laboratorios Médicos El Chopo.
+                    Eres un estratega de investigación de mercados en salud buscando oportunidades "Océano Azul" en México para ${officialName} ("${slogan}").
 
-                    **Company Context:**
+                    Contexto estratégico de segmentos extraído del Manual de Marca:
+                    ${JSON.stringify(segmentsOverview, null, 2)}
+
+                    **Contexto Institucional:**
                     ${context}
 
-                    **Existing Segments:**
+                    **Segmentos Existentes:**
                     ${JSON.stringify(existingAudiences)}
 
-                    **Task:**
-                    Identify 1 COMPLETELY DIFFERENT "Wildcard" Audience Segment in Mexico (either Patient B2C or Physician B2B) that is distinct from the existing ones.
+                    **Tarea:**
+                    Identifica 1 segmento de audiencia sintético COMPLETAMENTE DIFERENTE ("Wildcard") en México para cualquiera de los 3 tracks oficiales: Paciente B2C ("patient"), Médico B2D ("physician") o Empresa B2B ("enterprise").
 
-                    Return a valid JSON object:
+                    Devuelve un objeto JSON válido:
                     {
                         "track": "patient",
-                        "name": "[Paciente B2C] Nombre del Segmento",
+                        "name": "Nombre del Segmento (Paciente B2C)",
                         "personaName": "Nombre Completo (Edad, Ciudad)",
-                        "bio": "Descripción...",
-                        "demographics": "Rango de edad, Ciudad, NSE...",
-                        "imagePrompt": "Retrato fotográfico realista en México..."
+                        "bio": "Descripción realista...",
+                        "demographics": "Rango de edad, Ciudad en México, NSE...",
+                        "imagePrompt": "Retrato fotográfico realista y cálido en México sin estetoscopio en médicos y sin texto incrustado..."
                     }
-                    Do not use markdown code blocks.
+                    No uses bloques markdown.
                     ${getLanguageInstruction()}
                 `
                 }]
@@ -1354,13 +1949,26 @@ export const generateWildcardAudience = async (context: string, existingAudience
 
 export const generateAudienceFromCriteria = async (context: string, criteria: string): Promise<any> => {
     try {
-        const isPhysician = criteria.toLowerCase().includes('médico') || criteria.toLowerCase().includes('especialista') || criteria.toLowerCase().includes('b2b') || criteria.toLowerCase().includes('doctor');
+        const { track: resolvedTrack, audienceSegment } = detectTrackAndSegment({ text: criteria });
+        const brandManual = await fetchBrandManual();
+        const slices = buildBrandSlices(brandManual, { audienceSegment, track: resolvedTrack });
+        const { officialName, slogan } = slices.dynamicVars;
+        const trackTag =
+            resolvedTrack === 'physician'
+                ? '(Médico B2D)'
+                : resolvedTrack === 'enterprise'
+                    ? '(Empresa B2B)'
+                    : '(Paciente B2C)';
+
         const response = await callGenAiProxy("generateContent", {
             model: 'gemini-3-flash-preview',
             contents: {
                 parts: [{
                     text: `
-                    Eres un experto en investigación de mercados médicos para Laboratorios Médicos El Chopo ("Tu laboratorio de cabecera").
+                    Eres un experto en investigación de mercados médicos y comportamiento del consumidor en salud en México para ${officialName} ("${slogan}").
+
+                    Contexto estratégico del segmento objetivo extraído del Manual de Marca:
+                    ${JSON.stringify(slices.segmentContext, null, 2)}
 
                     **Contexto Institucional:**
                     ${context}
@@ -1369,16 +1977,17 @@ export const generateAudienceFromCriteria = async (context: string, criteria: st
                     "${criteria}"
 
                     **Tarea:**
-                    Desarrolla un perfil sintético mexicano realista para la pista "${isPhysician ? 'physician' : 'patient'}" que cumpla exactamente con el criterio solicitado.
+                    Desarrolla un perfil sintético mexicano realista para la pista "${resolvedTrack}" que cumpla exactamente con el criterio solicitado.
+                    Psicología realista (100% datos sintéticos; nunca habla con voz corporativa de marca ni actúa como inspector legal).
 
                     Devuelve un objeto JSON válido:
                     {
-                        "track": "${isPhysician ? 'physician' : 'patient'}",
-                        "name": "${isPhysician ? '[Médico B2B]' : '[Paciente B2C]'} Nombre del Segmento",
+                        "track": "${resolvedTrack}",
+                        "name": "Nombre del Segmento ${trackTag}",
                         "personaName": "Nombre Representativo (Edad, Ciudad)",
                         "bio": "Descripción rica de su perfil, estilo de vida y necesidades diagnósticas...",
                         "demographics": "Edad, Ciudad en México, NSE...",
-                        "imagePrompt": "Retrato fotográfico realista en México sin texto incrustado..."
+                        "imagePrompt": "Retrato fotográfico realista y cálido en México sin estetoscopio en médicos y sin texto incrustado..."
                     }
                     No uses bloques markdown.
                     ${getLanguageInstruction()}
@@ -1401,30 +2010,46 @@ export const simulateMarketingFocusGroup = async (
     personas: any[],
     brief: any,
     productsList: string[],
-    emailCampaigns: { subject: string, body: string }[],
-    marketingMessages: string[] = []
+    emailCampaigns: { subject: string; body: string }[],
+    marketingMessages: string[] = [],
+    channelKey?: BrandChannelKey
 ): Promise<any[]> => {
     const BATCH_SIZE = 10;
     const results: any[] = [];
+
+    const effectiveChannelKey: BrandChannelKey =
+        channelKey ||
+        brief?.channelKey ||
+        (emailCampaigns?.length > 0 && (!marketingMessages || marketingMessages.length === 0)
+            ? 'mailing_ecommerce'
+            : 'social_media');
+
+    const brandManual = await fetchBrandManual();
+    const slices = buildBrandSlices(brandManual, { channelKey: effectiveChannelKey });
+    const { officialName } = slices.dynamicVars;
+    const { channelLabel } = slices.focusGroupSlice;
 
     const processBatch = async (batchPersonas: any[]) => {
         try {
             console.log(`Processing batch of ${batchPersonas.length} users...`);
             const prompt = `
-            You are a hyper-realistic consumer and physician simulator in Mexico evaluating campaigns for Laboratorios Médicos El Chopo.
+            Simula un Focus Group hiperrealista de personas reales en México (pacientes, médicos o responsables corporativos de Recursos Humanos según cada perfil) reaccionando a esta campaña de ${officialName} en el canal "${channelLabel}".
 
-            **CONTEXT:**
-            You are simulating the behavior of ${batchPersonas.length} distinct synthetic personas scrolling on their mobile phones (3-second attention span).
-            
-            **CRITICAL INSTRUCTION - REALISM & VARIANCE:**
-            - Act as real humans on social media / mobile, NOT as regulatory auditors.
-            - Penalize long, boring, text-heavy messages; reward concise, empathetic, digital-first messages (App Chopo / chopo.com.mx).
-            - Scores must use the full 0-100 range based on each persona's pain points and goals.
-            
+            === CONTEXTO DEL CANAL Y ESENCIA DE MARCA ===
+            ${JSON.stringify(slices.focusGroupSlice, null, 2)}
+
+            **REGLAS CRÍTICAS DE REALISMO Y CALIBRACIÓN:**
+            - Estás simulando ${batchPersonas.length} personas sintéticas reales en México viendo este material en "${channelLabel}".
+            - ACTÚA COMO UN HUMANO REAL (paciente, médico o comprador corporativo de RH en México), NUNCA como un auditor regulatorio de COFEPRIS ni como diseñador gráfico de agencia.
+            - Un humano real evalúa si el mensaje se entiende rápido, le transmite calidez, tranquilidad y confianza, y le facilita cotizar o agendar; NUNCA pide más cláusulas legales ni instructivos internos de sucursal.
+            - Adapta tus expectativas al canal ("${channelLabel}"): en canales rápidos penaliza textos largos o aburridos y premia mensajes claros, empáticos y prácticos (App Chopo / chopo.com.mx).
+            - Usa todo el rango de 0 a 100 según los dolores y objetivos reales de cada persona.
+
             **THE MARKETING MATERIAL:**
             Campaign Goal: ${brief.campaignGoal}
             Value Proposition: ${brief.valueProp?.main?.es || brief.valueProp?.main?.en || "Certeza diagnóstica y prevención"}
-            
+            ${brief.channelAdaptedCopy ? `Channel Adapted Copy: ${brief.channelAdaptedCopy}` : ''}
+
             **THE PRODUCTS TO EVALUATE:**
             ${JSON.stringify(productsList)}
 
@@ -1440,12 +2065,12 @@ export const simulateMarketingFocusGroup = async (
                 {
                     "personaId": "id from input (MANDATORY: must match input ID exactly)",
                     "personaName": "name from input (MANDATORY: must match input name exactly)",
-                    "briefMetrics": { 
-                        "interestScore": 85, 
-                        "clarityScore": 90, 
-                        "relevanceScore": 80, 
+                    "briefMetrics": {
+                        "interestScore": 85,
+                        "clarityScore": 90,
+                        "relevanceScore": 80,
                         "feedback": "...",
-                        "negativeFeedback": "..." 
+                        "negativeFeedback": "..."
                     },
                     "cart": [
                         { "productName": "Product 1", "purchased": true, "reason": "..." }
@@ -1470,7 +2095,7 @@ export const simulateMarketingFocusGroup = async (
                             text: JSON.stringify(batchPersonas.map(p => ({
                                 id: p.id,
                                 name: p.name,
-                                track: p.track || 'patient',
+                                track: detectPersonaTrack(p).track,
                                 bio: p.bio,
                                 demographics: p.demographics,
                                 pain_points: p.pain_points || p.details?.pain_points || [],
@@ -1516,21 +2141,32 @@ export const simulateMarketingFocusGroup = async (
 export const simulateAcquisitionFocusGroup = async (
     personas: any[],
     offers: string[],
-    companyName: string = "Laboratorios Médicos El Chopo",
-    productContext: string = "Diagnóstico Clínico y Check-ups"
+    companyName: string = DEFAULT_OFFICIAL_BRAND_NAME,
+    productContext: string = "Diagnóstico Clínico y Check-ups",
+    channelKey: BrandChannelKey = 'social_media'
 ): Promise<any[]> => {
     const BATCH_SIZE = 10;
     const results: any[] = [];
 
+    const brandManual = await fetchBrandManual();
+    const slices = buildBrandSlices(brandManual, { channelKey });
+    const effectiveCompanyName = companyName || slices.dynamicVars.officialName;
+    const { channelLabel } = slices.focusGroupSlice;
+
     const processBatch = async (batchPersonas: any[]) => {
         try {
-            console.log(`Processing acquisition batch of ${batchPersonas.length} users for ${companyName}...`);
+            console.log(`Processing acquisition batch of ${batchPersonas.length} users for ${effectiveCompanyName}...`);
             const prompt = `
-            You are a hyper-realistic consumer and physician simulator specializing in healthcare and clinical laboratory behaviors in Mexico.
-            
-            **CONTEXT:**
-            You are simulating ${batchPersonas.length} distinct synthetic personas evaluating acquisition offers from ${companyName} (${productContext}).
-            
+            Simula un Focus Group hiperrealista de personas reales en México (pacientes, médicos o responsables corporativos de Recursos Humanos según cada perfil) evaluando propuestas de adquisición de ${effectiveCompanyName} (${productContext}) en el canal "${channelLabel}".
+
+            === CONTEXTO DEL CANAL Y ESENCIA DE MARCA ===
+            ${JSON.stringify(slices.focusGroupSlice, null, 2)}
+
+            **REGLAS CRÍTICAS DE REALISMO:**
+            - Simula ${batchPersonas.length} personas sintéticas reales en México.
+            - Reacciona estrictamente como paciente, médico o comprador corporativo de RH real en México, NUNCA como auditor legal de COFEPRIS ni diseñador gráfico.
+            - Evalúa claridad, valor percibido, confianza humana y conveniencia práctica en el contexto del canal "${channelLabel}".
+
             **THE ACQUISITION OFFERS:**
             ${JSON.stringify(offers)}
 
@@ -1559,7 +2195,7 @@ export const simulateAcquisitionFocusGroup = async (
                             text: JSON.stringify(batchPersonas.map(p => ({
                                 id: p.id,
                                 name: p.name,
-                                track: p.track || 'patient',
+                                track: detectPersonaTrack(p).track,
                                 bio: p.bio,
                                 demographics: p.demographics,
                                 pain_points: p.pain_points || p.details?.pain_points || [],
@@ -1606,15 +2242,22 @@ export const simulateAcquisitionFocusGroup = async (
 export const simulateCreativeFocusGroup = async (
     personas: any[],
     assets: MarketingAssets,
-    companyName: string = "Laboratorios Médicos El Chopo",
+    companyName: string = DEFAULT_OFFICIAL_BRAND_NAME,
     activeRubrics?: FocusGroupRubric[],
-    studyName: string = "Check-up Control Diabetes"
+    studyName: string = "Check-up Control Diabetes",
+    channelKey: BrandChannelKey = 'social_media'
 ): Promise<any[]> => {
     const BATCH_SIZE = 5; // Smaller batch for multimodal
     const results: any[] = [];
 
-    const rubricsToUse: FocusGroupRubric[] =
-        activeRubrics && activeRubrics.length > 0 ? activeRubrics : await fetchRubrics();
+    const [rubricsToUse, brandManual] = await Promise.all([
+        activeRubrics && activeRubrics.length > 0 ? Promise.resolve(activeRubrics) : fetchRubrics(),
+        fetchBrandManual()
+    ]);
+
+    const slices = buildBrandSlices(brandManual, { channelKey });
+    const effectiveCompanyName = companyName || slices.dynamicVars.officialName;
+    const { channelLabel } = slices.focusGroupSlice;
 
     // Load multimodal image part if available
     let mainImagePart: any = null;
@@ -1649,23 +2292,20 @@ export const simulateCreativeFocusGroup = async (
         }
     }
 
-    const adCopySummary = `
-    - Post Redes Sociales: "${assets.social?.caption || ''}" (${(assets.social?.hashtags || []).join(' ')})
-    - Anuncio Buscador: "${assets.search?.headline || ''}" — "${assets.search?.description || ''}"
-    - Asunto de Correo: "${assets.email?.subject || ''}"
-    `.trim();
+    const adaptedCopy = (assets as any)?.channelAdaptedCopy;
+    const adCopySummary = [
+        adaptedCopy ? `- Pieza Principal del Canal (${channelLabel}): "${adaptedCopy}"` : '',
+        `- Post Redes Sociales: "${assets.social?.caption || ''}" (${(assets.social?.hashtags || []).join(' ')})`,
+        `- Anuncio Buscador: "${assets.search?.headline || ''}" — "${assets.search?.description || ''}"`,
+        `- Correo: "${assets.email?.subject || ''}"${assets.email?.bannerHeadline ? ` | Banner: "${assets.email.bannerHeadline}"` : ''}${assets.email?.body ? ` | Cuerpo: "${assets.email.body}"` : ''}`
+    ].filter(Boolean).join('\n').trim();
 
     const processBatch = async (batchPersonas: any[]) => {
         try {
             console.log(`Processing creative focus group batch of ${batchPersonas.length} users with dynamic rubrics...`);
 
             const personasPayload = batchPersonas.map(p => {
-                const pTrack =
-                    p.track === 'physician' ||
-                    String(p.name || '').toLowerCase().includes('médico') ||
-                    String(p.name || '').toLowerCase().includes('b2b')
-                        ? 'physician'
-                        : 'patient';
+                const pTrack = detectPersonaTrack(p).track;
                 return {
                     id: p.id,
                     name: p.name,
@@ -1676,13 +2316,16 @@ export const simulateCreativeFocusGroup = async (
                     pain_points: p.pain_points || p.details?.pain_points || [],
                     goals: p.goals || p.details?.goals || [],
                     applicableRubricIds: rubricsToUse
-                        .filter(r => r.track === 'both' || r.track === pTrack)
+                        .filter(r => r.track === 'all' || r.track === 'both' || r.track === pTrack)
                         .map(r => r.id)
                 };
             });
 
             const prompt = `
-            Simula un Focus Group de consumidores y médicos reales en México viendo este material publicitario de ${companyName} para "${studyName}" mientras hacen scroll en su teléfono celular (Instagram / Facebook / LinkedIn / Email):
+            Simula un Focus Group de personas reales en México (pacientes, médicos o responsables de empresas/Recursos Humanos según cada perfil) reaccionando a este material publicitario de ${effectiveCompanyName} para "${studyName}" en el formato "${channelLabel}".
+
+            === CONTEXTO DEL CANAL Y ESENCIA DE MARCA ===
+            ${JSON.stringify(slices.focusGroupSlice, null, 2)}
 
             === MATERIAL PUBLICITARIO A EVALUAR ===
             ${adCopySummary}
@@ -1695,15 +2338,15 @@ export const simulateCreativeFocusGroup = async (
             ${JSON.stringify(rubricsToUse, null, 2)}
 
             REGLAS CRÍTICAS DE REALISMO Y CALIBRACIÓN EN EL FOCUS GROUP (03_focus_group_simulator):
-            1. ACTÚA COMO UN HUMANO REAL EN REDES SOCIALES (ATENCIÓN DE 3 SEGUNDOS), NO COMO UN AUDITOR REGULATORIO NI UN TÉCNICO DE LABORATORIO:
-               - Un consumidor real NUNCA pide que un anuncio de Instagram le explique el proceso interno de la sucursal, ni si le van a dar bata, ni pide más cláusulas legales.
-               - Al contrario: si el anuncio tiene demasiado texto, explicaciones operativas innecesarias o parece un instructivo médico aburrido, el participante DEBE penalizarlo severamente siguiendo las anclas "low_0_to_40" de la rúbrica de Claridad.
+            1. ACTÚA COMO UN HUMANO REAL EN EL CONTEXTO DEL CANAL ("${channelLabel}"), NO COMO UN AUDITOR REGULATORIO DE COFEPRIS NI UN DISEÑADOR GRÁFICO DE AGENCIA:
+               - Un paciente, médico o comprador corporativo de RH real evalúa si el mensaje se entiende rápido, le transmite calidez, tranquilidad y confianza, y le facilita cotizar/agendar; NUNCA pide más cláusulas legales ni instructivos operativos de batas.
+               - Adapta tu expectativa al canal ("${channelLabel}"): en Redes Sociales, Banners Web o un Póster Exterior de sucursal penaliza textos largos que no se leen en 3 segundos; en un Folleto interior o Correo espera información clara y bien estructurada sin saturar.
             2. APLICA ESTRICTAMENTE LAS ANCLAS DE CALIFICACIÓN (scoringAnchors) DE CADA RÚBRICA:
                - No regales calificaciones de 85-95 por cortesía. Usa todo el rango (0 a 100) guiándote por "low_0_to_40", "mid_41_to_79" y "high_80_to_100" de cada rúbrica aplicable al track del participante ("applicableRubricIds").
             3. Para cada perfil participante:
                - Evalúa CADA UNA de sus rúbricas aplicables ("applicableRubricIds") devolviendo el arreglo "rubricScores" con { rubricId, name, weight, score, rationale }.
                - Calcula "weightedOverallScore" (0 a 100) como el promedio ponderado de sus "rubricScores".
-               - Redacta su opinión general en primera persona ("feedback"), sus dudas/barreras reales ("barriersOrConcerns") y su sugerencia comercial ("suggestedImprovement").
+               - Redacta su opinión general en primera persona ("feedback"), sus dudas/barreras reales ("barriersOrConcerns") y su sugerencia práctica ("suggestedImprovement").
                - Incluye también los campos de compatibilidad ("visualAppeal", "brandFit", "stoppingPower", "conversionLikelihood", "sentiment": "Positive" | "Neutral" | "Negative", "suggestedProduct", "suggestedMessaging", "suggestedImage", "copyEdit").
 
             Devuelve ÚNICAMENTE un arreglo JSON válido con exactamente ${batchPersonas.length} objetos:
@@ -1711,7 +2354,7 @@ export const simulateCreativeFocusGroup = async (
                 {
                     "personaId": "id exacto del input",
                     "personaName": "name exacto del input",
-                    "track": "patient o physician",
+                    "track": "patient, physician o enterprise",
                     "weightedOverallScore": 0-100,
                     "rubricScores": [
                         {
@@ -1757,6 +2400,7 @@ export const simulateCreativeFocusGroup = async (
 
             return (Array.isArray(rawResults) ? rawResults : []).map((r: any, idx: number) => {
                 const inputPersona = batchPersonas[idx] || {};
+                const detectedTrack = detectPersonaTrack(inputPersona).track;
                 const rubricScores: RubricScore[] = Array.isArray(r.rubricScores) ? r.rubricScores : [];
 
                 const findRubricScore = (idPrefix: string): number | undefined => {
@@ -1784,12 +2428,18 @@ export const simulateCreativeFocusGroup = async (
                     r.stoppingPower ?? findRubricScore('clarity_3s') ?? weightedOverallScore
                 );
                 const brandFit = Number(
-                    r.brandFit ?? findRubricScore('clinical_utility') ?? findRubricScore('visual_trust') ?? weightedOverallScore
+                    r.brandFit ??
+                    findRubricScore('clinical_utility') ??
+                    findRubricScore('enterprise_solution') ??
+                    findRubricScore('visual_trust') ??
+                    weightedOverallScore
                 );
                 const conversionLikelihood = Number(
                     r.conversionLikelihood ??
                     findRubricScore('patient_action_intent') ??
                     findRubricScore('physician_prescription_intent') ??
+                    findRubricScore('enterprise_action_intent') ??
+                    findRubricScore('action_intent') ??
                     weightedOverallScore
                 );
 
@@ -1797,7 +2447,7 @@ export const simulateCreativeFocusGroup = async (
                     ...r,
                     personaId: r.personaId || inputPersona.id,
                     personaName: r.personaName || inputPersona.name,
-                    track: r.track || inputPersona.track || 'patient',
+                    track: r.track || detectedTrack,
                     weightedOverallScore,
                     rubricScores,
                     barriersOrConcerns: r.barriersOrConcerns || '',
@@ -1820,7 +2470,7 @@ export const simulateCreativeFocusGroup = async (
             return batchPersonas.map(p => ({
                 personaId: p.id,
                 personaName: p.name,
-                track: p.track || 'patient',
+                track: detectPersonaTrack(p).track,
                 weightedOverallScore: 0,
                 rubricScores: [],
                 barriersOrConcerns: "Simulation Failed",
@@ -1850,21 +2500,40 @@ export const simulateCreativeFocusGroup = async (
     return results;
 };
 
-export const conductQualitativeInterview = async (persona: CombinedPersona, context: string, initialQuestion: string, companyName: string = "Laboratorios Médicos El Chopo"): Promise<InterviewResult> => {
+export const conductQualitativeInterview = async (
+    persona: CombinedPersona,
+    context: string,
+    initialQuestion: string,
+    companyName: string = DEFAULT_OFFICIAL_BRAND_NAME,
+    channelKey: BrandChannelKey = 'social_media'
+): Promise<InterviewResult> => {
     try {
-        const prompt = `
-        You are simulating a qualitative user interview regarding "${context}" and ${companyName} ("Tu laboratorio de cabecera"). Let your answers reflect your specific needs and concerns as a real Mexican patient or physician.
-        
-        **Role**: act as ${persona.name} (${persona.personaName}), with the following details:
-        - Track: ${persona.track || 'patient'}
-        - Bio: ${persona.bio || persona.details?.bio || "No bio available"}
-        - Job: ${persona.job_title || persona.details?.job_title || "Unknown"}
-        - Age: ${persona.age || persona.details?.age || "Unknown"}
-        - Pain Points: ${(persona.pain_points || persona.details?.pain_points || []).join('; ')}
-        - Goals: ${(persona.goals || persona.details?.goals || []).join('; ')}
-        - Context: ${context}
+        const { track: personaTrack, audienceSegment } = detectPersonaTrack(persona);
+        const brandManual = await fetchBrandManual();
+        const slices = buildBrandSlices(brandManual, { audienceSegment, track: personaTrack, channelKey });
+        const effectiveCompanyName = companyName || slices.dynamicVars.officialName;
+        const { channelLabel } = slices.focusGroupSlice;
 
-        **Task**: 
+        const prompt = `
+        Simula una entrevista cualitativa profunda en español natural de México sobre "${context}" y ${effectiveCompanyName} en el contexto del canal "${channelLabel}".
+
+        === CONTEXTO DEL CANAL Y ESENCIA DE MARCA ===
+        ${JSON.stringify(slices.focusGroupSlice, null, 2)}
+
+        **Perfil del Entrevistado:**
+        - Nombre: ${persona.name} (${persona.personaName})
+        - Pista: ${personaTrack}
+        - Biografía: ${persona.bio || persona.details?.bio || "Sin biografía"}
+        - Ocupación / Cargo: ${persona.job_title || persona.details?.job_title || "No especificado"}
+        - Edad: ${persona.age || persona.details?.age || "No especificada"}
+        - Puntos de dolor: ${(persona.pain_points || persona.details?.pain_points || []).join('; ')}
+        - Objetivos: ${(persona.goals || persona.details?.goals || []).join('; ')}
+        - Contexto de la entrevista: ${context}
+
+        **Regla de Realismo:**
+        Responde estrictamente como un paciente, médico o directivo empresarial real en México desde tu experiencia cotidiana y práctica (NUNCA actúes como auditor regulatorio de COFEPRIS ni diseñador gráfico corporativo).
+
+        **Task**:
         1. Answer the Initial Question from the interviewer in natural first-person speech.
         2. Then, simulate a "Researcher" asking you a follow-up question based on your answer.
         3. Answer the follow-up.
@@ -1888,7 +2557,7 @@ export const conductQualitativeInterview = async (persona: CombinedPersona, cont
             "quote": "The most impactful sentence said by the user.",
             "sentiment": "Positive" | "Neutral" | "Negative"
         }
-        
+
         Do not output markdown code blocks. Just the raw JSON.
         ${getLanguageInstruction()}
         `;
@@ -1924,17 +2593,29 @@ export const conductQualitativeInterview = async (persona: CombinedPersona, cont
     }
 };
 
-export const generateRegionalVariants = async (basePrompt: string, companyName: string = "Laboratorios Médicos El Chopo", productContext: string = "Check-up Control Diabetes"): Promise<{ region: string, imagePrompt: string, image: string | null }[]> => {
+export const generateRegionalVariants = async (
+    basePrompt: string,
+    companyName: string = DEFAULT_OFFICIAL_BRAND_NAME,
+    productContext: string = "Check-up Control Diabetes",
+    channelKey: BrandChannelKey = 'social_media'
+): Promise<{ region: string; imagePrompt: string; image: string | null }[]> => {
     try {
         const categories = ["Lifestyle & Context", "Benefit & Feature-First", "Social-First & Aesthetic", "Value & Urgency-Based", "Aspirational Luxury"];
+        const brandManual = await fetchBrandManual();
+        const slices = buildBrandSlices(brandManual, { channelKey });
+        const effectiveCompanyName = companyName || slices.dynamicVars.officialName;
+        const aspectRatio = resolveAspectRatioForSubformat('', slices.channelKey);
 
         const prompt = `
-        Take the following marketing concept for ${companyName} (${productContext}): "${basePrompt}"
-        
-        Adapt this concept for the following variations/themes, adding specific imagery relevant to Mexico and enforcing Chopo's visual realism rules (RLM-001: 100% digital results on App Chopo/tablet, NO physical X-ray films, NO needles or blood, Chopo blue #004B87 and clinical white #FFFFFF palette, no embedded text):
+        Toma el siguiente concepto fotográfico de campaña para ${effectiveCompanyName} (${productContext}): "${basePrompt}"
+
+        === REGLAS DE FOTOGRAFÍA BASE LIMPIA DEL MANUAL DE MARCA ===
+        ${JSON.stringify(slices.photoSlice, null, 2)}
+
+        Adapta este concepto para las siguientes 5 variantes visuales en México, respetando estrictamente las reglas fotográficas anteriores (iluminación natural cálida, personas mexicanas reales, SIN estetoscopio en médicos, resultados 100% digitales en tablet/App, SIN placas radiográficas físicas, SIN agujas ni sangre explícita, SIN texto incrustado, SIN logotipos y SIN gráficos o líneas vectoriales):
         ${categories.join(", ")}
-        
-        Return a JSON object mapping each category name exactly as written to a highly detailed image generation prompt.
+
+        Devuelve un objeto JSON que mapee cada nombre de categoría exactamente como está escrito a un prompt fotográfico detallado de fotografía base limpia.
         `;
 
         const response = await callGenAiProxy("generateContent", {
@@ -1949,23 +2630,23 @@ export const generateRegionalVariants = async (basePrompt: string, companyName: 
 
         const results = [];
         const BATCH_SIZE = 2;
-        
+
         for (let i = 0; i < categories.length; i += BATCH_SIZE) {
             const batch = categories.slice(i, i + BATCH_SIZE);
             const batchPromises = batch.map(async (category) => {
                 const promptForRegion = data[category] || basePrompt;
-                const imageUrl = await generateImageFromPrompt(promptForRegion + ", fotografía realista en México, iluminación clínica limpia azul #004B87 y blanco #FFFFFF, sin placas físicas, sin agujas, sin texto incrustado");
+                const imageUrl = await generateImageFromPrompt(promptForRegion, aspectRatio, slices.channelKey);
                 return {
                     region: category,
                     imagePrompt: promptForRegion,
                     image: imageUrl
                 };
             });
-            
+
             const batchResults = await Promise.all(batchPromises);
             results.push(...batchResults);
         }
-        
+
         return results;
     } catch (error) {
         console.error("Regional variants error:", error);
@@ -1974,21 +2655,34 @@ export const generateRegionalVariants = async (basePrompt: string, companyName: 
 };
 
 export const simulateABTestFocusGroup = async (
-    pool: any[], 
-    variants: { region: string, image: string | null }[],
-    companyName: string = "Laboratorios Médicos El Chopo",
-    productContext: string = "Check-up Control Diabetes"
+    pool: any[],
+    variants: { region: string; image: string | null }[],
+    companyName: string = DEFAULT_OFFICIAL_BRAND_NAME,
+    productContext: string = "Check-up Control Diabetes",
+    channelKey: BrandChannelKey = 'social_media'
 ): Promise<ABTestResult[]> => {
     if (!variants || variants.length === 0) return [];
 
+    const brandManual = await fetchBrandManual();
+    const slices = buildBrandSlices(brandManual, { channelKey });
+    const effectiveCompanyName = companyName || slices.dynamicVars.officialName;
+    const { channelLabel } = slices.focusGroupSlice;
+
     const promises = pool.map(async (persona) => {
         try {
+            const personaTrack = detectPersonaTrack(persona).track;
             const prompt = `
-            You are evaluating marketing creative variants for ${companyName} (${productContext}) as a synthetic user in Mexico.
-            
+            Estás evaluando variantes creativas para ${effectiveCompanyName} (${productContext}) en el canal "${channelLabel}" como una persona real en México (paciente, médico o responsable de empresa/RH según tu perfil).
+
+            === CONTEXTO DEL CANAL Y ESENCIA DE MARCA ===
+            ${JSON.stringify(slices.focusGroupSlice, null, 2)}
+
+            **Regla de Realismo:**
+            Reacciona como un ser humano real en México viendo estas propuestas en "${channelLabel}", NUNCA como un auditor regulatorio de COFEPRIS ni un diseñador gráfico corporativo. Evalúa calidez humana, claridad visual, tranquilidad y relevancia práctica para ti.
+
             Persona Profile:
             Name: ${persona.name}
-            Track: ${persona.track || 'patient'}
+            Track: ${personaTrack}
             Bio: ${persona.bio}
             Pain Points: ${(persona.pain_points || persona.details?.pain_points || []).join(", ")}
             Goals: ${(persona.goals || persona.details?.goals || []).join(", ")}
@@ -1996,7 +2690,7 @@ export const simulateABTestFocusGroup = async (
             Variants presented to you:
             ${variants.map(v => `- Variant: ${v.region}`).join("\n\n")}
 
-            Task: Review the variants presented. 
+            Task: Review the variants presented.
             For EACH variant, provide a score from 1 to 10 on how strongly it resonates with your persona. Explain your rationale for that score.
             Then, determine the overall best variant.
 
@@ -2036,7 +2730,6 @@ export const simulateABTestFocusGroup = async (
                 personaId: persona.id,
                 personaName: persona.name,
                 selectedVariant: "Error",
-                rationale: "Simulation failed.",
                 sentiment: "Neutral",
                 rankings: [],
                 overallFeedback: "Simulation failed."

@@ -23,10 +23,15 @@ import {
   Target,
   Camera
 } from 'lucide-react';
-import { AppMode, CombinedPersona } from '../types';
+import { AppMode, AudienceTrack, CombinedPersona } from '../types';
 import { STANDARD_AUDIENCES } from '../data/simulationData';
 import { useCompanyContext } from '../context/CompanyContext';
 import { useLanguage } from '../context/LanguageContext';
+import {
+  TRACK_TO_SEGMENT_KEY,
+  SEGMENT_KEY_TO_TRACK,
+  resolveSegmentKey
+} from '../services/brandManualUtils';
 
 interface AudienceGeneratorProps {
   personas: CombinedPersona[];
@@ -34,48 +39,142 @@ interface AudienceGeneratorProps {
   setMode?: (mode: AppMode) => void;
 }
 
+export type AudienceSegmentCode = 'B2C' | 'B2D' | 'B2B';
+
+const SEGMENT_OPTIONS: Array<{
+  code: AudienceSegmentCode;
+  track: AudienceTrack;
+  label: string;
+  shortLabel: string;
+  hint: string;
+  activeClass: string;
+  inactiveClass: string;
+  badgeClass: string;
+}> = [
+  {
+    code: 'B2C',
+    track: 'patient',
+    label: '🏥 Paciente (B2C)',
+    shortLabel: 'Paciente (B2C)',
+    hint: 'Habla de Tú',
+    activeClass: 'bg-[#0066FF] text-white shadow-sm',
+    inactiveClass: 'text-slate-600 hover:text-[#003B7A]',
+    badgeClass: 'bg-[#0066FF] text-white border-blue-400'
+  },
+  {
+    code: 'B2D',
+    track: 'physician',
+    label: '🩺 Médico (B2D)',
+    shortLabel: 'Médico (B2D)',
+    hint: 'Habla de Tú respetuoso',
+    activeClass: 'bg-emerald-600 text-white shadow-sm',
+    inactiveClass: 'text-slate-600 hover:text-emerald-800',
+    badgeClass: 'bg-emerald-600 text-white border-emerald-400'
+  },
+  {
+    code: 'B2B',
+    track: 'enterprise',
+    label: '🏢 Empresa (B2B)',
+    shortLabel: 'Empresa (B2B)',
+    hint: 'Habla de Usted — Convenios y Salud Ocupacional',
+    activeClass: 'bg-indigo-700 text-white shadow-sm',
+    inactiveClass: 'text-slate-600 hover:text-indigo-800',
+    badgeClass: 'bg-indigo-700 text-white border-indigo-400'
+  }
+];
+
+const SEGMENT_CODE_TO_TRACK: Record<AudienceSegmentCode, AudienceTrack> = {
+  B2C: SEGMENT_KEY_TO_TRACK.b2c_patients,
+  B2D: SEGMENT_KEY_TO_TRACK.b2d_doctors,
+  B2B: SEGMENT_KEY_TO_TRACK.b2b_enterprises
+};
+
 const QUICK_PROMPT_EXAMPLES: Array<{
   labelEs: string;
-  labelEn: string;
   prompt: string;
-  track: 'B2C' | 'B2B';
+  track: AudienceSegmentCode;
 }> = [
   {
     labelEs: '🩺 Médico general recién egresado que acaba de terminar su servicio social',
-    labelEn: '🩺 Newly graduated general practitioner who just finished social service',
     prompt: 'Médico general recién egresado que acaba de terminar su servicio social y abre su primer consultorio particular buscando estudios diagnósticos confiables y accesibles para sus pacientes.',
-    track: 'B2B'
+    track: 'B2D'
   },
   {
     labelEs: '🩺 Oncólogo clínico enfocado en detección oportuna y biomarcadores',
-    labelEn: '🩺 Clinical oncologist focused on early detection and biomarkers',
     prompt: 'Oncólogo clínico o médico especialista en cáncer enfocado en detección oportuna, biomarcadores tumorales, estudios de imagen de alta resolución y seguimiento digital de pacientes.',
-    track: 'B2B'
+    track: 'B2D'
   },
   {
     labelEs: '🤰 Mujer embarazada primeriza buscando ultrasonido prenatal y control trimestral',
-    labelEn: '🤰 First-time pregnant woman seeking prenatal ultrasound and trimester checkups',
     prompt: 'Mujer embarazada primeriza buscando ultrasonido prenatal, estudios de control trimestral, trato cálido en sucursal y resultados digitales para compartir con su ginecólogo.',
     track: 'B2C'
   },
   {
     labelEs: '🏃‍♂️ Adulto joven deportista que monitorea su química sanguínea cada 6 meses',
-    labelEn: '🏃‍♂️ Young athlete monitoring blood chemistry every 6 months',
     prompt: 'Adulto joven deportista que monitorea su química sanguínea de 45 elementos, perfil lipídico y biomarcadores cada 6 meses mediante la App Chopo sin hacer filas.',
     track: 'B2C'
+  },
+  {
+    labelEs: '🏢 Directora de Recursos Humanos buscando convenios de check-ups anuales para 350 colaboradores',
+    prompt: 'Directora de Recursos Humanos de una empresa mediana buscando convenios corporativos de check-ups anuales, salud ocupacional y facturación centralizada para 350 colaboradores.',
+    track: 'B2B'
+  },
+  {
+    labelEs: '🏢 Gerente de Seguridad e Higiene coordinando exámenes médicos de ingreso y periódicos',
+    prompt: 'Gerente de Seguridad e Higiene en planta industrial coordinando convenios empresariales de exámenes médicos de ingreso, perfiles toxicológicos y seguimiento periódico de salud ocupacional.',
+    track: 'B2B'
   }
 ];
 
-export const isPersonaB2B = (p: CombinedPersona | any): boolean => {
-  if (!p) return false;
-  if (p.track === 'physician' || (p as any).track === 'B2B') return true;
-  if (p.track === 'patient' || (p as any).track === 'B2C') {
-    const rawName = String(p.name || '');
-    if (/médico\s*b2b|\[médico/i.test(rawName)) return true;
-    return false;
+export const getPersonaSegmentCode = (p: CombinedPersona | any): AudienceSegmentCode => {
+  if (!p) return 'B2C';
+  const rawTrack = String(p.track || '').trim();
+  const rawName = String(p.name || '');
+
+  if (rawTrack === 'enterprise' || rawTrack === 'b2b_enterprises') return 'B2B';
+  if (rawTrack === 'physician' || rawTrack === 'B2D' || rawTrack === 'b2d_doctors') return 'B2D';
+  if (rawTrack === 'patient' || rawTrack === 'B2C' || rawTrack === 'b2c_patients') {
+    if (/\[empresa|\bempresa\s*\(?b2b/i.test(rawName)) return 'B2B';
+    if (/médico\s*b2[bd]|\[médico/i.test(rawName)) return 'B2D';
+    return 'B2C';
   }
-  const combinedText = `${p.name || ''} ${p.personaName || ''} ${p.job_title || ''} ${p.details?.job_title || ''}`;
-  return /médico|b2b|physician|oncólog|endocrin|ginecólog|especialista prescriptor|dr\.|dra\./i.test(combinedText);
+
+  const combinedText = `${rawName} ${p.personaName || ''} ${p.job_title || ''} ${p.details?.job_title || ''}`;
+  if (rawTrack === 'B2B') {
+    if (/médico|physician|oncólog|endocrin|ginecólog|especialista prescriptor|dr\.|dra\./i.test(combinedText)) {
+      return 'B2D';
+    }
+    return 'B2B';
+  }
+
+  if (/\[paciente|paciente\s*\(?b2c/i.test(rawName)) return 'B2C';
+  if (/\[médico|médico\s*\(?b2[bd]/i.test(rawName)) return 'B2D';
+  if (/\[empresa|empresa\s*\(?b2b/i.test(rawName)) return 'B2B';
+
+  const resolved = resolveSegmentKey(rawTrack);
+  if (rawTrack && resolved === 'b2b_enterprises') return 'B2B';
+  if (rawTrack && resolved === 'b2d_doctors') return 'B2D';
+
+  if (/convenios?\s+empresarial|salud\s+ocupacional|corporativ|empresa\s*\(?b2b/i.test(combinedText)) {
+    return 'B2B';
+  }
+  if (/médico|b2d|physician|oncólog|endocrin|ginecólog|especialista prescriptor|dr\.|dra\./i.test(combinedText)) {
+    return 'B2D';
+  }
+  return 'B2C';
+};
+
+export const isPersonaB2B = (p: CombinedPersona | any): boolean => {
+  return getPersonaSegmentCode(p) === 'B2B';
+};
+
+const formatDisplayPersonaName = (rawName?: string): string => {
+  if (!rawName) return '';
+  return rawName
+    .replace(/\[Médico B2B\]/gi, '[Médico B2D]')
+    .replace(/\(Médico B2B\)/gi, '(Médico B2D)')
+    .replace(/Médico Prescriptor B2B/gi, 'Médico (B2D)')
+    .replace(/Médico B2B/gi, 'Médico (B2D)');
 };
 
 export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
@@ -84,11 +183,11 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
   setMode
 }) => {
   const { description } = useCompanyContext();
-  const { language, t } = useLanguage();
+  const { t } = useLanguage();
 
-  const [selectedTrack, setSelectedTrack] = useState<'B2C' | 'B2B'>('B2C');
+  const [selectedTrack, setSelectedTrack] = useState<AudienceSegmentCode>('B2C');
   const [promptInput, setPromptInput] = useState<string>('');
-  const [trackFilter, setTrackFilter] = useState<'ALL' | 'B2C' | 'B2B'>('ALL');
+  const [trackFilter, setTrackFilter] = useState<'ALL' | AudienceSegmentCode>('ALL');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadingStep, setLoadingStep] = useState<string>('');
   const [generatingPortraitKey, setGeneratingPortraitKey] = useState<string | null>(null);
@@ -104,7 +203,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
   const [editForm, setEditForm] = useState<{
     name: string;
     personaName: string;
-    track: 'B2C' | 'B2B';
+    track: AudienceSegmentCode;
     age: number;
     income: string;
     job_title: string;
@@ -220,13 +319,12 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
     const trimmedPrompt = promptInput.trim();
     if (!trimmedPrompt || isBusy) return;
 
+    const selectedSegmentMeta = SEGMENT_OPTIONS.find(s => s.code === selectedTrack) || SEGMENT_OPTIONS[0];
+
     setIsLoading(true);
     setStatusMessage(null);
     setLoadingStep(
-      t(
-        `Generando perfil de audiencia ${selectedTrack === 'B2B' ? 'Médico Prescriptor B2B' : 'Paciente B2C'} con IA...`,
-        `Generating ${selectedTrack === 'B2B' ? 'B2B Prescribing Physician' : 'B2C Patient'} audience profile with AI...`
-      )
+      t(`Generando perfil de audiencia ${selectedSegmentMeta.shortLabel} con IA...`)
     );
 
     try {
@@ -250,13 +348,10 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
       setPersonas(updatedList);
       setPromptInput('');
       setStatusMessage(
-        t(
-          `Perfil "${newPersona.name}" creado y agregado al catálogo.`,
-          `Profile "${newPersona.name}" created and added to catalog.`
-        )
+        t(`Perfil "${formatDisplayPersonaName(newPersona.name)}" creado y agregado al catálogo.`)
       );
 
-      const summary = `Creación de perfil por prompt: ${trimmedPrompt.slice(0, 60)}`;
+      const summary = `Creación de perfil (${selectedTrack}): ${trimmedPrompt.slice(0, 60)}`;
       await persistPersonasList(updatedList, summary);
 
       // Generate portrait in background without blocking the user
@@ -325,7 +420,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
   const openEditModal = (index: number) => {
     const p = displayedPersonas[index];
     if (!p) return;
-    const b2b = isPersonaB2B(p);
+    const segCode = getPersonaSegmentCode(p);
     const painPoints = p.details?.pain_points || p.pain_points || [];
     const goals = p.details?.goals || p.goals || [];
     const preferredProducts = p.details?.preferred_products || p.preferred_products || [];
@@ -335,7 +430,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
     setEditForm({
       name: p.name || '',
       personaName: p.personaName || '',
-      track: b2b ? 'B2B' : 'B2C',
+      track: segCode,
       age: Number(p.details?.age || p.age || 40),
       income: p.details?.income || '',
       job_title: p.details?.job_title || p.job_title || '',
@@ -372,7 +467,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
 
     const updatedPersona: CombinedPersona = {
       ...original,
-      track: editForm.track === 'B2B' ? 'physician' : 'patient',
+      track: SEGMENT_CODE_TO_TRACK[editForm.track] || 'patient',
       name: editForm.name.trim() || original.name,
       personaName: editForm.personaName.trim() || original.personaName,
       age: Number(editForm.age) || 40,
@@ -586,14 +681,17 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
     }));
   };
 
-  const b2cCount = displayedPersonas.filter(p => !isPersonaB2B(p)).length;
-  const b2bCount = displayedPersonas.filter(p => isPersonaB2B(p)).length;
+  const b2cCount = displayedPersonas.filter(p => getPersonaSegmentCode(p) === 'B2C').length;
+  const b2dCount = displayedPersonas.filter(p => getPersonaSegmentCode(p) === 'B2D').length;
+  const b2bCount = displayedPersonas.filter(p => getPersonaSegmentCode(p) === 'B2B').length;
 
   const filteredPersonas = displayedPersonas.filter(p => {
-    if (trackFilter === 'B2C') return !isPersonaB2B(p);
-    if (trackFilter === 'B2B') return isPersonaB2B(p);
-    return true;
+    if (trackFilter === 'ALL') return true;
+    return getPersonaSegmentCode(p) === trackFilter;
   });
+
+  const activeSegmentOption =
+    SEGMENT_OPTIONS.find(opt => opt.code === selectedTrack) || SEGMENT_OPTIONS[0];
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col">
@@ -604,22 +702,21 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
             <div className="flex items-center gap-3">
               <Users className="text-[#0066FF]" />
               <h1 className="page-title">
-                {t('Generador y Catálogo de Audiencias (B2C y B2B)', 'Audience Generator & Catalog (B2C & B2B)')}
+                {t('Generador y Catálogo de Audiencias (B2C, B2D y B2B)')}
               </h1>
             </div>
             <button
               disabled={isBusy}
               onClick={() => setIsSettingsOpen(true)}
               className="p-2 text-slate-400 hover:text-[#0066FF] transition-colors bg-white rounded-lg border border-slate-200 shadow-sm disabled:opacity-50"
-              title={t('Configuración de Estrategia de Audiencias', 'Audience Strategy Settings')}
+              title={t('Configuración de Estrategia de Audiencias')}
             >
               <Settings size={20} />
             </button>
           </div>
           <p className="text-subtext mt-1">
             {t(
-              'Consulta los perfiles clínicos base de Laboratorios Chopo (Pacientes B2C y Médicos Prescriptores B2B) o crea nuevos segmentos personalizados con IA a partir de una descripción.',
-              'Explore Laboratorios Chopo base clinical personas (B2C Patients and B2B Prescribing Physicians) or create new custom segments with AI from a prompt.'
+              'Consulta los perfiles base de Laboratorio Médico del Chopo (Pacientes B2C, Médicos B2D y Empresas B2B) o crea nuevos segmentos personalizados con IA a partir de una descripción.'
             )}
           </p>
         </div>
@@ -634,18 +731,17 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                 <div className="animate-spin rounded-full h-5 w-5 border-2 border-[#0066FF] border-t-transparent shrink-0" />
                 <div>
                   <p className="text-sm font-bold text-[#003B7A]">
-                    {loadingStep || t('Procesando operación con IA...', 'Processing AI operation...')}
+                    {loadingStep || t('Procesando operación con IA...')}
                   </p>
                   <p className="text-xs text-slate-600">
                     {t(
-                      'Construyendo el perfil clínico completo en español de México y sincronizando con Firestore.',
-                      'Building the full clinical persona in Mexican Spanish and syncing with Firestore.'
+                      'Construyendo el perfil completo en español de México y guardando los cambios en tu catálogo.'
                     )}
                   </p>
                 </div>
               </div>
               <span className="px-2.5 py-1 rounded-md bg-white border border-blue-200 text-[11px] font-bold text-[#0066FF] shrink-0">
-                {t('Generando...', 'Generating...')}
+                {t('Generando...')}
               </span>
             </div>
           )}
@@ -673,55 +769,62 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
               isBusy ? 'pointer-events-none opacity-65 select-none' : ''
             }`}
           >
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-[#003B7A] flex items-center gap-2">
-                  <Sparkles size={20} className="text-[#0066FF]" />
-                  <span>
-                    {t('✨ Crear Nuevo Perfil de Audiencia con IA', '✨ Create New Audience Profile with AI')}
-                  </span>
-                </h2>
-                <p className="text-xs text-slate-600 mt-0.5">
-                  {t(
-                    'Elige el segmento (Paciente B2C o Médico Prescriptor B2B), describe el perfil en lenguaje natural o usa un ejemplo rápido, y agrégalo al instante a tu catálogo.',
-                    'Select the segment (B2C Patient or B2B Prescribing Physician), describe the profile in natural language or pick a quick example, and add it immediately to your catalog.'
-                  )}
-                </p>
-              </div>
+            <div className="flex flex-col gap-3 mb-4">
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-lg font-bold text-[#003B7A] flex items-center gap-2">
+                      <Sparkles size={20} className="text-[#0066FF] shrink-0" />
+                      <span>{t('✨ Crear Nuevo Perfil de Audiencia con IA')}</span>
+                    </h2>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      {t(
+                        'Elige el segmento oficial (Paciente B2C, Médico B2D o Empresa B2B), describe el perfil con tus propias palabras o usa un ejemplo rápido, y agrégalo al instante a tu catálogo.'
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#EFF9FE] border border-[#BDD4F2] text-xs text-[#004699] shrink-0">
+                    <span className="font-bold">{activeSegmentOption.label}:</span>
+                    <span>{activeSegmentOption.hint}</span>
+                  </div>
+                </div>
 
-              {/* Track Selector Buttons */}
-              <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 shrink-0">
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => setSelectedTrack('B2C')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                    selectedTrack === 'B2C'
-                      ? 'bg-[#0066FF] text-white shadow-sm'
-                      : 'text-slate-600 hover:text-[#003B7A]'
-                  }`}
-                >
-                  <span>{t('🏥 Paciente (B2C)', '🏥 Patient (B2C)')}</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => setSelectedTrack('B2B')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                    selectedTrack === 'B2B'
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'text-slate-600 hover:text-emerald-800'
-                  }`}
-                >
-                  <span>{t('🩺 Médico Prescriptor (B2B)', '🩺 Prescribing Physician (B2B)')}</span>
-                </button>
+                {/* 3-Segment Official Manual V4 Toggle */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 rounded-xl bg-slate-100 p-1.5 border border-slate-200 w-full">
+                  {SEGMENT_OPTIONS.map(option => {
+                    const isActive = selectedTrack === option.code;
+                    return (
+                      <button
+                        key={option.code}
+                        type="button"
+                        disabled={isBusy}
+                        data-segment-key={TRACK_TO_SEGMENT_KEY[option.track]}
+                        onClick={() => setSelectedTrack(option.code)}
+                        className={`px-3.5 py-2.5 rounded-lg text-left transition-all flex flex-col justify-center ${
+                          isActive ? option.activeClass : `bg-transparent ${option.inactiveClass} hover:bg-white/70`
+                        }`}
+                      >
+                        <span className="text-xs font-bold leading-tight whitespace-nowrap">
+                          {option.label}
+                        </span>
+                        <span
+                          className={`text-[11px] leading-tight mt-0.5 ${
+                            isActive ? 'text-white/90' : 'text-slate-500'
+                          }`}
+                        >
+                          {option.hint}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
             {/* Quick Example Chips */}
             <div className="mb-3">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
-                {t('Ejemplos rápidos (clic para probar):', 'Quick examples (click to try):')}
+                {t('Ejemplos rápidos (clic para probar):')}
               </span>
               <div className="flex flex-wrap gap-2">
                 {QUICK_PROMPT_EXAMPLES.map((ex, idx) => (
@@ -734,18 +837,20 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                       setPromptInput(ex.prompt);
                     }}
                     className={`text-xs px-3 py-1.5 rounded-full font-semibold border transition-all text-left ${
-                      ex.track === 'B2B'
+                      ex.track === 'B2D'
                         ? 'bg-emerald-50/70 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
-                        : 'bg-blue-50/70 hover:bg-blue-100 text-[#003B7A] border-blue-200'
+                        : ex.track === 'B2B'
+                          ? 'bg-indigo-50/70 hover:bg-indigo-100 text-indigo-800 border-indigo-200'
+                          : 'bg-blue-50/70 hover:bg-blue-100 text-[#003B7A] border-blue-200'
                     }`}
                   >
-                    {language === 'es' ? ex.labelEs : ex.labelEn}
+                    {ex.labelEs}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Prompt Input + Primary CTA */}
+            {/* Description Input + Primary CTA */}
             <div className="flex flex-col md:flex-row gap-3 items-stretch">
               <textarea
                 rows={2}
@@ -753,8 +858,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                 value={promptInput}
                 onChange={e => setPromptInput(e.target.value)}
                 placeholder={t(
-                  'Describe el perfil de audiencia que deseas agregar (ej. "Médico general recién egresado que acaba de terminar su servicio social" o "Mujer embarazada primeriza buscando ultrasonido prenatal y estudios de control")...',
-                  'Describe the audience profile you want to add (e.g. "Newly graduated general practitioner who just finished social service" or "First-time pregnant woman seeking prenatal ultrasound")...'
+                  'Describe el perfil de audiencia que deseas agregar (ej. "Directora de Recursos Humanos buscando convenios de check-ups anuales para 350 colaboradores", "Médico general recién egresado..." o "Mujer embarazada primeriza...")...'
                 )}
                 className="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0066FF] focus:border-transparent outline-none text-sm text-slate-900 resize-none"
               />
@@ -765,7 +869,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                 className="btn-primary px-6 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 shrink-0 disabled:opacity-50"
               >
                 <Plus size={18} />
-                <span>{t('Generar y Agregar Audiencia', 'Generate & Add Audience')}</span>
+                <span>{t('Generar y Agregar Audiencia')}</span>
               </button>
             </div>
           </div>
@@ -782,7 +886,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                {t('Todos los Perfiles', 'All Profiles')} ({displayedPersonas.length})
+                {t('Todos los Perfiles')} ({displayedPersonas.length})
               </button>
               <button
                 type="button"
@@ -793,18 +897,29 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                     : 'bg-blue-50 text-[#003B7A] hover:bg-blue-100 border border-blue-200'
                 }`}
               >
-                {t('🏥 Pacientes B2C', '🏥 B2C Patients')} ({b2cCount})
+                {t('🏥 Pacientes B2C')} ({b2cCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTrackFilter('B2D')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                  trackFilter === 'B2D'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                }`}
+              >
+                {t('🩺 Médicos B2D')} ({b2dCount})
               </button>
               <button
                 type="button"
                 onClick={() => setTrackFilter('B2B')}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
                   trackFilter === 'B2B'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                    ? 'bg-indigo-700 text-white shadow-sm'
+                    : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-200'
                 }`}
               >
-                {t('🩺 Médicos B2B', '🩺 B2B Physicians')} ({b2bCount})
+                {t('🏢 Empresas B2B')} ({b2bCount})
               </button>
             </div>
 
@@ -816,7 +931,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                 className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#003B7A] border border-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
               >
                 <History size={15} className="text-[#0066FF]" />
-                <span>{t('📜 Historial / Versiones', '📜 History / Versions')}</span>
+                <span>{t('📜 Historial / Versiones')}</span>
               </button>
               {displayedPersonas.length > 0 && (
                 <button
@@ -826,7 +941,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                   className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
                 >
                   <Trash2 size={14} />
-                  <span>{t('🗑️ Vaciar Todos', '🗑️ Clear All')}</span>
+                  <span>{t('🗑️ Vaciar Todos')}</span>
                 </button>
               )}
               <button
@@ -836,7 +951,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                 className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
               >
                 <RotateCcw size={15} />
-                <span>{t('Restaurar Perfiles Base', 'Restore Base Profiles')}</span>
+                <span>{t('Restaurar Perfiles Base')}</span>
               </button>
             </div>
           </div>
@@ -844,7 +959,9 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
           {/* Audience Cards Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {filteredPersonas.map((p, idx) => {
-              const b2b = isPersonaB2B(p);
+              const segCode = getPersonaSegmentCode(p);
+              const segMeta = SEGMENT_OPTIONS.find(s => s.code === segCode) || SEGMENT_OPTIONS[0];
+              const displayName = formatDisplayPersonaName(p.name);
               const realIndex = displayedPersonas.findIndex(item => item.name === p.name);
               const painPoints = p.details?.pain_points || p.pain_points || [];
               const goals = p.details?.goals || p.goals || [];
@@ -860,13 +977,13 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                   {/* Header / Portrait */}
                   <div className="relative h-72 bg-slate-100">
                     {p.imageUrl ? (
-                      <img src={p.imageUrl} alt={p.name} className="img-cover-top" />
+                      <img src={p.imageUrl} alt={displayName} className="img-cover-top" />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 p-6 text-center">
                         <Users size={44} className="mx-auto mb-2 opacity-30" />
                         {isGeneratingThisPortrait ? (
                           <span className="text-xs font-semibold text-[#0066FF] animate-pulse">
-                            {t('Generando Retrato con IA...', 'Generating AI Portrait...')}
+                            {t('Generando Retrato con IA...')}
                           </span>
                         ) : (
                           <button
@@ -875,28 +992,24 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                             className="mt-1 px-3 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#0052CC] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm z-10"
                           >
                             <Camera size={14} />
-                            <span>{t('Generar Retrato IA', 'Generate AI Portrait')}</span>
+                            <span>{t('Generar Retrato IA')}</span>
                           </button>
                         )}
                       </div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
 
-                    {/* Track Badge */}
+                    {/* Segment Badge */}
                     <div className="absolute top-4 left-4 flex items-center gap-2">
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-bold shadow-sm border ${
-                          b2b
-                            ? 'bg-emerald-600 text-white border-emerald-400'
-                            : 'bg-[#0066FF] text-white border-blue-400'
-                        }`}
+                        className={`px-3 py-1 rounded-full text-xs font-bold shadow-sm border ${segMeta.badgeClass}`}
                       >
-                        {b2b ? t('🩺 Médico B2B', '🩺 B2B Physician') : t('🏥 Paciente B2C', '🏥 B2C Patient')}
+                        {segMeta.label}
                       </span>
                     </div>
 
                     <div className="absolute bottom-5 left-5 right-5 text-white">
-                      <h3 className="font-bold text-xl leading-snug mb-1">{p.name}</h3>
+                      <h3 className="font-bold text-xl leading-snug mb-1">{displayName}</h3>
                       <p className="text-slate-100 font-semibold text-xs mb-1">
                         {p.personaName}
                       </p>
@@ -1090,7 +1203,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
-                    {t('Nombre del Arquetipo (personaName)', 'Archetype Name (personaName)')}
+                    {t('Nombre del Arquetipo')}
                   </label>
                   <input
                     type="text"
@@ -1104,15 +1217,16 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
-                    {t('Segmento', 'Segment')}
+                    {t('Segmento')}
                   </label>
                   <select
                     value={editForm.track}
-                    onChange={e => setEditForm({ ...editForm, track: e.target.value as 'B2C' | 'B2B' })}
+                    onChange={e => setEditForm({ ...editForm, track: e.target.value as AudienceSegmentCode })}
                     className="input-field text-sm"
                   >
-                    <option value="B2C">{t('🏥 Paciente B2C', '🏥 B2C Patient')}</option>
-                    <option value="B2B">{t('🩺 Médico B2B', '🩺 B2B Physician')}</option>
+                    <option value="B2C">{t('🏥 Paciente (B2C) — Habla de Tú')}</option>
+                    <option value="B2D">{t('🩺 Médico (B2D) — Habla de Tú respetuoso')}</option>
+                    <option value="B2B">{t('🏢 Empresa (B2B) — Habla de Usted')}</option>
                   </select>
                 </div>
                 <div>
@@ -1294,7 +1408,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                         onClick={() => handleRollbackVersion(vId)}
                         className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-blue-50 text-[#0066FF] border border-blue-200 text-xs font-bold shrink-0"
                       >
-                        Rollback
+                        {t('Restaurar')}
                       </button>
                     </div>
                   );

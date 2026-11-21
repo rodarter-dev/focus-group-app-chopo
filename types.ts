@@ -4,13 +4,220 @@ export enum AppMode {
   SYNTHETIC_USERS = 'SYNTHETIC_USERS',
   MARKETING_BRIEF = 'MARKETING_BRIEF',
   SYNTHETIC_FOCUS_GROUP = 'SYNTHETIC_FOCUS_GROUP',
-  SYNTHETIC_CHAT = 'SYNTHETIC_CHAT'
+  SYNTHETIC_CHAT = 'SYNTHETIC_CHAT',
+  BRAND_MANUAL = 'BRAND_MANUAL'
+}
+
+export type AudienceTrack = 'patient' | 'physician' | 'enterprise';
+export type BrandAudienceSegmentKey = 'b2c_patients' | 'b2d_doctors' | 'b2b_enterprises';
+export type FunnelStage = 'awareness' | 'consideration' | 'performance';
+export type BrandChannelKey = 'social_media' | 'mailing_ecommerce' | 'web' | 'pdv_sucursal' | string;
+export type AssetStage = 'base_photo_and_copy' | 'final_designed_artwork';
+
+export interface BrandSegmentConfig {
+  id: string;
+  code: string;
+  appTrack: AudienceTrack;
+  label: string;
+  pronoun: string;
+  toneGuidance: string;
+  valueDrivers: string[];
+  primaryDestination: string;
+  mandatoryPrecautionaryLegend: string;
+}
+
+export interface BrandFunnelStageRule {
+  label: string;
+  headlineRule: string;
+  bodyFocus: string;
+  ctaPlacementAndStyle: string;
+}
+
+export interface BrandColorItem {
+  id: string;
+  name: string;
+  hex: string;
+  rgb: string;
+  usage: string;
+}
+
+export interface BrandContrastRule {
+  backgroundHex: string;
+  backgroundName: string;
+  allowedForegrounds: string[];
+  forbiddenForegrounds: string[];
+  notes: string;
+}
+
+export interface BrandChannelRule {
+  id: string;
+  label: string;
+  sourcePages?: string;
+  supportedFormats: string[];
+  copyRules: string;
+  photoRules: string;
+  focusGroupContext: string;
+  auditorRules: string[];
+}
+
+export interface BrandManualConfig {
+  metadata: {
+    id: string;
+    version: string;
+    sourceDocument: string;
+    client: string;
+    umbrellaCampaign: string;
+    lastUpdated: string;
+    architectureNote?: string;
+  };
+  identity_and_voice: {
+    uiTabTitle: string;
+    sourcePages?: string;
+    officialBrandNames: string[];
+    logoDescriptor: string;
+    mandatorySlogan: {
+      text: string;
+      usageRule: string;
+    };
+    purpose: string;
+    brandAttributesPyramid: {
+      cuspUnique: string[];
+      centerDifferentiators: string[];
+      baseCategoryEssentials: string[];
+      experiencePillars: Record<string, string[]>;
+    };
+    audienceSegments: Record<string, BrandSegmentConfig>;
+    voiceAndCopyInvariants: {
+      grammaticalPerson: string;
+      zeroExclamationMarks: string;
+      clarityOverJargon: string;
+      ingenuityVsHumor: string;
+      dos: string[];
+      donts: string[];
+    };
+    funnelStageRules: Record<string, BrandFunnelStageRule>;
+    contactTouchpointsOrder: {
+      strictOrder: string[];
+      rule: string;
+    };
+    medicalCitationsRule: {
+      maxAgeYears: number;
+      citationStandard: string;
+      rule: string;
+    };
+    advertisingPermitRule: string;
+  };
+  photography_and_imagery: {
+    uiTabTitle: string;
+    sourcePages?: string;
+    generalPhilosophy: string;
+    colorTemperatureRule: string;
+    cleanBaseImageRuleForAI: string;
+    focusGroupWarmthHint: string;
+    dos: string[];
+    donts: string[];
+  };
+  color_palette: {
+    uiTabTitle: string;
+    sourcePages?: string;
+    ambientPromptGuidance: string;
+    primaryDigital: BrandColorItem[];
+    secondaryDigital: BrandColorItem[];
+    promotionalAndButtons: BrandColorItem[];
+    contrastMatrix: BrandContrastRule[];
+  };
+  graphic_design_and_layout: {
+    uiTabTitle: string;
+    sourcePages?: string;
+    usageNote: string;
+    logoRules: {
+      mandatoryDescriptor: string;
+      contrastOnPhotos: string;
+      modularLogoColor: string;
+      placement: string;
+      cobrandingRule: string;
+    };
+    typographyRules: {
+      primaryFontFamily: string;
+      webAlternativeFontFamily: string;
+      weightHierarchy: Record<string, string>;
+      visionAuditGuidance: string;
+    };
+    lineaBasalRules: {
+      description: string;
+      proportionInvariants: string[];
+      interactionAndSizeRules: string[];
+      allowedAndForbiddenCrops: string[];
+      nonAggressionRules: string[];
+    };
+    modularityRules: {
+      cornerGeometry: string;
+      noFloatingBoxes: string;
+      singleAxisOrientation: string;
+      maxSizeLimits: string;
+      horizontalLayoutAndCtaTab: string;
+    };
+    pricingAndDiscountsRules: {
+      mandatoryColor: string;
+      circularBadgeBleed: string;
+      modularPromoBox: string;
+    };
+    iconsLegalsAndNoPhotoRules: {
+      icons: string;
+      legalsPlacement: string;
+      noPhotoLayouts: string;
+    };
+  };
+  channels: {
+    uiTabTitle: string;
+    items: Record<string, BrandChannelRule>;
+  };
+}
+
+export interface BrandManualDynamicVars {
+  officialName: string;
+  slogan: string;
+  logoDescriptor: string;
+  contactBar: string;
+  pronoun: string;
+  segmentCode: string;
+  segmentLabel: string;
+  primaryDestination: string;
+  precautionaryLegend: string;
+  channelLabel: string;
+  basalGreenHex: string;
+  brightBlueHex: string;
+  navyBlueHex: string;
+  modularLightBlueHex: string;
+  promoPinkHex: string;
+  seasonalRedHex: string;
+  mailingMagentaHex: string;
+}
+
+export interface BrandManualSlices {
+  audienceSegment: BrandAudienceSegmentKey;
+  funnelStage: FunnelStage;
+  channelKey: BrandChannelKey;
+  segmentContext: {
+    purpose: string;
+    segment: BrandSegmentConfig | null;
+  };
+  voiceAndFunnelSlice: Record<string, any>;
+  photoSlice: Record<string, any>;
+  focusGroupSlice: {
+    purpose: string;
+    focusGroupWarmthHint: string;
+    channelFocusGroupContext: string;
+    channelLabel: string;
+  };
+  fullAuditorSlice: Record<string, any>;
+  dynamicVars: BrandManualDynamicVars;
 }
 
 export interface FocusGroupRubric {
   id: string;
   name: string;
-  track: 'both' | 'patient' | 'physician';
+  track: 'both' | 'all' | 'patient' | 'physician' | 'enterprise';
   weight: number;
   evaluationQuestion: string;
   scoringAnchors: {
@@ -32,7 +239,7 @@ export interface ClinicalUseCase {
   id: string;
   studyName: string;
   category: string;
-  track: 'both' | 'patient' | 'physician';
+  track: 'both' | 'all' | 'patient' | 'physician' | 'enterprise';
   isDefault: boolean;
   includedStudies: string[];
   fastingRequirement: string;
@@ -45,10 +252,11 @@ export interface ClinicalUseCase {
 
 export interface ConfigVersionSnapshot {
   versionId: string;
-  entityType: 'personas' | 'rubrics' | 'use_cases' | 'prompts' | 'rag_docs';
+  entityType: 'personas' | 'rubrics' | 'use_cases' | 'prompts' | 'rag_docs' | 'brand_manual';
   timestamp: string;
   label: string;
   itemCount: number;
+  previewNames?: string[];
   data?: any;
 }
 
@@ -71,7 +279,14 @@ export interface MarketingBriefData {
   productName: string;
   companyName: string;
   studyName?: string;
-  track?: 'both' | 'patient' | 'physician';
+  track?: 'both' | 'all' | 'patient' | 'physician' | 'enterprise';
+  audienceSegment?: BrandAudienceSegmentKey;
+  funnelStage?: FunnelStage;
+  channelKey?: BrandChannelKey;
+  channelSubformat?: string;
+  slogan?: string;
+  channelAdaptedCopy?: string;
+  preFlightComplianceCheck?: string[];
   assumptions: {
     budget: string;
     timeline: string;
@@ -155,7 +370,7 @@ export interface MarketingAssets {
 
 export interface Persona {
   id: string;
-  track?: 'patient' | 'physician';
+  track?: AudienceTrack;
   name: string;
   personaName?: string;
   age: number;
@@ -400,7 +615,7 @@ export interface DetailedPersona {
 
 export interface CombinedPersona extends AudienceSegment {
   id?: string;
-  track?: 'patient' | 'physician';
+  track?: AudienceTrack;
   age?: number;
   job_title?: string;
   pain_points?: string[];

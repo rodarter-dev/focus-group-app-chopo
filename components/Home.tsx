@@ -6,7 +6,8 @@ import {
   MessageSquare, 
   FileText, 
   UserPlus,
-  Sparkles
+  Sparkles,
+  Palette
 } from 'lucide-react';
 import { useCompanyContext } from '../context/CompanyContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -21,29 +22,29 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
     const tools = [
         {
             mode: AppMode.AUDIENCE_GEN,
-            label: t("1. Audiencias", "1. Audiences"),
+            label: t("1. Audiencias", "1. Audiencias"),
             icon: <Users size={24} />,
             desc: t(
-                "Segmenta pacientes B2C y médicos prescriptores B2B en perfiles detallados con IA.",
-                "Segment B2C patients and B2B prescribing physicians into deep AI personas."
+                "Segmenta Pacientes B2C, Médicos B2D y Empresas B2B en perfiles detallados con IA.",
+                "Segmenta Pacientes B2C, Médicos B2D y Empresas B2B en perfiles detallados con IA."
             )
         },
         {
             mode: AppMode.SYNTHETIC_USERS,
-            label: t("2. Usuarios Sintéticos", "2. Synthetic Users"),
+            label: t("2. Usuarios Sintéticos", "2. Usuarios Sintéticos"),
             icon: <UserPlus size={24} />,
             desc: t(
-                "Construye e interactúa con una base de datos de pacientes y médicos sintéticos.",
-                "Build and interact with a database of synthetic patients and physicians."
+                "Construye e interactúa con una muestra de Pacientes B2C, Médicos B2D y Empresas B2B sintéticos.",
+                "Construye e interactúa con una muestra de Pacientes B2C, Médicos B2D y Empresas B2B sintéticos."
             )
         },
         {
             mode: AppMode.MARKETING_BRIEF,
-            label: t("3. Brief de Marketing", "3. Marketing Brief"),
+            label: t("3. Brief de Marketing", "3. Brief de Marketing"),
             icon: <FileText size={24} />,
             desc: t(
-                "Genera estrategias clínicas multicanal y materiales creativos.",
-                "Generate multi-channel clinical strategies and creative assets."
+                "Genera estrategias clínicas multicanal y piezas creativas alineadas al Manual de Marca V4 y COFEPRIS.",
+                "Genera estrategias clínicas multicanal y piezas creativas alineadas al Manual de Marca V4 y COFEPRIS."
             )
         },
         {
@@ -51,8 +52,8 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
             label: t("4. Focus Group", "4. Focus Group"),
             icon: <MessageSquare size={24} />,
             desc: t(
-                "Simula retroalimentación en tiempo real de segmentos de pacientes y médicos.",
-                "Simulate real-time feedback from target patient and physician segments."
+                "Simula retroalimentación en tiempo real de Pacientes B2C, Médicos B2D y Empresas B2B.",
+                "Simula retroalimentación en tiempo real de Pacientes B2C, Médicos B2D y Empresas B2B."
             )
         },
     ];
@@ -70,40 +71,45 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                 </div>
                 <p className="text-xl text-gray-600 max-w-3xl mx-auto font-medium leading-relaxed mb-10">
                   {t(
-                      'Espacio exclusivo del equipo de Marketing de Laboratorios Chopo para diseñar, validar y poner a prueba las campañas de nuestra Parrilla de Estudios Clínicos con pacientes y médicos simulados bajo lineamientos COFEPRIS.',
-                      'Exclusive workspace for the Laboratorios Chopo Marketing team to design, validate, and test our Clinical Study Grid campaigns with simulated patients and physicians under COFEPRIS guidelines.'
+                      'Espacio exclusivo del equipo de Marketing de Laboratorio Médico del Chopo para diseñar, validar y poner a prueba las campañas de nuestra Parrilla de Estudios Clínicos con Pacientes B2C, Médicos B2D y Empresas B2B bajo lineamientos del Manual de Marca V4 y COFEPRIS.',
+                      'Espacio exclusivo del equipo de Marketing de Laboratorio Médico del Chopo para diseñar, validar y poner a prueba las campañas de nuestra Parrilla de Estudios Clínicos con Pacientes B2C, Médicos B2D y Empresas B2B bajo lineamientos del Manual de Marca V4 y COFEPRIS.'
                   )}
                 </p>
                 
-                <div className="max-w-5xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100 border-t-4 border-t-[#78D600] text-left mb-8">
-                    <h2 className="text-xl font-bold text-[#003B7A] mb-6 flex items-center gap-2">
-                        <Sparkles className="text-[#0066FF]" size={20} />
-                        {t('Flujo de Trabajo — Chopo Intelligence Hub', 'Chopo Intelligence Hub Workflow')}
-                    </h2>
+                <div className="max-w-5xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100 border-t-4 border-t-[#63CF00] text-left mb-8">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                        <h2 className="text-xl font-bold text-[#003B7A] flex items-center gap-2">
+                            <Sparkles className="text-[#0066FF]" size={20} />
+                            {t('Flujo de Trabajo — Chopo Intelligence Hub', 'Flujo de Trabajo — Chopo Intelligence Hub')}
+                        </h2>
+                        <span className="text-xs font-bold text-[#004699] bg-[#EFF9FE] border border-blue-200 px-3 py-1 rounded-full">
+                            {name || 'Laboratorio Médico del Chopo'}
+                        </span>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                         <div
                             onClick={() => setMode(AppMode.AUDIENCE_GEN)}
                             className="space-y-2 p-4 rounded-xl bg-slate-50/70 hover:bg-[#EFF6FF] border border-slate-100 hover:border-blue-200 cursor-pointer transition-all"
                         >
                             <div className="w-8 h-8 rounded-full bg-blue-100 text-[#0066FF] flex items-center justify-center font-bold text-sm">1</div>
-                            <h3 className="font-bold text-[#003B7A]">{t('1. Audiencias', '1. Audiences')}</h3>
-                            <p className="text-sm text-gray-600">{t('Define o crea el perfil de Paciente B2C o Médico B2B.', 'Define or create the B2C Patient or B2B Physician profile.')}</p>
+                            <h3 className="font-bold text-[#003B7A]">{t('1. Audiencias', '1. Audiencias')}</h3>
+                            <p className="text-sm text-gray-600">{t('Define o crea perfiles de Pacientes B2C, Médicos B2D y Empresas B2B.', 'Define o crea perfiles de Pacientes B2C, Médicos B2D y Empresas B2B.')}</p>
                         </div>
                         <div
                             onClick={() => setMode(AppMode.SYNTHETIC_USERS)}
                             className="space-y-2 p-4 rounded-xl bg-slate-50/70 hover:bg-[#EFF6FF] border border-slate-100 hover:border-blue-200 cursor-pointer transition-all"
                         >
                             <div className="w-8 h-8 rounded-full bg-blue-100 text-[#0066FF] flex items-center justify-center font-bold text-sm">2</div>
-                            <h3 className="font-bold text-[#003B7A]">{t('2. Usuarios Sintéticos', '2. Synthetic Users')}</h3>
-                            <p className="text-sm text-gray-600">{t('Genera tu muestra de 1 a 15 personas simuladas.', 'Generate your cohort of 1 to 15 simulated participants.')}</p>
+                            <h3 className="font-bold text-[#003B7A]">{t('2. Usuarios Sintéticos', '2. Usuarios Sintéticos')}</h3>
+                            <p className="text-sm text-gray-600">{t('Genera tu muestra de 1 a 15 personas simuladas.', 'Genera tu muestra de 1 a 15 personas simuladas.')}</p>
                         </div>
                         <div
                             onClick={() => setMode(AppMode.MARKETING_BRIEF)}
                             className="space-y-2 p-4 rounded-xl bg-slate-50/70 hover:bg-[#EFF6FF] border border-slate-100 hover:border-blue-200 cursor-pointer transition-all"
                         >
                             <div className="w-8 h-8 rounded-full bg-blue-100 text-[#0066FF] flex items-center justify-center font-bold text-sm">3</div>
-                            <h3 className="font-bold text-[#003B7A]">{t('3. Brief de Marketing', '3. Marketing Brief')}</h3>
-                            <p className="text-sm text-gray-600">{t('Crea mensajes, correos, promociones e imágenes con IA.', 'Create messages, emails, promotions, and images with AI.')}</p>
+                            <h3 className="font-bold text-[#003B7A]">{t('3. Brief de Marketing', '3. Brief de Marketing')}</h3>
+                            <p className="text-sm text-gray-600">{t('Crea mensajes, correos, promociones e imágenes por etapa del Funnel y canal.', 'Crea mensajes, correos, promociones e imágenes por etapa del Funnel y canal.')}</p>
                         </div>
                         <div
                             onClick={() => setMode(AppMode.SYNTHETIC_FOCUS_GROUP)}
@@ -111,31 +117,62 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                         >
                             <div className="w-8 h-8 rounded-full bg-blue-100 text-[#0066FF] flex items-center justify-center font-bold text-sm">4</div>
                             <h3 className="font-bold text-[#003B7A]">{t('4. Focus Group', '4. Focus Group')}</h3>
-                            <p className="text-sm text-gray-600">{t('Evalúa tus piezas o entrevista a los perfiles.', 'Evaluate your creative pieces or interview personas.')}</p>
+                            <p className="text-sm text-gray-600">{t('Evalúa tus piezas o entrevista a los perfiles.', 'Evalúa tus piezas o entrevista a los perfiles.')}</p>
                         </div>
                     </div>
                 </div>
 
-                {/* Atajo Rápido para Agencia / Parrilla */}
-                <div className="max-w-5xl mx-auto bg-gradient-to-r from-[#EFF6FF] via-blue-50 to-emerald-50/70 p-5 sm:p-6 rounded-2xl border border-blue-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 text-left mb-12">
-                    <div className="space-y-1">
-                        <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-[#0066FF] bg-white px-2.5 py-0.5 rounded-full border border-blue-200">
-                            {t('Atajo Rápido para Agencia / Parrilla', 'Agency / Grid Fast-Track')}
-                        </span>
-                        <p className="text-sm sm:text-base font-bold text-[#003B7A]">
-                            {t(
-                                '⚡ ¿Ya tienes un banner, correo o promoción lista de tu agencia? Sáltate el Brief y evalúalo directo con tus usuarios sintéticos.',
-                                '⚡ Already have a ready-made banner, email, or promotion from your agency? Skip the Brief and evaluate it directly with your synthetic users.'
-                            )}
-                        </p>
+                {/* Accesos Rápidos: Atajo Agencia + Manual de Marca V4 */}
+                <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-5 text-left mb-12">
+                    {/* Atajo Rápido para Agencia / Parrilla */}
+                    <div className="bg-gradient-to-r from-[#EFF6FF] via-blue-50 to-emerald-50/70 p-5 sm:p-6 rounded-2xl border border-blue-200 shadow-sm flex flex-col justify-between gap-4">
+                        <div className="space-y-1.5">
+                            <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-[#0066FF] bg-white px-2.5 py-0.5 rounded-full border border-blue-200">
+                                {t('Atajo Rápido para Agencia / Parrilla', 'Atajo Rápido para Agencia / Parrilla')}
+                            </span>
+                            <p className="text-sm sm:text-base font-bold text-[#003B7A] leading-snug">
+                                {t(
+                                    '⚡ ¿Ya tienes un banner, correo o promoción lista de tu agencia? Sáltate el Brief y evalúalo directo con tus usuarios sintéticos.',
+                                    '⚡ ¿Ya tienes un banner, correo o promoción lista de tu agencia? Sáltate el Brief y evalúalo directo con tus usuarios sintéticos.'
+                                )}
+                            </p>
+                        </div>
+                        <div>
+                            <button
+                                type="button"
+                                onClick={() => setMode(AppMode.SYNTHETIC_FOCUS_GROUP)}
+                                className="px-5 py-2.5 rounded-xl bg-[#0066FF] hover:bg-[#0052CC] text-white font-bold text-sm shadow-sm transition-all whitespace-nowrap"
+                            >
+                                {t('Ir Directo al Focus Group ➔', 'Ir Directo al Focus Group ➔')}
+                            </button>
+                        </div>
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => setMode(AppMode.SYNTHETIC_FOCUS_GROUP)}
-                        className="px-5 py-3 rounded-xl bg-[#0066FF] hover:bg-[#0052CC] text-white font-bold text-sm shadow-sm transition-all shrink-0 whitespace-nowrap"
-                    >
-                        {t('Ir Directo al Focus Group ➔', 'Go Straight to Focus Group ➔')}
-                    </button>
+
+                    {/* Acceso Rápido al Manual de Marca V4 */}
+                    <div className="bg-gradient-to-r from-[#EFF9FE] via-white to-blue-50/70 p-5 sm:p-6 rounded-2xl border border-[#BDD4F2] shadow-sm flex flex-col justify-between gap-4">
+                        <div className="space-y-1.5">
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#004699] bg-white px-2.5 py-0.5 rounded-full border border-blue-200">
+                                <Palette size={12} className="text-[#005FFC]" />
+                                {t('Manual de Marca V4 Oficial', 'Manual de Marca V4 Oficial')}
+                            </span>
+                            <p className="text-sm sm:text-base font-bold text-[#003B7A] leading-snug">
+                                {t(
+                                    'Edita en 5 secciones la voz de marca (B2C, B2D, B2B), fotografía cálida, paleta oficial, Línea Basal y reglas por canal.',
+                                    'Edita en 5 secciones la voz de marca (B2C, B2D, B2B), fotografía cálida, paleta oficial, Línea Basal y reglas por canal.'
+                                )}
+                            </p>
+                        </div>
+                        <div>
+                            <button
+                                type="button"
+                                onClick={() => setMode(AppMode.BRAND_MANUAL)}
+                                className="px-5 py-2.5 rounded-xl bg-[#005FFC] hover:bg-[#004699] text-white font-bold text-sm shadow-sm transition-all inline-flex items-center gap-2 whitespace-nowrap"
+                            >
+                                <Palette size={16} />
+                                <span>{t('Abrir Manual de Marca V4 ➔', 'Abrir Manual de Marca V4 ➔')}</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -152,7 +189,7 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                         <h3 className="text-xl font-bold text-[#003B7A] mb-3 group-hover:text-[#0066FF] transition-colors">{tool.label}</h3>
                         <p className="text-gray-600 text-sm leading-relaxed mb-6 flex-grow">{tool.desc}</p>
                         <div className="flex items-center text-[#0066FF] font-bold text-sm">
-                            {t('Abrir Herramienta', 'Open Tool')} 
+                            {t('Abrir Herramienta', 'Abrir Herramienta')} 
                             <span className="ml-2 transform group-hover:translate-x-1 transition-transform">&rarr;</span>
                         </div>
                     </div>

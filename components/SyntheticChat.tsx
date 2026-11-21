@@ -2,15 +2,50 @@ import React, { useState, useEffect, useRef } from 'react';
 import { conductQualitativeInterview } from '../services/geminiService';
 import { brandConfig } from '../config';
 import { MessageSquare, Users, Send, Loader2, User, Bot, AlertCircle, RotateCcw, Save, Play, ChevronRight, ChevronDown, CheckCircle2 } from 'lucide-react';
-import { Persona, MarketingBriefData, InterviewResult, CombinedPersona, SavedSimulation } from '../types';
+import { Persona, MarketingBriefData, InterviewResult, CombinedPersona, SavedSimulation, BrandChannelKey } from '../types';
 import { SIMULATION_PRODUCTS, STANDARD_AUDIENCES } from '../data/simulationData';
-
-
+import { resolveSegmentKey } from '../services/brandManualUtils';
 
 import { useCompanyContext } from '../context/CompanyContext';
 import { useLanguage } from '../context/LanguageContext';
 
-export const SyntheticChat: React.FC = () => {
+interface SyntheticChatProps {
+  channelKey?: BrandChannelKey;
+}
+
+const getChatPersonaSegmentBadge = (persona: any) => {
+  const rawTrack = String(persona?.track || '').trim();
+  const rawName = String(persona?.name || '');
+  if (rawTrack === 'enterprise' || rawTrack === 'b2b_enterprises' || /\[empresa|\bempresa\s*\(?b2b/i.test(rawName)) {
+    return { label: '🏢 Empresa (B2B)', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+  }
+  if (
+    rawTrack === 'physician' ||
+    rawTrack === 'B2D' ||
+    rawTrack === 'b2d_doctors' ||
+    /\[médico|médico\s*\(?b2[bd]/i.test(rawName)
+  ) {
+    return { label: '🩺 Médico (B2D)', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  }
+  if (rawTrack && resolveSegmentKey(rawTrack) === 'b2b_enterprises') {
+    return { label: '🏢 Empresa (B2B)', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+  }
+  if (rawTrack && resolveSegmentKey(rawTrack) === 'b2d_doctors') {
+    return { label: '🩺 Médico (B2D)', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  }
+  return { label: '🏥 Paciente (B2C)', className: 'bg-blue-50 text-[#0066FF] border-blue-200' };
+};
+
+const formatDisplayName = (raw?: string): string => {
+  if (!raw) return '';
+  return raw
+    .replace(/\[Médico B2B\]/gi, '[Médico B2D]')
+    .replace(/\(Médico B2B\)/gi, '(Médico B2D)')
+    .replace(/Médico Prescriptor B2B/gi, 'Médico (B2D)')
+    .replace(/Médico B2B/gi, 'Médico (B2D)');
+};
+
+export const SyntheticChat: React.FC<SyntheticChatProps> = ({ channelKey }) => {
   const { name, description } = useCompanyContext();
   const { t } = useLanguage();
   // State
@@ -93,7 +128,8 @@ export const SyntheticChat: React.FC = () => {
           ? `Product: ${brief.productName}. Goal: ${brief.campaignGoal}. Company: ${name}. Context: ${description}`
           : `Company: ${name}. Context: ${description}`;
 
-        const result = await conductQualitativeInterview(p, context, question);
+        const effectiveChannelKey: BrandChannelKey = channelKey || brief?.channelKey || 'social_media';
+        const result = await conductQualitativeInterview(p, context, question, name, effectiveChannelKey);
         newResults.push(result);
         setResults([...newResults]); // Update UI incrementally
       } catch (e) {
@@ -208,20 +244,19 @@ export const SyntheticChat: React.FC = () => {
           <div className="flex flex-wrap gap-2">
             {[
               t(
-                '💬 ¿Qué te detiene hoy de agendar este estudio clínico en línea o por WhatsApp?',
-                '💬 What stops you today from booking this clinical study online or via WhatsApp?'
+                '💬 (Pacientes B2C) ¿Qué te detiene hoy de agendar este estudio clínico en línea o por WhatsApp?'
               ),
               t(
-                '💰 ¿Qué opinas del precio de esta promoción y qué te daría más confianza para acudir a sucursal?',
-                '💰 What do you think of this promo price and what would give you more confidence to visit a branch?'
+                '💰 (Pacientes B2C) ¿Qué opinas del precio de esta promoción y qué te daría más confianza para acudir a sucursal?'
               ),
               t(
-                '📋 ¿Te quedan claras las indicaciones de ayuno o preparación antes de ir al laboratorio?',
-                '📋 Are the fasting or preparation instructions clear to you before visiting the lab?'
+                '📋 ¿Te quedan claras las indicaciones de ayuno o preparación antes de ir al laboratorio?'
               ),
               t(
-                '🩺 (Médicos) ¿Qué información diagnóstica necesitas ver para recomendar este estudio a tus pacientes?',
-                '🩺 (Physicians) What diagnostic information do you need to see to recommend this study to your patients?'
+                '🩺 (Médicos B2D) ¿Qué información diagnóstica necesitas ver para recomendar este estudio a tus pacientes?'
+              ),
+              t(
+                '🏢 (Empresas B2B) ¿Qué condiciones de convenio, cobertura de sucursales o facturación necesita su empresa para contratar check-ups anuales?'
               )
             ].map((suggestedQ, idx) => (
               <button
@@ -246,7 +281,13 @@ export const SyntheticChat: React.FC = () => {
           </h3>
 
           <div className="grid grid-cols-1 gap-4">
-            {results.map((result, i) => (
+            {results.map((result, i) => {
+              const matchedPersona = personas.find(
+                (p) => p.id === result.personaId || p.name === result.personaName || p.personaName === result.personaName
+              );
+              const segBadge = getChatPersonaSegmentBadge(matchedPersona || { name: result.personaName });
+              const displayPersonaName = formatDisplayName(result.personaName);
+              return (
               <div key={i} className="content-card overflow-hidden transition-all hover:shadow-xl border-l-4 border-l-[#0066FF]">
                 {/* Result Header */}
                 <div
@@ -258,13 +299,18 @@ export const SyntheticChat: React.FC = () => {
                       <User size={28} />
                     </div>
                     <div>
-                      <h4 className="font-bold text-xl text-[#003B7A]">{result.personaName}</h4>
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <h4 className="font-bold text-xl text-[#003B7A]">{displayPersonaName}</h4>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${segBadge.className}`}>
+                          {segBadge.label}
+                        </span>
+                      </div>
                       <p className="text-subtext font-bold text-sm mb-3 uppercase tracking-wider">
                         {result.sentiment === 'Positive'
-                          ? t('Sentimiento Positivo', 'Positive Sentiment')
+                          ? t('Sentimiento Positivo')
                           : result.sentiment === 'Negative'
-                            ? t('Sentimiento Negativo', 'Negative Sentiment')
-                            : t('Sentimiento Neutral', 'Neutral Sentiment')}
+                            ? t('Sentimiento Negativo')
+                            : t('Sentimiento Neutral')}
                       </p>
                       <p className="text-heading italic border-l-4 border-[#0066FF] pl-4 py-2 bg-gray-50/80 rounded-r-xl font-medium">
                         "{result.quote}"
@@ -280,7 +326,7 @@ export const SyntheticChat: React.FC = () => {
                 {expandedResultId === result.personaId && (
                   <div className="border-t border-gray-100 bg-gray-50/30 p-8">
                     <div className="max-w-3xl mx-auto space-y-8">
-                      <h5 className="font-bold text-subtext uppercase tracking-widest text-xs mb-6 text-center">{t('Transcripción Completa de la Entrevista', 'Full Interview Transcript')}</h5>
+                      <h5 className="font-bold text-subtext uppercase tracking-widest text-xs mb-6 text-center">{t('Transcripción Completa de la Entrevista')}</h5>
                       {result.transcript.map((msg, index) => (
                         <div key={index} className={`flex gap-4 ${msg.role === 'interviewer' ? 'flex-row-reverse' : ''}`}>
                           <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center shadow-sm border ${msg.role === 'interviewer' ? 'bg-[#003B7A] text-white border-[#003B7A]' : 'bg-white text-heading border-gray-100'
@@ -292,7 +338,7 @@ export const SyntheticChat: React.FC = () => {
                             : 'bg-white border border-gray-100 text-heading rounded-tl-none'
                             }`}>
                             <span className={`font-black block mb-1 text-[10px] uppercase tracking-widest ${msg.role === 'interviewer' ? 'text-[#0066FF]' : 'text-subtext'}`}>
-                              {msg.role === 'interviewer' ? t('Investigador IA', 'AI Researcher') : result.personaName}
+                              {msg.role === 'interviewer' ? t('Investigador IA') : displayPersonaName}
                             </span>
                             {msg.content}
                           </div>
@@ -301,7 +347,7 @@ export const SyntheticChat: React.FC = () => {
 
                       <div className="mt-10 bg-blue-50/50 border-2 border-dashed border-blue-200 p-6 rounded-2xl shadow-inner">
                         <h6 className="font-black text-[#0066FF] text-xs mb-2 uppercase tracking-widest flex items-center gap-2">
-                          <CheckCircle2 size={16} /> {t('Hallazgo Clave del Investigador', 'Key Researcher Insight')}
+                          <CheckCircle2 size={16} /> {t('Hallazgo Clave del Investigador')}
                         </h6>
                         <p className="text-heading text-sm font-medium leading-relaxed">{result.summary}</p>
                       </div>
@@ -309,7 +355,8 @@ export const SyntheticChat: React.FC = () => {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

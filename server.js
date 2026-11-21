@@ -8,6 +8,7 @@ import { GoogleGenAI } from '@google/genai';
 import { Firestore } from '@google-cloud/firestore';
 import { Storage } from '@google-cloud/storage';
 import { AuthClient } from 'google-auth-library';
+import { buildBrandSlices, exportBrandManualToMarkdown } from './services/brandManualUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -220,11 +221,18 @@ function loadSeedJson(filename) {
     }
 }
 
+const EXCLUDED_RAG_DOC_KEYS = new Set([
+    '02_chopo_brand_manual.md',
+    '02_chopo_brand_manual.txt'
+]);
+
 function loadSeedRagDocs() {
     const ragDir = path.join(SEEDS_DIR, 'rag_docs');
     const docs = {};
     try {
-        const files = fs.readdirSync(ragDir).filter(f => f.endsWith('.md')).sort();
+        const files = fs.readdirSync(ragDir)
+            .filter(f => f.endsWith('.md') && !EXCLUDED_RAG_DOC_KEYS.has(f.toLowerCase()))
+            .sort();
         for (const file of files) {
             docs[file] = fs.readFileSync(path.join(ragDir, file), 'utf8');
         }
@@ -256,17 +264,35 @@ function sanitizeStringArray(arr, fallback = []) {
 function sanitizePersona(p, idx = 0) {
     if (!p || typeof p !== 'object') p = {};
     const rawName = String(p.name || p.personaName || 'Segmento Clínico Chopo').trim();
-    const inferredTrack =
-        p.track === 'physician' ||
+    const rawNameLower = rawName.toLowerCase();
+    const jobTitleLower = String(p.job_title || p.details?.job_title || '').toLowerCase();
+
+    let inferredTrack;
+    if (p.track === 'enterprise') {
+        inferredTrack = 'enterprise';
+    } else if (p.track === 'physician' || p.track === 'B2D') {
+        inferredTrack = 'physician';
+    } else if (p.track === 'patient' || p.track === 'B2C') {
+        inferredTrack = 'patient';
+    } else if (
+        rawNameLower.includes('médico') ||
+        rawNameLower.includes('b2d') ||
+        jobTitleLower.includes('médic') ||
+        jobTitleLower.includes('oncólog') ||
+        jobTitleLower.includes('ginecólog') ||
+        jobTitleLower.includes('endocrin')
+    ) {
+        inferredTrack = 'physician';
+    } else if (
         p.track === 'B2B' ||
-        rawName.toLowerCase().includes('médico') ||
-        rawName.toLowerCase().includes('b2b') ||
-        String(p.job_title || p.details?.job_title || '').toLowerCase().includes('médic') ||
-        String(p.job_title || p.details?.job_title || '').toLowerCase().includes('oncólog') ||
-        String(p.job_title || p.details?.job_title || '').toLowerCase().includes('ginecólog') ||
-        String(p.job_title || p.details?.job_title || '').toLowerCase().includes('endocrin')
-            ? 'physician'
-            : 'patient';
+        rawNameLower.includes('empresa') ||
+        rawNameLower.includes('corporativ') ||
+        rawNameLower.includes('salud ocupacional')
+    ) {
+        inferredTrack = 'enterprise';
+    } else {
+        inferredTrack = 'patient';
+    }
 
     const rawAge = Number(p.age ?? p.details?.age ?? 40);
     const age = Number.isFinite(rawAge) && rawAge >= 18 && rawAge <= 100 ? Math.round(rawAge) : 40;
@@ -274,19 +300,29 @@ function sanitizePersona(p, idx = 0) {
     const jobTitle = String(
         p.job_title ||
         p.details?.job_title ||
-        (inferredTrack === 'physician' ? 'Médico Especialista' : 'Profesionista')
+        (inferredTrack === 'physician'
+            ? 'Médico Especialista'
+            : inferredTrack === 'enterprise'
+                ? 'Director de Recursos Humanos / Salud Ocupacional'
+                : 'Profesionista')
     ).trim();
 
     const personaName = String(
         p.personaName ||
         p.details?.name ||
-        rawName.replace(/^\[.*?\]\s*/, '').replace(/\s*\((?:Paciente\s*B2C|Médico\s*B2B|B2C|B2B)\)\s*$/i, '') ||
+        rawName.replace(/^\[.*?\]\s*/, '').replace(/\s*\((?:Paciente\s*B2C|Médico\s*B2D|Médico\s*B2B|Empresa\s*B2B|B2C|B2D|B2B)\)\s*$/i, '') ||
         'Perfil Sintético Chopo'
     ).trim();
 
     const bio = String(p.bio || p.details?.bio || 'Perfil sintético para validación de campañas clínicas.').trim();
     const demographics = String(
-        p.demographics || `${age} años, Urbano México, ${inferredTrack === 'physician' ? 'Médico Prescriptor' : 'Paciente'}`
+        p.demographics || `${age} años, Urbano México, ${
+            inferredTrack === 'physician'
+                ? 'Médico Prescriptor'
+                : inferredTrack === 'enterprise'
+                    ? 'Decisor Corporativo B2B'
+                    : 'Paciente'
+        }`
     ).trim();
     const income = String(p.income || p.details?.income || 'Medio').trim();
 
@@ -297,7 +333,11 @@ function sanitizePersona(p, idx = 0) {
         'Agendar estudios de forma ágil y consultar resultados digitales en la App Chopo'
     ]);
     const lifestyleTags = sanitizeStringArray(p.lifestyle_tags || p.details?.lifestyle_tags, [
-        inferredTrack === 'physician' ? 'Rigor Clínico' : 'Prevención Oportuna',
+        inferredTrack === 'physician'
+            ? 'Rigor Clínico'
+            : inferredTrack === 'enterprise'
+                ? 'Salud Ocupacional Corporativa'
+                : 'Prevención Oportuna',
         'Resultados Digitales'
     ]);
     const preferredProducts = sanitizeStringArray(p.preferred_products || p.details?.preferred_products, [
@@ -308,7 +348,8 @@ function sanitizePersona(p, idx = 0) {
     const isSeedOrStandard =
         Boolean(p.isStandard) ||
         String(p.id || '').startsWith('chopo_pat_') ||
-        String(p.id || '').startsWith('chopo_phy_');
+        String(p.id || '').startsWith('chopo_phy_') ||
+        String(p.id || '').startsWith('chopo_ent_');
 
     let imageUrl = String(p.imageUrl || '').trim();
     if (LEGACY_IMAGE_BUCKET_MAP[imageUrl]) {
@@ -329,8 +370,12 @@ function sanitizePersona(p, idx = 0) {
 
     const hasTrackTag =
         rawName.startsWith('[') ||
-        /\((?:Paciente\s*B2C|Médico\s*B2B|B2C|B2B)\)/i.test(rawName);
-    const namePrefix = inferredTrack === 'physician' ? '[Médico B2B]' : '[Paciente B2C]';
+        /\((?:Paciente\s*B2C|Médico\s*B2D|Médico\s*B2B|Empresa\s*B2B|B2C|B2D|B2B)\)/i.test(rawName);
+    const namePrefix = inferredTrack === 'physician'
+        ? '[Médico B2D]'
+        : inferredTrack === 'enterprise'
+            ? '[Empresa B2B]'
+            : '[Paciente B2C]';
     const normalizedName = hasTrackTag ? rawName : `${namePrefix} ${rawName}`;
 
     const defaultCharts = {
@@ -377,7 +422,7 @@ function sanitizePersona(p, idx = 0) {
 
 function sanitizeRubric(r, idx = 0) {
     if (!r || typeof r !== 'object') r = {};
-    const track = ['both', 'patient', 'physician'].includes(r.track) ? r.track : 'both';
+    const track = ['both', 'all', 'patient', 'physician', 'enterprise'].includes(r.track) ? r.track : 'both';
     const rawWeight = Number(r.weight ?? 25);
     const weight = Number.isFinite(rawWeight) ? Math.max(1, Math.min(100, Math.round(rawWeight))) : 25;
 
@@ -408,7 +453,7 @@ function sanitizeRubric(r, idx = 0) {
 
 function sanitizeUseCase(uc, idx = 0) {
     if (!uc || typeof uc !== 'object') uc = {};
-    const track = ['both', 'patient', 'physician'].includes(uc.track) ? uc.track : 'both';
+    const track = ['both', 'all', 'patient', 'physician', 'enterprise'].includes(uc.track) ? uc.track : 'both';
     return {
         id: String(uc.id || `uc_${Date.now()}_${idx}`).trim(),
         studyName: String(uc.studyName || 'Check-up Control Diabetes').trim(),
@@ -444,18 +489,33 @@ function sanitizeUseCase(uc, idx = 0) {
     };
 }
 
+function isValidBrandManual(manual) {
+    return Boolean(
+        manual &&
+        typeof manual === 'object' &&
+        !Array.isArray(manual) &&
+        manual.identity_and_voice &&
+        manual.photography_and_imagery &&
+        manual.color_palette &&
+        manual.graphic_design_and_layout &&
+        manual.channels
+    );
+}
+
 // --- In-Memory Hot Cache (Synchronized with Firestore + Pre-warmed from Official Seeds) ---
 
 const initialPersonasSeed = (loadSeedJson('personas_seed.json')?.personas || []).map((p, i) => sanitizePersona(p, i));
 const initialRubricsSeed = (loadSeedJson('rubrics_seed.json')?.rubrics || []).map((r, i) => sanitizeRubric(r, i));
 const initialUseCasesSeed = (loadSeedJson('use_cases_seed.json')?.useCases || []).map((u, i) => sanitizeUseCase(u, i));
 const initialRagDocsSeed = loadSeedRagDocs();
+const initialBrandManualSeed = loadSeedJson('brand_manual_seed.json');
 
 const memoryStore = {
     personas: [...initialPersonasSeed],
     rubrics: [...initialRubricsSeed],
     useCases: [...initialUseCasesSeed],
     ragDocs: { ...initialRagDocsSeed },
+    brandManual: structuredClone(initialBrandManualSeed),
     runs: {
         audience_generator: { personas: [...initialPersonasSeed] }
     },
@@ -492,6 +552,14 @@ const memoryStore = {
             label: 'Configuración Inicial por Defecto',
             itemCount: Object.keys(initialRagDocsSeed).length,
             data: { ...initialRagDocsSeed }
+        },
+        {
+            versionId: 'v_seed_initial_brand_manual',
+            entityType: 'brand_manual',
+            timestamp: '2026-11-01T12:00:00.000Z',
+            label: 'Manual de Marca Oficial V4 — Laboratorio Médico del Chopo',
+            itemCount: 5,
+            data: structuredClone(initialBrandManualSeed)
         }
     ],
     mediaBuffers: new Map()
@@ -597,8 +665,14 @@ async function extractAndUploadImages(obj, prefix = 'asset') {
 
 // --- Config Versioning & Auto-Seeding ---
 
-async function saveConfigVersionSnapshot(entityType, dataArray, label, customVersionId = null) {
-    const itemCount = Array.isArray(dataArray) ? dataArray.length : Object.keys(dataArray || {}).length;
+async function saveConfigVersionSnapshot(entityType, dataArray, label, customVersionId = null, customItemCount = null) {
+    const itemCount = typeof customItemCount === 'number'
+        ? customItemCount
+        : (entityType === 'brand_manual'
+            ? (Object.keys(dataArray?.channels?.items || {}).length > 0
+                ? Object.keys(dataArray.channels.items).length + 4
+                : 5)
+            : (Array.isArray(dataArray) ? dataArray.length : Object.keys(dataArray || {}).length));
     // Never store empty (0-item) snapshots in version history so every rollback restores actual items
     if (itemCount === 0) {
         return { versionId: null, itemCount: 0 };
@@ -632,6 +706,8 @@ async function saveConfigVersionSnapshot(entityType, dataArray, label, customVer
     return snapshot;
 }
 
+const saveVersionSnapshot = saveConfigVersionSnapshot;
+
 let gcsStateSyncTimer = null;
 function syncMemoryStoreToGCS() {
     if (gcsStateSyncTimer) clearTimeout(gcsStateSyncTimer);
@@ -642,7 +718,8 @@ function syncMemoryStoreToGCS() {
                 personas: memoryStore.personas,
                 rubrics: memoryStore.rubrics,
                 useCases: memoryStore.useCases,
-                ragDocs: memoryStore.ragDocs,
+                ragDocs: sanitizeRagDocsMap(memoryStore.ragDocs),
+                brandManual: memoryStore.brandManual,
                 runs: memoryStore.runs,
                 config: memoryStore.config,
                 versions: memoryStore.versions
@@ -673,10 +750,27 @@ async function loadMemoryStoreFromGCS() {
             if (Array.isArray(parsed.rubrics) && parsed.rubrics.length > 0) memoryStore.rubrics = parsed.rubrics;
             if (Array.isArray(parsed.useCases) && parsed.useCases.length > 0) memoryStore.useCases = parsed.useCases;
             if (Array.isArray(parsed.prompts) && parsed.prompts.length > 0) memoryStore.prompts = parsed.prompts;
-            if (parsed.ragDocs && typeof parsed.ragDocs === 'object') memoryStore.ragDocs = { ...memoryStore.ragDocs, ...parsed.ragDocs };
+            if (parsed.ragDocs && typeof parsed.ragDocs === 'object') {
+                memoryStore.ragDocs = sanitizeRagDocsMap({ ...memoryStore.ragDocs, ...parsed.ragDocs });
+            }
+            if (isValidBrandManual(parsed.brandManual)) {
+                memoryStore.brandManual = structuredClone(parsed.brandManual);
+            }
             if (parsed.runs && typeof parsed.runs === 'object') memoryStore.runs = { ...memoryStore.runs, ...parsed.runs };
             if (parsed.config && typeof parsed.config === 'object') memoryStore.config = { ...memoryStore.config, ...parsed.config };
-            if (Array.isArray(parsed.versions) && parsed.versions.length > 0) memoryStore.versions = parsed.versions;
+            if (Array.isArray(parsed.versions) && parsed.versions.length > 0) {
+                memoryStore.versions = parsed.versions;
+                if (!memoryStore.versions.some(v => v.entityType === 'brand_manual') && isValidBrandManual(initialBrandManualSeed)) {
+                    memoryStore.versions.push({
+                        versionId: 'v_seed_initial_brand_manual',
+                        entityType: 'brand_manual',
+                        timestamp: '2026-11-01T12:00:00.000Z',
+                        label: 'Manual de Marca Oficial V4 — Laboratorio Médico del Chopo',
+                        itemCount: 5,
+                        data: structuredClone(initialBrandManualSeed)
+                    });
+                }
+            }
             console.log(`Loaded persistent state from gs://${bucketName}/db/chopo_state.json`);
             return true;
         }
@@ -744,19 +838,43 @@ async function seedFirestoreIfEmpty() {
             memoryStore.useCases = useCasesSnap.data().useCases.map((u, i) => sanitizeUseCase(u, i));
         }
 
-        // 4. RAG Docs Catalog
+        // 4. RAG Docs Catalog (Strictly COFEPRIS + Clinical + Operational Realism — excludes legacy 02_chopo_brand_manual.md)
         const ragDocsRef = firestore.collection('chopo_config').doc('rag_docs_catalog');
         const ragDocsSnap = await withTimeout(ragDocsRef.get(), 3000, 'Firestore rag_docs_catalog check');
         if (!ragDocsSnap.exists && Object.keys(initialRagDocsSeed).length > 0) {
-            await withTimeout(ragDocsRef.set({ documents: initialRagDocsSeed, updatedAt: now }), 3000);
+            const sanitizedSeedRag = sanitizeRagDocsMap(initialRagDocsSeed);
+            await withTimeout(ragDocsRef.set({ documents: sanitizedSeedRag, updatedAt: now }), 3000);
             await saveConfigVersionSnapshot(
                 'rag_docs',
-                initialRagDocsSeed,
+                sanitizedSeedRag,
                 'Configuración Inicial por Defecto',
-                'v_seed_initial_rag_docs'
+                'v_seed_initial_rag_docs',
+                Object.keys(sanitizedSeedRag).length
             );
         } else if (ragDocsSnap.exists && ragDocsSnap.data()?.documents && typeof ragDocsSnap.data().documents === 'object') {
-            memoryStore.ragDocs = { ...initialRagDocsSeed, ...ragDocsSnap.data().documents };
+            memoryStore.ragDocs = sanitizeRagDocsMap({ ...initialRagDocsSeed, ...ragDocsSnap.data().documents });
+        }
+
+        // 5. Brand Manual V4 Config (brand_manual_config/active)
+        const brandManualRef = firestore.collection('brand_manual_config').doc('active');
+        const brandManualSnap = await withTimeout(brandManualRef.get(), 3000, 'Firestore brand_manual_config check');
+        if (!brandManualSnap.exists && isValidBrandManual(initialBrandManualSeed)) {
+            console.log('Seeding brand_manual_config/active with official Chopo Brand Manual V4...');
+            const seedClone = structuredClone(initialBrandManualSeed);
+            await withTimeout(brandManualRef.set({ manual: seedClone, updatedAt: now }), 3000, 'Firestore brand_manual_config seed');
+            await saveConfigVersionSnapshot(
+                'brand_manual',
+                seedClone,
+                'Manual de Marca Oficial V4 — Laboratorio Médico del Chopo',
+                'v_seed_initial_brand_manual',
+                5
+            );
+        } else if (brandManualSnap.exists) {
+            const data = brandManualSnap.data();
+            const loadedManual = data?.manual || data;
+            if (isValidBrandManual(loadedManual)) {
+                memoryStore.brandManual = structuredClone(loadedManual);
+            }
         }
 
         console.log('Firestore seed synchronization complete.');
@@ -1487,10 +1605,175 @@ app.post('/api/use-cases', async (req, res) => {
     }
 });
 
-// 4. Version History & Rollback Endpoints (/api/config-versions)
-app.get('/api/config-versions/:entityType', async (req, res) => {
+// 3B. Brand Manual V4 Deterministic Config Endpoints (/api/config/brand-manual)
+async function getActiveBrandManual() {
     try {
-        const { entityType } = req.params;
+        const docSnap = await withTimeout(
+            firestore.collection('brand_manual_config').doc('active').get(),
+            2500,
+            'getActiveBrandManual'
+        );
+        if (docSnap.exists) {
+            const data = docSnap.data();
+            const manual = data?.manual || data;
+            if (isValidBrandManual(manual)) {
+                memoryStore.brandManual = structuredClone(manual);
+                return memoryStore.brandManual;
+            }
+        }
+    } catch (e) {
+        console.warn('getActiveBrandManual using seed/memory cache:', e.message);
+    }
+    if (!isValidBrandManual(memoryStore.brandManual)) {
+        memoryStore.brandManual = structuredClone(initialBrandManualSeed);
+    }
+    return memoryStore.brandManual;
+}
+
+app.get('/api/config/brand-manual', async (req, res) => {
+    try {
+        const manual = await getActiveBrandManual();
+        res.json({ ...manual });
+    } catch (e) {
+        console.error('Error reading brand manual:', e);
+        const fallback = isValidBrandManual(memoryStore.brandManual)
+            ? memoryStore.brandManual
+            : structuredClone(initialBrandManualSeed);
+        res.json({ ...fallback });
+    }
+});
+
+app.post('/api/config/brand-manual', async (req, res) => {
+    try {
+        const rawManual = req.body?.identity_and_voice ? req.body : req.body?.manual;
+        const label = (!req.body?.identity_and_voice && (req.body?.label || req.body?.changeSummary))
+            ? String(req.body.label || req.body.changeSummary).trim()
+            : 'Actualización del Manual de Marca V4';
+
+        if (!isValidBrandManual(rawManual)) {
+            return res.status(400).json({
+                error: 'El Manual de Marca debe incluir las 5 secciones obligatorias: identity_and_voice, photography_and_imagery, color_palette, graphic_design_and_layout y channels.'
+            });
+        }
+
+        const manual = structuredClone(rawManual);
+        manual.metadata = {
+            ...(initialBrandManualSeed?.metadata || {}),
+            ...(manual.metadata || {}),
+            lastUpdated: new Date().toISOString().slice(0, 10)
+        };
+
+        memoryStore.brandManual = manual;
+        const updatedAt = new Date().toISOString();
+
+        try {
+            await withTimeout(
+                firestore.collection('brand_manual_config').doc('active').set({
+                    manual,
+                    updatedAt
+                }),
+                2500,
+                'saveBrandManual Firestore'
+            );
+        } catch (fsErr) {
+            console.warn('Saved brand_manual to memoryStore (Firestore sync warning):', fsErr.message);
+        }
+
+        const channelCount = Object.keys(manual.channels?.items || {}).length;
+        const itemCount = channelCount > 0 ? channelCount + 4 : 5;
+        const snapshot = await saveVersionSnapshot(
+            'brand_manual',
+            manual,
+            label || 'Actualización del Manual de Marca V4',
+            null,
+            itemCount
+        );
+        syncMemoryStoreToGCS();
+
+        res.json({
+            status: 'ok',
+            success: true,
+            manual,
+            versionId: snapshot.versionId
+        });
+    } catch (e) {
+        console.error('Error saving brand manual:', e);
+        res.status(500).json({ error: 'Failed to save brand manual' });
+    }
+});
+
+app.post('/api/config/brand-manual/slices', async (req, res) => {
+    try {
+        const activeManual = isValidBrandManual(memoryStore.brandManual)
+            ? memoryStore.brandManual
+            : await getActiveBrandManual();
+        const { audienceSegment, track, funnelStage, channelKey } = req.body || {};
+        const slices = buildBrandSlices(activeManual, {
+            audienceSegment,
+            track,
+            funnelStage,
+            channelKey
+        });
+        res.json(slices);
+    } catch (e) {
+        console.error('Error building brand manual slices:', e);
+        res.status(500).json({ error: 'Failed to build brand manual slices' });
+    }
+});
+
+app.get('/api/config/brand-manual/markdown', async (req, res) => {
+    try {
+        const manual = await getActiveBrandManual();
+        const markdown = exportBrandManualToMarkdown(manual);
+        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+        res.send(markdown);
+    } catch (e) {
+        console.error('Error exporting brand manual markdown:', e);
+        res.status(500).json({ error: 'Failed to export brand manual markdown' });
+    }
+});
+
+// 4. Version History & Rollback Endpoints (/api/config-versions & /api/config/versions)
+async function listConfigVersionsHandler(req, res) {
+    try {
+        const entityType = req.params?.entityType || req.query?.entityType;
+        if (!entityType) {
+            let allDocs = [];
+            try {
+                const snapshot = await withTimeout(
+                    firestore.collection('chopo_config_versions').get(),
+                    2500,
+                    'listAllConfigVersions Firestore'
+                );
+                allDocs = snapshot.docs.map(doc => {
+                    const d = doc.data();
+                    return {
+                        versionId: d.versionId || doc.id,
+                        entityType: d.entityType,
+                        timestamp: d.timestamp,
+                        label: d.label,
+                        itemCount: d.itemCount ?? (
+                            d.entityType === 'brand_manual'
+                                ? 5
+                                : (Array.isArray(d.data) ? d.data.length : Object.keys(d.data || {}).length)
+                        )
+                    };
+                });
+            } catch (fsErr) {
+                allDocs = memoryStore.versions.map(v => ({
+                    versionId: v.versionId,
+                    entityType: v.entityType,
+                    timestamp: v.timestamp,
+                    label: v.label,
+                    itemCount: v.itemCount
+                }));
+            }
+            const sortedAll = allDocs
+                .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
+                .slice(0, 50);
+            return res.json(sortedAll);
+        }
+
         let docsList = [];
         try {
             const snapshot = await withTimeout(
@@ -1508,7 +1791,11 @@ app.get('/api/config-versions/:entityType', async (req, res) => {
                     entityType: d.entityType,
                     timestamp: d.timestamp,
                     label: d.label,
-                    itemCount: d.itemCount ?? (Array.isArray(d.data) ? d.data.length : 0)
+                    itemCount: d.itemCount ?? (
+                        d.entityType === 'brand_manual'
+                            ? 5
+                            : (Array.isArray(d.data) ? d.data.length : Object.keys(d.data || {}).length)
+                    )
                 };
             });
         } catch (fsErr) {
@@ -1529,12 +1816,20 @@ app.get('/api/config-versions/:entityType', async (req, res) => {
 
         // Always include the official baseline seed option so users can reset at any time
         if (!versions.some(v => v.versionId === 'OFFICIAL_SEED')) {
+            const seedLabel = entityType === 'brand_manual'
+                ? 'Manual de Marca Oficial V4 — Laboratorio Médico del Chopo'
+                : 'Configuración Inicial por Defecto';
+            const seedItemCount = entityType === 'rubrics'
+                ? (initialRubricsSeed.length || 6)
+                : entityType === 'rag_docs'
+                    ? (Object.keys(initialRagDocsSeed).length || 3)
+                    : 5;
             versions.push({
                 versionId: 'OFFICIAL_SEED',
                 entityType,
                 timestamp: '2026-11-01T12:00:00.000Z',
-                label: 'Configuración Inicial por Defecto',
-                itemCount: entityType === 'rubrics' ? 6 : entityType === 'rag_docs' ? 4 : 5
+                label: seedLabel,
+                itemCount: seedItemCount
             });
         }
 
@@ -1543,7 +1838,11 @@ app.get('/api/config-versions/:entityType', async (req, res) => {
         console.error('Error listing config versions:', e);
         res.status(500).json({ error: 'Failed to list config versions' });
     }
-});
+}
+
+app.get('/api/config-versions/:entityType', listConfigVersionsHandler);
+app.get('/api/config/versions', listConfigVersionsHandler);
+app.get('/api/config/versions/:entityType', listConfigVersionsHandler);
 
 function sanitizeRagDocsMap(rawDocs) {
     if (!rawDocs || typeof rawDocs !== 'object' || Array.isArray(rawDocs)) {
@@ -1557,6 +1856,7 @@ function sanitizeRagDocsMap(rawDocs) {
         const finalName = (lower.endsWith('.md') || lower.endsWith('.txt') || lower.endsWith('.pdf'))
             ? safeName
             : `${safeName}.md`;
+        if (EXCLUDED_RAG_DOC_KEYS.has(finalName.toLowerCase())) continue;
         cleaned[finalName] = String(v ?? '');
     }
     return Object.keys(cleaned).length > 0 ? cleaned : { ...loadSeedRagDocs() };
@@ -1651,6 +1951,8 @@ async function getActiveRagDocs() {
     }
     if (!memoryStore.ragDocs || Object.keys(memoryStore.ragDocs).length === 0) {
         memoryStore.ragDocs = loadSeedRagDocs();
+    } else {
+        memoryStore.ragDocs = sanitizeRagDocsMap(memoryStore.ragDocs);
     }
     return memoryStore.ragDocs;
 }
@@ -1658,10 +1960,10 @@ async function getActiveRagDocs() {
 app.get('/api/rag/docs', async (req, res) => {
     try {
         const docs = await getActiveRagDocs();
-        res.json({ documents: docs });
+        res.json({ documents: sanitizeRagDocsMap(docs) });
     } catch (e) {
         console.error('Error reading RAG docs:', e);
-        res.json({ documents: memoryStore.ragDocs });
+        res.json({ documents: sanitizeRagDocsMap(memoryStore.ragDocs) });
     }
 });
 
@@ -1813,7 +2115,7 @@ app.post('/api/rag/upload-file', async (req, res) => {
     }
 });
 
-app.post('/api/config-versions/restore', async (req, res) => {
+async function restoreConfigVersionHandler(req, res) {
     try {
         const { entityType, versionId } = req.body || {};
         if (!entityType || !versionId) {
@@ -1824,7 +2126,9 @@ app.post('/api/config-versions/restore', async (req, res) => {
         let sourceLabel = versionId;
 
         if (versionId === 'OFFICIAL_SEED' || versionId.startsWith('v_seed_initial')) {
-            sourceLabel = 'Configuración Inicial por Defecto';
+            sourceLabel = entityType === 'brand_manual'
+                ? 'Manual de Marca Oficial V4 — Laboratorio Médico del Chopo'
+                : 'Configuración Inicial por Defecto';
             if (entityType === 'personas') {
                 const seed = loadSeedJson('personas_seed.json');
                 restoredData = (seed?.personas || []).map((p, i) => sanitizePersona(p, i));
@@ -1836,6 +2140,8 @@ app.post('/api/config-versions/restore', async (req, res) => {
                 restoredData = (seed?.useCases || []).map((u, i) => sanitizeUseCase(u, i));
             } else if (entityType === 'rag_docs') {
                 restoredData = loadSeedRagDocs();
+            } else if (entityType === 'brand_manual') {
+                restoredData = structuredClone(initialBrandManualSeed);
             }
         } else {
             let verData = memoryStore.versions.find(v => v.versionId === versionId);
@@ -1864,6 +2170,11 @@ app.post('/api/config-versions/restore', async (req, res) => {
                 restoredData = (verData?.data || []).map((u, i) => sanitizeUseCase(u, i));
             } else if (entityType === 'rag_docs') {
                 restoredData = sanitizeRagDocsMap(verData?.data);
+            } else if (entityType === 'brand_manual') {
+                const candidate = verData?.data?.manual || verData?.data;
+                restoredData = isValidBrandManual(candidate)
+                    ? structuredClone(candidate)
+                    : structuredClone(initialBrandManualSeed);
             } else {
                 restoredData = verData?.data || [];
             }
@@ -1944,15 +2255,37 @@ app.post('/api/config-versions/restore', async (req, res) => {
                 console.warn('Restored rag_docs in memoryStore:', fsErr.message);
             }
             syncRagDocsToGCSBackground(restoredData);
+        } else if (entityType === 'brand_manual') {
+            memoryStore.brandManual = structuredClone(restoredData);
+            try {
+                await withTimeout(
+                    firestore.collection('brand_manual_config').doc('active').set({
+                        manual: restoredData,
+                        updatedAt
+                    }),
+                    2500,
+                    'restore brand_manual Firestore'
+                );
+            } catch (fsErr) {
+                console.warn('Restored brand_manual in memoryStore:', fsErr.message);
+            }
         }
 
+        const restoreItemCount = entityType === 'brand_manual'
+            ? (Object.keys(restoredData?.channels?.items || {}).length > 0
+                ? Object.keys(restoredData.channels.items).length + 4
+                : 5)
+            : null;
         const snapshot = await saveConfigVersionSnapshot(
             entityType,
             restoredData,
-            `Rollback a: ${sourceLabel}`
+            `Rollback a: ${sourceLabel}`,
+            null,
+            restoreItemCount
         );
 
         res.json({
+            status: 'ok',
             success: true,
             entityType,
             versionId: snapshot.versionId,
@@ -1962,7 +2295,10 @@ app.post('/api/config-versions/restore', async (req, res) => {
         console.error('Error restoring config version:', e);
         res.status(500).json({ error: 'Failed to restore config version' });
     }
-});
+}
+
+app.post('/api/config-versions/restore', restoreConfigVersionHandler);
+app.post('/api/config/versions/restore', restoreConfigVersionHandler);
 
 // 5. Study-Scoped RAG Retrieval Endpoint (/api/rag/retrieve)
 function filterRealismRulesByStudy(realismMarkdown, studyName = '') {
@@ -2035,7 +2371,11 @@ async function queryVertexAiSearchChunks(searchQuery, pageSize = 4) {
                 content: r.chunk?.content || '',
                 uri: r.chunk?.documentMetadata?.uri || ''
             }))
-            .filter(c => c.content);
+            .filter(c => {
+                if (!c.content) return false;
+                const metaText = `${c.title || ''} ${c.uri || ''}`.toLowerCase();
+                return !metaText.includes('02_chopo_brand_manual');
+            });
     } catch (err) {
         console.warn('Vertex AI Search live query fallback to local catalog:', err.message);
         return [];
@@ -2043,7 +2383,8 @@ async function queryVertexAiSearchChunks(searchQuery, pageSize = 4) {
 }
 
 async function buildRagContextForStudy(studyName = 'Check-up Control Diabetes', track = 'patient', query = '') {
-    const docs = Object.keys(memoryStore.ragDocs).length > 0 ? memoryStore.ragDocs : loadSeedRagDocs();
+    const rawDocs = Object.keys(memoryStore.ragDocs).length > 0 ? memoryStore.ragDocs : loadSeedRagDocs();
+    const docs = sanitizeRagDocsMap(rawDocs);
     const useCases = await getActiveUseCases();
     const sLower = String(studyName || '').toLowerCase();
     const matchedUseCase =
@@ -2052,7 +2393,6 @@ async function buildRagContextForStudy(studyName = 'Check-up Control Diabetes', 
         useCases[0];
 
     const cofeprisDoc = docs['01_cofepris_lineamientos.md'] || '';
-    const brandDoc = docs['02_chopo_brand_manual.md'] || '';
     const catalogDoc = docs['03_catalogo_estudios_diabetes.md'] || '';
     const fullRealismDoc = docs['04_reglas_realismo_clinico_y_operativo.md'] || '';
     const scopedRealismDoc = filterRealismRulesByStudy(fullRealismDoc, studyName);
@@ -2062,11 +2402,6 @@ async function buildRagContextForStudy(studyName = 'Check-up Control Diabetes', 
             id: 'pillar_1_cofepris',
             title: 'Pilar 1: Lineamientos Regulatorios COFEPRIS (COF-001 a COF-008)',
             content: cofeprisDoc
-        },
-        {
-            id: 'pillar_2_brand',
-            title: 'Pilar 2: Manual de Marca Laboratorios Médicos El Chopo (BRD-001 a BRD-005)',
-            content: brandDoc
         },
         {
             id: 'pillar_3_clinical',
@@ -2083,12 +2418,13 @@ async function buildRagContextForStudy(studyName = 'Check-up Control Diabetes', 
     const standardDocNames = new Set([
         '01_cofepris_lineamientos.md',
         '02_chopo_brand_manual.md',
+        '02_chopo_brand_manual.txt',
         '03_catalogo_estudios_diabetes.md',
         '04_reglas_realismo_clinico_y_operativo.md'
     ]);
 
     for (const [docKey, docContent] of Object.entries(docs)) {
-        if (!standardDocNames.has(docKey) && docContent) {
+        if (!standardDocNames.has(docKey) && !EXCLUDED_RAG_DOC_KEYS.has(docKey.toLowerCase()) && docContent) {
             chunks.push({
                 id: `custom_${docKey}`,
                 title: `Documento Normativo Adicional: ${docKey}`,
@@ -2448,13 +2784,29 @@ app.post('/api/evaluator/single-check', checkAi, async (req, res) => {
         const {
             copyText = '',
             imageUrl = null,
-            track = 'B2C',
+            track = 'patient',
+            audienceSegment = null,
+            funnelStage = 'performance',
+            channelKey = 'social_media',
             clinicalLine = 'Check-up Control Diabetes'
         } = req.body || {};
 
         if (!copyText && !imageUrl) {
             return res.status(400).json({ error: 'At least copyText or imageUrl is required for evaluation.' });
         }
+
+        const resolvedSegment = audienceSegment
+            ? audienceSegment
+            : (track === 'B2D' || track === 'physician' || track === 'b2d_doctors')
+                ? 'b2d_doctors'
+                : (track === 'B2B' || track === 'enterprise' || track === 'b2b_enterprises')
+                    ? 'b2b_enterprises'
+                    : 'b2c_patients';
+        const resolvedRagTrack = resolvedSegment === 'b2d_doctors'
+            ? 'physician'
+            : resolvedSegment === 'b2b_enterprises'
+                ? 'enterprise'
+                : 'patient';
 
         let storedImageUrl = imageUrl;
         let inlineImagePart = null;
@@ -2489,24 +2841,36 @@ app.post('/api/evaluator/single-check', checkAi, async (req, res) => {
             }
         }
 
-        const ragContext = await buildRagContextForStudy(clinicalLine, track === 'B2B' ? 'physician' : 'patient');
+        const [ragContext, activeManual] = await Promise.all([
+            buildRagContextForStudy(clinicalLine, resolvedRagTrack),
+            getActiveBrandManual()
+        ]);
+        const brandSlices = buildBrandSlices(activeManual, {
+            audienceSegment: resolvedSegment,
+            funnelStage,
+            channelKey
+        });
+        const { dynamicVars, fullAuditorSlice } = brandSlices;
 
         const evalPrompt = `
-        Eres el "Agente Revisor" (Auditor Oficial de Cumplimiento Regulatorio COFEPRIS, Identidad de Marca, Exactitud Clínica y Realismo Operativo Visual) de Laboratorios Médicos El Chopo ("Tu laboratorio de cabecera").
-        Evalúa la siguiente pieza creativa bajo los 4 Pilares oficiales para la pista "${track}" (${track === 'B2B' ? 'Pista Médico Especialista / Prescriptor' : 'Pista Paciente / Público General'}) en el estudio "${clinicalLine}":
+        Eres el "Agente Revisor" (Auditor Oficial de Cumplimiento Regulatorio COFEPRIS, Manual de Marca V4, Exactitud Clínica y Realismo Operativo Visual) de ${dynamicVars.officialName} ("${dynamicVars.slogan}").
+        Evalúa la siguiente pieza creativa bajo los 4 Pilares oficiales para el segmento "${dynamicVars.segmentLabel}" (pronombre: "${dynamicVars.pronoun}", canal: "${dynamicVars.channelLabel}", etapa del funnel: "${brandSlices.funnelStage}") en el estudio "${clinicalLine}":
 
         === COPY DEL ANUNCIO A AUDITAR ===
         "${copyText}"
 
-        === FRAGMENTOS DE LA BASE DE CONOCIMIENTO OFICIAL (RAG) ===
+        === MANUAL DE MARCA OFICIAL V4 ACTIVO (INYECCIÓN DETERMINÍSTICA — ÚNICA FUENTE DE VERDAD PARA PILAR 2) ===
+        ${JSON.stringify(fullAuditorSlice, null, 2)}
+
+        === FRAGMENTOS NORMATIVOS DE LA BASE DE CONOCIMIENTO (COFEPRIS, CATÁLOGO CLÍNICO Y REALISMO OPERATIVO) ===
         ${ragContext.combinedContext}
 
         REGLAS CRÍTICAS DE AUDITORÍA:
-        1. Evalúa cada uno de los pilares:
-           - Pilar 1 (COFEPRIS): COF-001 (Permiso/Aviso COFEPRIS), COF-002 ("Consulte a su médico" en B2C / exclusividad médica en B2B), COF-003 (Responsable Sanitario y Cédula Profesional), COF-004 (Cero promesas de curación), COF-005 (Cero autodiagnóstico), COF-006 (Cero alarmismo), COF-007 (Español claro sin titulares en inglés), COF-008 (Legibilidad).
-           - Pilar 2 (Manual de Marca Chopo): BRD-001 (Paleta Azul Chopo #004B87, Blanco Clínico #FFFFFF y Rojo Acento #E30613), BRD-002 (Nombre oficial), BRD-003 (Tono diferenciado B2C empático vs B2B científico), BRD-004 (Fotografía auténtica sin agujas ni texto deformado), BRD-005 (Vigencia y condición de promoción en línea).
-           - Pilar 3 (Catálogo Clínico y Exactitud Médica): CLN-001 (Fidelidad de estudios incluidos), CLN-002 (Exactitud de ayuno), CLN-003 (Rigor científico B2B).
-           - Pilar 4 (Realismo Clínico y Operativo Visual): RLM-001 (Entrega 100% digital en App/tablet; prohibido placas radiográficas físicas a contraluz), RLM-002/003/004 (Vestimenta y equipamiento correcto según el estudio "${clinicalLine}").
+        1. Evalúa cada uno de los 4 pilares usando estrictamente los documentos inyectados arriba:
+           - Pilar 1 (COFEPRIS): COF-001 a COF-008 conforme a los lineamientos COFEPRIS y la leyenda precautoria del segmento ("${dynamicVars.precautionaryLegend}").
+           - Pilar 2 (Manual de Marca V4): Audita voz ("${dynamicVars.pronoun}"), primera persona plural, cero signos de admiración, slogan obligatorio ("${dynamicVars.slogan}"), orden de puntos de contacto ("${dynamicVars.contactBar}"), fotografía, paleta y matriz de contrastes, diseño gráfico/logo/línea basal y reglas del canal activo ("${dynamicVars.channelLabel}") según el JSON oficial de arriba.
+           - Pilar 3 (Catálogo Clínico y Exactitud Médica): CLN-001 a CLN-003 (estudios incluidos, ayuno y rigor clínico).
+           - Pilar 4 (Realismo Clínico y Operativo Visual): RLM-001 a RLM-004 para "${clinicalLine}".
 
         Devuelve ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
         {
@@ -2519,7 +2883,7 @@ app.post('/api/evaluator/single-check', checkAi, async (req, res) => {
                     "score": 0-100,
                     "status": "APROBADO | OBSERVACIONES | RECHAZADO",
                     "findings": ["..."],
-                    "requiredDisclaimers": ["Consulte a su médico", "Permiso de Publicidad COFEPRIS No. 2609152002A00518"]
+                    "requiredDisclaimers": ["${dynamicVars.precautionaryLegend}", "Permiso/Aviso de Publicidad COFEPRIS vigente"]
                 },
                 "brandManual": {
                     "score": 0-100,
@@ -2537,7 +2901,7 @@ app.post('/api/evaluator/single-check', checkAi, async (req, res) => {
                     "findings": ["..."]
                 }
             },
-            "suggestedCopy": "Versión optimizada y concisa del copy (máx 35-45 palabras antes del pie legal COFEPRIS) cumpliendo al 100% los 4 pilares...",
+            "suggestedCopy": "Versión optimizada del copy cumpliendo al 100% los 4 pilares y las reglas del canal activo...",
             "summary": "Resumen ejecutivo del dictamen..."
         }
         `;
