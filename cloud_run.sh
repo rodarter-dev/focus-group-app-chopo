@@ -18,6 +18,13 @@ GCS_BUCKET_NAME="${GCS_BUCKET_NAME:-${PROJECT_ID}-chopo-assets}"
 GCS_RAG_BUCKET_NAME="${GCS_RAG_BUCKET_NAME:-${PROJECT_ID}-rag-docs}"
 VERTEX_RAG_DATASTORE_ID="${VERTEX_RAG_DATASTORE_ID:-projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores/chopo-rag-datastore}"
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${SERVICE_NAME}:latest"
+DEDICATED_SA="${CLOUD_RUN_SA_NAME:-chopo-hub-sa}@${PROJECT_ID}.iam.gserviceaccount.com"
+
+SA_FLAG=()
+if gcloud iam service-accounts describe "$DEDICATED_SA" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo "Using dedicated runtime Service Account: $DEDICATED_SA"
+  SA_FLAG=(--service-account "$DEDICATED_SA")
+fi
 
 echo "Building and pushing container image $IMAGE_URI..."
 gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
@@ -32,6 +39,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --project "$PROJECT_ID" \
   --platform managed \
   --region "$REGION" \
+  "${SA_FLAG[@]}" \
   --no-allow-unauthenticated \
   --invoker-iam-check \
   --memory 1Gi \

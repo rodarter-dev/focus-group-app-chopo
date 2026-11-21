@@ -51,7 +51,9 @@ let firestoreCircuitBrokenUntil = 0;
 
 const adcFilePath = process.env.GOOGLE_APPLICATION_CREDENTIALS ||
     path.join(os.homedir(), '.config', 'gcloud', 'application_default_credentials.json');
+const gcloudCredsDbPath = path.join(os.homedir(), '.config', 'gcloud', 'credentials.db');
 let lastAdcMtimeMs = fs.existsSync(adcFilePath) ? fs.statSync(adcFilePath).mtimeMs : 0;
+let lastGcloudDbMtimeMs = fs.existsSync(gcloudCredsDbPath) ? fs.statSync(gcloudCredsDbPath).mtimeMs : 0;
 
 class GcloudCliAuthClient extends AuthClient {
     constructor() {
@@ -144,15 +146,29 @@ function initGcpClients(reason = 'startup') {
 
 initGcpClients('startup');
 
-// Hot-reload GCP clients automatically whenever `gcloud auth application-default login` updates the ADC file
+// Hot-reload GCP clients automatically whenever `gcloud auth application-default login` or `gcloud auth login` updates credentials on disk
 app.use((req, res, next) => {
     try {
+        let shouldReload = false;
+        let reason = '';
         if (fs.existsSync(adcFilePath)) {
             const currentMtime = fs.statSync(adcFilePath).mtimeMs;
             if (currentMtime > lastAdcMtimeMs) {
                 lastAdcMtimeMs = currentMtime;
-                initGcpClients('ADC credentials refreshed on disk');
+                shouldReload = true;
+                reason = 'ADC credentials refreshed on disk';
             }
+        }
+        if (fs.existsSync(gcloudCredsDbPath)) {
+            const currentDbMtime = fs.statSync(gcloudCredsDbPath).mtimeMs;
+            if (currentDbMtime > lastGcloudDbMtimeMs) {
+                lastGcloudDbMtimeMs = currentDbMtime;
+                shouldReload = true;
+                reason = reason ? `${reason} + gcloud CLI login` : 'gcloud CLI credentials refreshed on disk';
+            }
+        }
+        if (shouldReload) {
+            initGcpClients(reason);
         }
     } catch (e) {
         // Ignore stat errors
@@ -582,6 +598,11 @@ async function extractAndUploadImages(obj, prefix = 'asset') {
 // --- Config Versioning & Auto-Seeding ---
 
 async function saveConfigVersionSnapshot(entityType, dataArray, label, customVersionId = null) {
+    const itemCount = Array.isArray(dataArray) ? dataArray.length : Object.keys(dataArray || {}).length;
+    // Never store empty (0-item) snapshots in version history so every rollback restores actual items
+    if (itemCount === 0) {
+        return { versionId: null, itemCount: 0 };
+    }
     const versionId = customVersionId || `v_${entityType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const timestamp = new Date().toISOString();
     const snapshot = {
@@ -589,7 +610,7 @@ async function saveConfigVersionSnapshot(entityType, dataArray, label, customVer
         entityType,
         timestamp,
         label: label || `Actualización (${entityType})`,
-        itemCount: Array.isArray(dataArray) ? dataArray.length : Object.keys(dataArray || {}).length,
+        itemCount,
         data: dataArray
     };
 
@@ -1061,7 +1082,19 @@ app.post('/api/personas', async (req, res) => {
             console.warn('Saved personas to memoryStore (Firestore sync warning):', fsErr.message);
         }
 
-        const snapshot = await saveConfigVersionSnapshot('personas', sanitizedList, label);
+        const skipVersionSnapshot = Boolean(!Array.isArray(req.body) && req.body?.skipVersionSnapshot);
+        const backupSnapshotPersonas = (!Array.isArray(req.body) && Array.isArray(req.body?.backupPersonas))
+            ? req.body.backupPersonas
+            : null;
+        if (backupSnapshotPersonas && backupSnapshotPersonas.length > 0) {
+            const uploadedBackup = await extractAndUploadImages(backupSnapshotPersonas, 'persona_backup');
+            const sanitizedBackup = uploadedBackup.map((p, i) => sanitizePersona(p, i));
+            await saveConfigVersionSnapshot('personas', sanitizedBackup, label);
+        }
+
+        const snapshot = (!skipVersionSnapshot && !backupSnapshotPersonas)
+            ? await saveConfigVersionSnapshot('personas', sanitizedList, label)
+            : { versionId: null };
         res.json({ success: true, personas: sanitizedList, versionId: snapshot.versionId });
     } catch (e) {
         console.error('Error saving personas:', e);
@@ -1169,7 +1202,19 @@ app.post('/api/config/personas', async (req, res) => {
             console.warn('Saved config/personas to memoryStore:', fsErr.message);
         }
 
-        const snapshot = await saveConfigVersionSnapshot('personas', sanitizedList, label);
+        const skipVersionSnapshot = Boolean(!Array.isArray(req.body) && req.body?.skipVersionSnapshot);
+        const backupSnapshotPersonas = (!Array.isArray(req.body) && Array.isArray(req.body?.backupPersonas))
+            ? req.body.backupPersonas
+            : null;
+        if (backupSnapshotPersonas && backupSnapshotPersonas.length > 0) {
+            const uploadedBackup = await extractAndUploadImages(backupSnapshotPersonas, 'persona_backup');
+            const sanitizedBackup = uploadedBackup.map((p, i) => sanitizePersona(p, i));
+            await saveConfigVersionSnapshot('personas', sanitizedBackup, label);
+        }
+
+        const snapshot = (!skipVersionSnapshot && !backupSnapshotPersonas)
+            ? await saveConfigVersionSnapshot('personas', sanitizedList, label)
+            : { versionId: null };
         res.json({ success: true, personas: sanitizedList, versionId: snapshot.versionId });
     } catch (e) {
         console.error('Error saving config/personas:', e);
@@ -1191,6 +1236,7 @@ app.get('/api/config/personas/versions', async (req, res) => {
             );
             docsList = snapshot.docs.map(doc => {
                 const d = doc.data();
+                const items = Array.isArray(d.data) ? d.data : [];
                 return {
                     id: d.versionId || doc.id,
                     versionId: d.versionId || doc.id,
@@ -1199,25 +1245,31 @@ app.get('/api/config/personas/versions', async (req, res) => {
                     createdAt: d.timestamp,
                     label: d.label,
                     changeSummary: d.label,
-                    itemCount: d.itemCount ?? (Array.isArray(d.data) ? d.data.length : 0)
+                    itemCount: d.itemCount ?? items.length,
+                    previewNames: items.map(p => p.name || p.personaName).filter(Boolean)
                 };
             });
         } catch (fsErr) {
             docsList = memoryStore.versions
                 .filter(v => v.entityType === 'personas')
-                .map(v => ({
-                    id: v.versionId,
-                    versionId: v.versionId,
-                    entityType: v.entityType,
-                    timestamp: v.timestamp,
-                    createdAt: v.timestamp,
-                    label: v.label,
-                    changeSummary: v.label,
-                    itemCount: v.itemCount
-                }));
+                .map(v => {
+                    const items = Array.isArray(v.data) ? v.data : [];
+                    return {
+                        id: v.versionId,
+                        versionId: v.versionId,
+                        entityType: v.entityType,
+                        timestamp: v.timestamp,
+                        createdAt: v.timestamp,
+                        label: v.label,
+                        changeSummary: v.label,
+                        itemCount: v.itemCount ?? items.length,
+                        previewNames: items.map(p => p.name || p.personaName).filter(Boolean)
+                    };
+                });
         }
 
         const versions = docsList
+            .filter(v => (v.itemCount ?? 0) > 0 && v.label !== 'Guardado desde Generador de Audiencias' && !String(v.label || '').startsWith('Rollback a:'))
             .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
             .slice(0, 20);
 
@@ -1305,8 +1357,7 @@ app.post('/api/config/personas/rollback', async (req, res) => {
             console.warn('Restored personas in memoryStore:', fsErr.message);
         }
 
-        const snapshot = await saveConfigVersionSnapshot('personas', restoredData, `Rollback a: ${sourceLabel}`);
-        res.json({ success: true, personas: restoredData, data: restoredData, versionId: snapshot.versionId });
+        res.json({ success: true, personas: restoredData, data: restoredData, versionId });
     } catch (e) {
         console.error('Error rolling back personas:', e);
         res.status(500).json({ error: 'Failed to rollback personas' });
@@ -2303,7 +2354,6 @@ app.post('/api/save-run', async (req, res) => {
                 } catch (fsErr) {
                     console.warn('Synced audience_generator personas to memoryStore:', fsErr.message);
                 }
-                await saveConfigVersionSnapshot('personas', cleanData.personas, 'Guardado desde Generador de Audiencias');
             } else if (Array.isArray(cleanData)) {
                 const sanitized = cleanData.map((p, i) => sanitizePersona(p, i));
                 cleanData = { personas: sanitized };

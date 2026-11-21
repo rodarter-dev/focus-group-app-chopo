@@ -108,7 +108,7 @@ const DEFAULT_FALLBACK_USE_CASES: ClinicalUseCase[] = [
 
 export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
   const { name, description } = useCompanyContext();
-  const { language, setLanguage, t } = useLanguage();
+  const { language, t } = useLanguage();
   const [context, setContext] = useState(description);
   const [isContextExpanded, setIsContextExpanded] = useState(false);
   const [useCases, setUseCases] = useState<ClinicalUseCase[]>(DEFAULT_FALLBACK_USE_CASES);
@@ -996,22 +996,6 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                 <h3 className="text-2xl font-bold text-heading">{brief.title}</h3>
                 <p className="text-subtext">{t('Fecha:', 'Timestamp:')} {brief.timestamp}</p>
                 <p className="text-subtext mt-2 text-sm">{t('Objetivo de Campaña:', 'Campaign Goal:')} {brief.campaignGoal}</p>
-              </div>
-              <div className="flex bg-slate-50 rounded-lg p-1 border border-slate-200">
-                <button
-                  disabled={isBusy}
-                  onClick={() => setLanguage('es')}
-                  className={`px-4 py-1 rounded-md text-sm font-medium transition-colors disabled:opacity-50 ${language === 'es' ? 'bg-white text-[#0066FF] shadow-sm font-bold' : 'text-subtext hover:text-heading'}`}
-                >
-                  Español
-                </button>
-                <button
-                  disabled={isBusy}
-                  onClick={() => setLanguage('en')}
-                  className={`px-4 py-1 rounded-md text-sm font-medium transition-colors disabled:opacity-50 ${language === 'en' ? 'bg-white text-[#0066FF] shadow-sm font-bold' : 'text-subtext hover:text-heading'}`}
-                >
-                  English
-                </button>
               </div>
             </div>
 

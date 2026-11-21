@@ -42,7 +42,7 @@ interface NavigationProps {
 
 export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, isMobileMenuOpen, setIsMobileMenuOpen }) => {
   const { name, description, saveContext, loadLast } = useCompanyContext();
-  const { language, setLanguage, t } = useLanguage();
+  const { language, t } = useLanguage();
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
   const [tempName, setTempName] = React.useState(name);
   const [tempDesc, setTempDesc] = React.useState(description);
@@ -376,22 +376,6 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
           <span className="font-bold text-xl tracking-tight">{name}</span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="inline-flex items-center bg-white/15 rounded-full p-0.5 border border-white/25 text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setLanguage('es')}
-              className={`px-2.5 py-1 rounded-full transition-all ${language === 'es' ? 'bg-white text-[#0066FF] shadow-sm' : 'text-white/90 hover:text-white'}`}
-            >
-              ES
-            </button>
-            <button
-              type="button"
-              onClick={() => setLanguage('en')}
-              className={`px-2.5 py-1 rounded-full transition-all ${language === 'en' ? 'bg-white text-[#0066FF] shadow-sm' : 'text-white/90 hover:text-white'}`}
-            >
-              EN
-            </button>
-          </div>
           <button
             type="button"
             onClick={() => setIsHelpGuideOpen(true)}
@@ -411,24 +395,8 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
         nav-sidebar transition-transform duration-300 ease-in-out pt-16 md:pt-0
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
-        <div className="hidden md:flex flex-col items-center justify-center p-6 border-b border-gray-200 gap-3">
+        <div className="hidden md:flex flex-col items-center justify-center p-6 border-b border-gray-200">
           <img src={brandConfig.logo.sidebar} alt="Chopo AI" className="h-14 w-auto" />
-          <div className="inline-flex items-center bg-gray-100 rounded-full p-1 border border-gray-200 w-full max-w-[160px] justify-center">
-            <button
-              type="button"
-              onClick={() => setLanguage('es')}
-              className={`flex-1 py-1 rounded-full text-xs font-bold transition-all ${language === 'es' ? 'bg-[#0066FF] text-white shadow-sm' : 'text-gray-600 hover:text-[#0066FF]'}`}
-            >
-              ES
-            </button>
-            <button
-              type="button"
-              onClick={() => setLanguage('en')}
-              className={`flex-1 py-1 rounded-full text-xs font-bold transition-all ${language === 'en' ? 'bg-[#0066FF] text-white shadow-sm' : 'text-gray-600 hover:text-[#0066FF]'}`}
-            >
-              EN
-            </button>
-          </div>
         </div>
 
         <div className="p-4 space-y-2">
@@ -469,30 +437,31 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
           <button
             type="button"
             onClick={openRagAdminModal}
+            title={t('Base de Conocimiento (COFEPRIS y Marca)', 'Knowledge Base (COFEPRIS & Brand)')}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 hover:bg-blue-50 text-[#003B7A] border border-slate-200 hover:border-blue-200 transition-all text-sm font-semibold shadow-sm"
           >
             <BookOpen size={18} className="text-[#0066FF] shrink-0" />
-            <span className="truncate">{t('Base de Conocimiento (COFEPRIS y Marca)', 'Knowledge Base (COFEPRIS & Brand)')}</span>
+            <span className="whitespace-nowrap">{t('Base de Conocimiento', 'Knowledge Base')}</span>
           </button>
         </div>
 
-        <div className="w-full p-6 border-t border-gray-100 bg-gray-50/50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3 overflow-hidden">
-              <div className="w-10 h-10 rounded-full bg-[#0066FF] text-white flex items-center justify-center font-bold text-lg shrink-0">
+        <div className="w-full px-4 py-4 border-t border-gray-100 bg-gray-50/50">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-full bg-[#0066FF] text-white flex items-center justify-center font-bold text-base shrink-0">
                 {name.charAt(0)}
               </div>
-              <div className="overflow-hidden">
-                <p className="text-sm font-bold text-[#003B7A] truncate">{name}</p>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-[#003B7A] leading-tight whitespace-nowrap">{name}</p>
                 <p className="text-xs text-gray-500 font-medium">{t('Edición Empresarial', 'Enterprise Edition')}</p>
               </div>
             </div>
             <button 
               onClick={() => setIsSettingsOpen(true)}
-              className="p-2 text-gray-400 hover:text-[#0066FF] transition-colors rounded-lg hover:bg-white shadow-sm border border-transparent hover:border-gray-100"
+              className="p-1.5 shrink-0 text-gray-400 hover:text-[#0066FF] transition-colors rounded-lg hover:bg-white shadow-sm border border-transparent hover:border-gray-100"
               title={t('Configuración de Contexto de Empresa', 'Company Context Settings')}
             >
-              <Settings size={20} />
+              <Settings size={18} />
             </button>
           </div>
         </div>

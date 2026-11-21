@@ -65,7 +65,7 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                     <BarChart3 className="w-8 h-8 text-[#0066FF]" />
                   </div>
                   <h1 className="text-4xl md:text-6xl font-black text-[#003B7A] tracking-tight">
-                    {t('Bienvenido a ', 'Welcome to ')}<span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0066FF] to-[#003B7A]">{name} {t('IA', 'AI')}</span>
+                    Chopo <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0066FF] to-[#003B7A]">Intelligence Hub</span>
                   </h1>
                 </div>
                 <p className="text-xl text-gray-600 max-w-3xl mx-auto font-medium leading-relaxed mb-10">
@@ -78,7 +78,7 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                 <div className="max-w-5xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100 border-t-4 border-t-[#78D600] text-left mb-8">
                     <h2 className="text-xl font-bold text-[#003B7A] mb-6 flex items-center gap-2">
                         <Sparkles className="text-[#0066FF]" size={20} />
-                        {t(`Flujo de Trabajo de ${name} IA`, `The ${name} AI Workflow`)}
+                        {t('Flujo de Trabajo — Chopo Intelligence Hub', 'Chopo Intelligence Hub Workflow')}
                     </h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                         <div

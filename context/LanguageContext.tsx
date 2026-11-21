@@ -1,71 +1,40 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, ReactNode } from 'react';
 
 export type UILanguage = 'es' | 'en';
 
-const STORAGE_KEY = 'chopo_ui_lang';
+const FIXED_LANGUAGE: UILanguage = 'es';
 
-let currentGlobalLanguage: UILanguage = 'es';
-
-export const getCurrentLanguage = (): UILanguage => {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved === 'es' || saved === 'en') {
-        currentGlobalLanguage = saved;
-        return saved;
-      }
-    }
-  } catch (e) {
-    // Ignore storage read errors
-  }
-  return currentGlobalLanguage;
-};
+export const getCurrentLanguage = (): UILanguage => FIXED_LANGUAGE;
 
 interface LanguageContextType {
   language: UILanguage;
   setLanguage: (lang: UILanguage) => void;
   toggleLanguage: () => void;
-  t: (esText: string, enText: string) => string;
+  t: (esText: string, enText?: string) => string;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
+const noopSetLanguage = (_lang: UILanguage): void => {
+  // Language is permanently locked to Mexican Spanish ('es')
+};
+
+const noopToggleLanguage = (): void => {
+  // Language is permanently locked to Mexican Spanish ('es')
+};
+
+const translateSpanishOnly = (esText: string, _enText?: string): string => esText;
+
+const FIXED_LANGUAGE_CONTEXT_VALUE: LanguageContextType = {
+  language: FIXED_LANGUAGE,
+  setLanguage: noopSetLanguage,
+  toggleLanguage: noopToggleLanguage,
+  t: translateSpanishOnly,
+};
+
 export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [language, setLanguageState] = useState<UILanguage>(() => getCurrentLanguage());
-
-  const setLanguage = (lang: UILanguage) => {
-    currentGlobalLanguage = lang;
-    setLanguageState(lang);
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(STORAGE_KEY, lang);
-      }
-    } catch (e) {
-      // Ignore storage write errors
-    }
-  };
-
-  const toggleLanguage = () => {
-    setLanguage(language === 'es' ? 'en' : 'es');
-  };
-
-  useEffect(() => {
-    currentGlobalLanguage = language;
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(STORAGE_KEY, language);
-      }
-    } catch (e) {
-      // Ignore storage write errors
-    }
-  }, [language]);
-
-  const t = (esText: string, enText: string): string => {
-    return language === 'es' ? esText : enText;
-  };
-
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, toggleLanguage, t }}>
+    <LanguageContext.Provider value={FIXED_LANGUAGE_CONTEXT_VALUE}>
       {children}
     </LanguageContext.Provider>
   );

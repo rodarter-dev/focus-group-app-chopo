@@ -46,12 +46,12 @@ describe('Home Component (Laboratorios Chopo)', () => {
 
     it('renders the correct Chopo brand text from context', () => {
         renderWithProviders();
-        expect(screen.getAllByText(/Laboratorios Chopo IA/i).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/Intelligence Hub/i).length).toBeGreaterThan(0);
     });
 
     it('does not use dark mode classes on the main heading', () => {
         renderWithProviders();
-        const heading = screen.getByText(/Bienvenido a/i);
+        const heading = screen.getAllByText(/Intelligence Hub/i)[0];
         expect(heading.parentElement?.className).not.toContain('text-white');
     });
 
@@ -63,7 +63,7 @@ describe('Home Component (Laboratorios Chopo)', () => {
 
     it('uses the correct Chopo AI workflow heading', () => {
         renderWithProviders();
-        expect(screen.getByText(/Flujo de Trabajo de Laboratorios Chopo IA/i)).toBeDefined();
+        expect(screen.getByText(/Flujo de Trabajo — Chopo Intelligence Hub/i)).toBeDefined();
     });
 
     it('renders all 4 active Chopo tool cards', () => {

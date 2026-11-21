@@ -123,8 +123,8 @@ describe('AudienceGenerator (Simplified Prompt-First Flow)', () => {
     renderComponent();
 
     expect(screen.queryAllByText(/Crear Nuevo Perfil de Audiencia con IA/i).length).toBeGreaterThan(0);
-    expect(screen.queryAllByText(/Paciente \(Pista B2C\)/i).length).toBeGreaterThan(0);
-    expect(screen.queryAllByText(/Médico Prescriptor \(Pista B2B\)/i).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/Paciente \(B2C\)/i).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/Médico Prescriptor \(B2B\)/i).length).toBeGreaterThan(0);
     expect(screen.queryAllByText(/Médico general recién egresado que acaba de terminar su servicio social/i).length).toBeGreaterThan(0);
   });
 
@@ -134,7 +134,7 @@ describe('AudienceGenerator (Simplified Prompt-First Flow)', () => {
     const chip = screen.getByText(/Médico general recién egresado que acaba de terminar su servicio social/i);
     fireEvent.click(chip);
 
-    const generateBtn = screen.getByText(/\+ Generar y Agregar Audiencia/i);
+    const generateBtn = screen.getByText(/Generar y Agregar Audiencia/i);
     fireEvent.click(generateBtn);
 
     await waitFor(() => {

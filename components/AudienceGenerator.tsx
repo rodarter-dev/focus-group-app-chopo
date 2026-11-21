@@ -128,7 +128,8 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
 
   const persistPersonasList = async (
     updatedList: CombinedPersona[],
-    changeSummary: string
+    changeSummary: string,
+    options?: { skipVersionSnapshot?: boolean; backupPersonas?: CombinedPersona[] }
   ) => {
     try {
       await Promise.all([
@@ -138,7 +139,9 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
           body: JSON.stringify({
             personas: updatedList,
             changeSummary,
-            label: changeSummary
+            label: changeSummary,
+            skipVersionSnapshot: options?.skipVersionSnapshot,
+            backupPersonas: options?.backupPersonas
           })
         }),
         fetch('/api/save-run', {
@@ -419,26 +422,36 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
   };
 
   const handleDeletePersona = async (personaToDelete: CombinedPersona) => {
+    const previousList = [...displayedPersonas];
     const updatedList = displayedPersonas.filter(p => p.name !== personaToDelete.name);
     setPersonas(updatedList);
     setStatusMessage(
       t(
-        `Perfil "${personaToDelete.name}" eliminado.`,
-        `Profile "${personaToDelete.name}" deleted.`
+        `Perfil "${personaToDelete.name}" eliminado. Puedes recuperarlo desde Historial / Versiones.`,
+        `Profile "${personaToDelete.name}" deleted. You can restore it from History / Versions.`
       )
     );
-    await persistPersonasList(updatedList, `Eliminación de perfil: ${personaToDelete.name}`);
+    await persistPersonasList(
+      updatedList,
+      `Respaldo antes de eliminar: ${personaToDelete.name}`,
+      { backupPersonas: previousList, skipVersionSnapshot: true }
+    );
   };
 
   const handleClearAllPersonas = async () => {
+    const previousList = [...displayedPersonas];
     setPersonas([]);
     setStatusMessage(
       t(
-        'Catálogo vaciado. Puedes crear tus propios perfiles con el generador de IA o restaurar los perfiles base cuando gustes.',
-        'Catalog cleared. You can create your own profiles with the AI generator or restore the base profiles anytime.'
+        'Catálogo vaciado. Puedes crear tus propios perfiles con el generador de IA o restaurarlos desde Historial / Versiones.',
+        'Catalog cleared. You can create your own profiles with the AI generator or restore them from History / Versions.'
       )
     );
-    await persistPersonasList([], 'Catálogo de audiencias vaciado');
+    await persistPersonasList(
+      [],
+      `Respaldo antes de vaciar catálogo (${previousList.length} perfiles)`,
+      { backupPersonas: previousList, skipVersionSnapshot: true }
+    );
   };
 
   const handleOpenVersionHistory = async () => {
@@ -670,8 +683,8 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                 </h2>
                 <p className="text-xs text-slate-600 mt-0.5">
                   {t(
-                    'Elige la pista (Paciente B2C o Médico Prescriptor B2B), describe el perfil en lenguaje natural o usa un ejemplo rápido, y agrégalo al instante a tu catálogo.',
-                    'Select the track (B2C Patient or B2B Prescribing Physician), describe the profile in natural language or pick a quick example, and add it immediately to your catalog.'
+                    'Elige el segmento (Paciente B2C o Médico Prescriptor B2B), describe el perfil en lenguaje natural o usa un ejemplo rápido, y agrégalo al instante a tu catálogo.',
+                    'Select the segment (B2C Patient or B2B Prescribing Physician), describe the profile in natural language or pick a quick example, and add it immediately to your catalog.'
                   )}
                 </p>
               </div>
@@ -688,7 +701,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                       : 'text-slate-600 hover:text-[#003B7A]'
                   }`}
                 >
-                  <span>{t('🏥 Paciente (Pista B2C)', '🏥 Patient (B2C Track)')}</span>
+                  <span>{t('🏥 Paciente (B2C)', '🏥 Patient (B2C)')}</span>
                 </button>
                 <button
                   type="button"
@@ -700,7 +713,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                       : 'text-slate-600 hover:text-emerald-800'
                   }`}
                 >
-                  <span>{t('🩺 Médico Prescriptor (Pista B2B)', '🩺 Prescribing Physician (B2B Track)')}</span>
+                  <span>{t('🩺 Médico Prescriptor (B2B)', '🩺 Prescribing Physician (B2B)')}</span>
                 </button>
               </div>
             </div>
@@ -752,7 +765,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                 className="btn-primary px-6 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 shrink-0 disabled:opacity-50"
               >
                 <Plus size={18} />
-                <span>{t('+ Generar y Agregar Audiencia', '+ Generate & Add Audience')}</span>
+                <span>{t('Generar y Agregar Audiencia', 'Generate & Add Audience')}</span>
               </button>
             </div>
           </div>
@@ -823,7 +836,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                 className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
               >
                 <RotateCcw size={15} />
-                <span>{t('↺ Restaurar Perfiles Base', '↺ Restore Base Profiles')}</span>
+                <span>{t('Restaurar Perfiles Base', 'Restore Base Profiles')}</span>
               </button>
             </div>
           </div>
@@ -1091,7 +1104,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#003B7A] uppercase mb-1">
-                    {t('Pista', 'Track')}
+                    {t('Segmento', 'Segment')}
                   </label>
                   <select
                     value={editForm.track}
@@ -1269,6 +1282,12 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                           {ts ? new Date(ts).toLocaleString() : ''} • {ver.itemCount ?? 5}{' '}
                           {t('perfiles', 'profiles')}
                         </p>
+                        {Array.isArray(ver.previewNames) && ver.previewNames.length > 0 && (
+                          <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">
+                            <span className="font-semibold text-[#003B7A]">{t('Incluye:', 'Includes:')}</span>{' '}
+                            {ver.previewNames.join(' • ')}
+                          </p>
+                        )}
                       </div>
                       <button
                         type="button"
