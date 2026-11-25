@@ -3988,7 +3988,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                     </div>
                                     <div>
                                         <label className="block text-[11px] font-bold text-[#003B7A] uppercase tracking-wider mb-1">
-                                            {t('Copy / Pie de Publicación (Opcional)', 'Social Copy / Caption (Optional)')}
+                                            {t('Texto / Pie de Publicación (Opcional)', 'Social Copy / Caption (Optional)')}
                                         </label>
                                         <input
                                             type="text"
@@ -4075,12 +4075,12 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                             <div className="flex-1 p-6 bg-gray-50 rounded-xl border border-gray-100 text-sm shadow-sm flex flex-col justify-center">
                                                 <p className="font-black text-[#003B7A] text-[10px] uppercase tracking-widest mb-3 flex items-center gap-2">
                                                 <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
-                                                {t('Copy para Redes Sociales', 'Social Caption')}
+                                                {t('Texto para Redes Sociales', 'Social Caption')}
                                             </p>
                                                 <p className={`mb-6 leading-relaxed text-base ${activeCreativeAssets?.social?.caption ? 'italic text-heading font-medium' : 'text-subtext text-sm'}`}>
                                                     {activeCreativeAssets?.social?.caption
                                                         ? `"${activeCreativeAssets.social.caption}"`
-                                                        : t('Sin copy adicional. Al evaluar, el focus group analizará directamente el diseño y los textos incluidos dentro de tu imagen.', 'No additional copy. The focus group will evaluate the design and text inside your uploaded image directly.')}
+                                                        : t('Sin texto adicional. Al evaluar, el focus group analizará directamente el diseño y los textos incluidos dentro de tu imagen.', 'No additional copy. The focus group will evaluate the design and text inside your uploaded image directly.')}
                                                 </p>
                                             <p className="font-black text-[#003B7A] text-[10px] uppercase tracking-widest mb-2 flex items-center gap-2">
                                                 <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
@@ -4090,7 +4090,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                                     {activeCreativeAssets?.search?.headline || t('Sin titular adicional (opcional)', 'No additional headline (optional)')}
                                                 </p>
                                                 <p className="text-subtext text-sm leading-relaxed font-medium">
-                                                    {activeCreativeAssets?.search?.description || t('Si deseas evaluar también textos complementarios, escríbelos arriba en Titular y Copy.', 'If you also want to evaluate complementary copy, enter it in the Headline and Copy fields above.')}
+                                                    {activeCreativeAssets?.search?.description || t('Si deseas evaluar también textos complementarios, escríbelos arriba en Titular y Pie de Publicación.', 'If you also want to evaluate complementary copy, enter it in the Headline and Copy fields above.')}
                                                 </p>
                                         </div>
                                     </div>
@@ -4294,7 +4294,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                 <div className="content-card max-h-[500px] overflow-y-auto custom-scrollbar">
                                     <h3 className="font-black text-heading mb-6 flex items-center gap-2 uppercase tracking-widest text-sm">
                                         <Edit2 size={20} className="text-[#0066FF]" />
-                                        {t('Ideas de Mejora de Copy', 'Copy Enhancement ideas')}
+                                        {t('Ideas de Mejora de Texto', 'Copy Enhancement ideas')}
                                     </h3>
                                     <div className="space-y-4">
                                         {displayedCreativeResults.filter(r => r.copyEdit && r.copyEdit !== "None").map((r, i) => (

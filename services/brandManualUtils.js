@@ -493,7 +493,7 @@ export function exportBrandManualToMarkdown(manual) {
     if (Array.isArray(ch.supportedFormats) && ch.supportedFormats.length) {
       lines.push(`- **Formatos:** ${ch.supportedFormats.join(', ')}`);
     }
-    lines.push(`- **Copy:** ${cleanExportText(ch.copyRules || '')}`);
+    lines.push(`- **Redacción:** ${cleanExportText(ch.copyRules || '')}`);
     lines.push(`- **Fotografía:** ${cleanExportText(ch.photoRules || '')}`);
     lines.push(`- **Contexto Focus Group:** ${cleanExportText(ch.focusGroupContext || '')}`);
     if (Array.isArray(ch.auditorRules) && ch.auditorRules.length) {

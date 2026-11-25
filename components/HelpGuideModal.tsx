@@ -172,8 +172,8 @@ export const HelpGuideModal: React.FC<HelpGuideModalProps> = ({
         '¿Cómo pruebo una imagen, banner o arte final de mi agencia sin tener que generar primero un Brief de Marketing?'
       ),
       answer: t(
-        'Desde "Inicio" usa el banner "Atajo Rápido para Agencia / Parrilla" haciendo clic en "Ir Directo al Focus Group ➔", o entra a "4. Focus Group" ➔ pestaña "Imagen / Banner". En la tarjeta "Subir Imagen / Banner Propio", haz clic en "Cargar Imagen / Banner", selecciona el canal (Redes Sociales, Mailing, Sitio Web o PDV Sucursal) y etapa del Funnel, escribe opcionalmente el titular y copy, y presiona "Evaluar Imagen / Banner". Los participantes evaluarán atractivo visual, afinidad con Laboratorio Médico del Chopo, intención de agendar y cumplimiento con el Manual de Marca V4.',
-        'Desde "Inicio" usa el banner "Atajo Rápido para Agencia / Parrilla" haciendo clic en "Ir Directo al Focus Group ➔", o entra a "4. Focus Group" ➔ pestaña "Imagen / Banner". En la tarjeta "Subir Imagen / Banner Propio", haz clic en "Cargar Imagen / Banner", selecciona el canal (Redes Sociales, Mailing, Sitio Web o PDV Sucursal) y etapa del Funnel, escribe opcionalmente el titular y copy, y presiona "Evaluar Imagen / Banner". Los participantes evaluarán atractivo visual, afinidad con Laboratorio Médico del Chopo, intención de agendar y cumplimiento con el Manual de Marca V4.'
+        'Desde "Inicio" usa el banner "Atajo Rápido para Agencia / Parrilla" haciendo clic en "Ir Directo al Focus Group ➔", o entra a "4. Focus Group" ➔ pestaña "Imagen / Banner". En la tarjeta "Subir Imagen / Banner Propio", haz clic en "Cargar Imagen / Banner", selecciona el canal (Redes Sociales, Mailing, Sitio Web o PDV Sucursal) y etapa del Funnel, escribe opcionalmente el titular y texto de publicación, y presiona "Evaluar Imagen / Banner". Los participantes evaluarán atractivo visual, afinidad con Laboratorio Médico del Chopo, intención de agendar y cumplimiento con el Manual de Marca V4.',
+        'Desde "Inicio" usa el banner "Atajo Rápido para Agencia / Parrilla" haciendo clic en "Ir Directo al Focus Group ➔", o entra a "4. Focus Group" ➔ pestaña "Imagen / Banner". En la tarjeta "Subir Imagen / Banner Propio", haz clic en "Cargar Imagen / Banner", selecciona el canal (Redes Sociales, Mailing, Sitio Web o PDV Sucursal) y etapa del Funnel, escribe opcionalmente el titular y texto de publicación, y presiona "Evaluar Imagen / Banner". Los participantes evaluarán atractivo visual, afinidad con Laboratorio Médico del Chopo, intención de agendar y cumplimiento con el Manual de Marca V4.'
       ),
       relatedTab: 'focus_group' as HelpGuideTabId,
       targetMode: AppMode.SYNTHETIC_FOCUS_GROUP
@@ -799,7 +799,7 @@ export const HelpGuideModal: React.FC<HelpGuideModalProps> = ({
                       3. Audiencias Objetivo (B2C Pacientes, B2D Médicos y B2B Empresas)
                     </h4>
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      Selecciona el segmento y las audiencias vinculadas para que cada copy respete automáticamente el pronombre correcto (&ldquo;Tú&rdquo; en B2C, &ldquo;Tú&rdquo; respetuoso en B2D y &ldquo;Usted&rdquo; en B2B), el destino digital y la leyenda precautoria vigente.
+                      Selecciona el segmento y las audiencias vinculadas para que cada mensaje respete automáticamente el pronombre correcto (&ldquo;Tú&rdquo; en B2C, &ldquo;Tú&rdquo; respetuoso en B2D y &ldquo;Usted&rdquo; en B2B), el destino digital y la leyenda precautoria vigente.
                     </p>
                   </div>
 
