@@ -168,7 +168,7 @@ describe('AudienceGenerator (Manual V4 — 3 Segments: B2C, B2D, B2B)', () => {
     expect(screen.queryAllByText(/Médico \(B2D\)/i).length).toBeGreaterThan(0);
   });
 
-  it('renders the 3 official Manual V4 segment toggles, pronoun hints, filter pills, and B2C/B2D/B2B quick chips', () => {
+  it('renders the 3 official Manual V4 segment toggles, pronoun hints, filter pills, and dynamically filtered quick chips per segment', () => {
     renderComponent(ALL_THREE_SEGMENTS_PERSONAS);
 
     expect(screen.queryAllByText(/Crear Nuevo Perfil de Audiencia con IA/i).length).toBeGreaterThan(0);
@@ -186,15 +186,26 @@ describe('AudienceGenerator (Manual V4 — 3 Segments: B2C, B2D, B2B)', () => {
     expect(screen.getByRole('button', { name: /Médicos B2D/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Empresas B2B/i })).toBeTruthy();
 
-    // Quick chips across B2C, B2D, B2B
-    expect(screen.getByText(/Médico general recién egresado que acaba de terminar su servicio social/i)).toBeTruthy();
+    // Default segment (B2C) shows ONLY B2C chips (no B2D or B2B chips)
     expect(screen.getByText(/Mujer embarazada primeriza buscando ultrasonido prenatal/i)).toBeTruthy();
+    expect(screen.queryByText(/Directora de Recursos Humanos buscando convenios/i)).toBeNull();
+    expect(screen.queryByText(/Médico general recién egresado que acaba de terminar/i)).toBeNull();
+
+    // Switching to B2D shows ONLY B2D chips
+    fireEvent.click(screen.getByRole('button', { name: /Médico \(B2D\)/i }));
+    expect(screen.getByText(/Médico general recién egresado que acaba de terminar su servicio social/i)).toBeTruthy();
+    expect(screen.queryByText(/Mujer embarazada primeriza buscando ultrasonido prenatal/i)).toBeNull();
+
+    // Switching to B2B shows ONLY B2B chips
+    fireEvent.click(screen.getByRole('button', { name: /Empresa \(B2B\)/i }));
     expect(screen.getByText(/Directora de Recursos Humanos buscando convenios de check-ups anuales para 350 colaboradores/i)).toBeTruthy();
+    expect(screen.queryByText(/Mujer embarazada primeriza buscando ultrasonido prenatal/i)).toBeNull();
   });
 
   it('submits B2D quick chip with track B2D to generateSingleAudienceFromPrompt', async () => {
     renderComponent();
 
+    fireEvent.click(screen.getByRole('button', { name: /Médico \(B2D\)/i }));
     const chip = screen.getByText(/Médico general recién egresado que acaba de terminar su servicio social/i);
     fireEvent.click(chip);
 
@@ -213,6 +224,7 @@ describe('AudienceGenerator (Manual V4 — 3 Segments: B2C, B2D, B2B)', () => {
   it('submits B2B enterprise quick chip with track B2B to generateSingleAudienceFromPrompt', async () => {
     renderComponent();
 
+    fireEvent.click(screen.getByRole('button', { name: /Empresa \(B2B\)/i }));
     const chip = screen.getByText(/Directora de Recursos Humanos buscando convenios de check-ups anuales para 350 colaboradores/i);
     fireEvent.click(chip);
 

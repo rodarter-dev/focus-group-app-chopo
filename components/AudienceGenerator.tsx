@@ -57,9 +57,9 @@ const SEGMENT_OPTIONS: Array<{
     label: '🏥 Paciente (B2C)',
     shortLabel: 'Paciente (B2C)',
     hint: 'Habla de Tú',
-    activeClass: 'bg-[#0066FF] text-white shadow-sm',
-    inactiveClass: 'text-slate-600 hover:text-[#003B7A]',
-    badgeClass: 'bg-[#0066FF] text-white border-blue-400'
+    activeClass: 'bg-[#005FFC] text-white shadow-sm',
+    inactiveClass: 'text-slate-600 hover:text-[#004699]',
+    badgeClass: 'bg-[#005FFC] text-white border-blue-400'
   },
   {
     code: 'B2D',
@@ -105,6 +105,11 @@ const QUICK_PROMPT_EXAMPLES: Array<{
     track: 'B2D'
   },
   {
+    labelEs: '🩺 Cardiólogo clínico con consulta privada en perfil de lípidos y electrocardiograma',
+    prompt: 'Médico cardiólogo clínico de 43 años con consulta privada en Monterrey. Evalúa todos los días a pacientes con dislipidemia e hipertensión y busca alta precisión analítica en perfil de lípidos y resultados digitales fáciles de revisar en consulta.',
+    track: 'B2D'
+  },
+  {
     labelEs: '🤰 Mujer embarazada primeriza buscando ultrasonido prenatal y control trimestral',
     prompt: 'Mujer embarazada primeriza buscando ultrasonido prenatal, estudios de control trimestral, trato cálido en sucursal y resultados digitales para compartir con su ginecólogo.',
     track: 'B2C'
@@ -115,6 +120,11 @@ const QUICK_PROMPT_EXAMPLES: Array<{
     track: 'B2C'
   },
   {
+    labelEs: '💙 Mujer ejecutiva y mamá de 47 años buscando Check-up de Salud Cardiovascular sin filas',
+    prompt: 'Mujer ejecutiva y mamá de 47 años en CDMX con antecedentes familiares de colesterol alto e hipertensión. Quiere hacerse un Check-up de Salud Cardiovascular preventivo, agendar rápido en línea y recibir resultados claros en la App Chopo.',
+    track: 'B2C'
+  },
+  {
     labelEs: '🏢 Directora de Recursos Humanos buscando convenios de check-ups anuales para 350 colaboradores',
     prompt: 'Directora de Recursos Humanos de una empresa mediana buscando convenios corporativos de check-ups anuales, salud ocupacional y facturación centralizada para 350 colaboradores.',
     track: 'B2B'
@@ -122,6 +132,11 @@ const QUICK_PROMPT_EXAMPLES: Array<{
   {
     labelEs: '🏢 Gerente de Seguridad e Higiene coordinando exámenes médicos de ingreso y periódicos',
     prompt: 'Gerente de Seguridad e Higiene en planta industrial coordinando convenios empresariales de exámenes médicos de ingreso, perfiles toxicológicos y seguimiento periódico de salud ocupacional.',
+    track: 'B2B'
+  },
+  {
+    labelEs: '🏢 Líder de Bienestar Corporativo evaluando jornadas preventivas de salud en oficina',
+    prompt: 'Coordinador de Bienestar y Beneficios Corporativos en empresa de tecnología buscando jornadas de toma de muestras en sitio, cobertura nacional de sucursales y reportes consolidados para dirección.',
     track: 'B2B'
   }
 ];
@@ -821,15 +836,15 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
               </div>
             </div>
 
-            {/* Quick Example Chips */}
+            {/* Quick Example Chips (filtered dynamically by selected segment) */}
             <div className="mb-3">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
-                {t('Ejemplos rápidos (clic para probar):')}
+                {t(`Ejemplos rápidos para ${activeSegmentOption.shortLabel} (clic para probar):`)}
               </span>
               <div className="flex flex-wrap gap-2">
-                {QUICK_PROMPT_EXAMPLES.map((ex, idx) => (
+                {QUICK_PROMPT_EXAMPLES.filter(ex => ex.track === selectedTrack).map((ex, idx) => (
                   <button
-                    key={idx}
+                    key={`${selectedTrack}_${idx}`}
                     type="button"
                     disabled={isBusy}
                     onClick={() => {
@@ -841,7 +856,7 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                         ? 'bg-emerald-50/70 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
                         : ex.track === 'B2B'
                           ? 'bg-indigo-50/70 hover:bg-indigo-100 text-indigo-800 border-indigo-200'
-                          : 'bg-blue-50/70 hover:bg-blue-100 text-[#003B7A] border-blue-200'
+                          : 'bg-blue-50/70 hover:bg-blue-100 text-[#004699] border-blue-200'
                     }`}
                   >
                     {ex.labelEs}
@@ -857,10 +872,14 @@ export const AudienceGenerator: React.FC<AudienceGeneratorProps> = ({
                 disabled={isBusy}
                 value={promptInput}
                 onChange={e => setPromptInput(e.target.value)}
-                placeholder={t(
-                  'Describe el perfil de audiencia que deseas agregar (ej. "Directora de Recursos Humanos buscando convenios de check-ups anuales para 350 colaboradores", "Médico general recién egresado..." o "Mujer embarazada primeriza...")...'
-                )}
-                className="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0066FF] focus:border-transparent outline-none text-sm text-slate-900 resize-none"
+                placeholder={
+                  selectedTrack === 'B2B'
+                    ? t('Describe el perfil de Empresa (B2B) que deseas agregar (ej. "Directora de Recursos Humanos buscando convenios de check-ups anuales para 350 colaboradores")...')
+                    : selectedTrack === 'B2D'
+                      ? t('Describe el perfil de Médico (B2D) que deseas agregar (ej. "Médico cardiólogo clínico evaluando precisión en perfil de lípidos y resultados digitales")...')
+                      : t('Describe el perfil de Paciente (B2C) que deseas agregar (ej. "Mujer embarazada primeriza buscando ultrasonido prenatal y trato cálido en sucursal")...')
+                }
+                className="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005FFC] focus:border-transparent outline-none text-sm text-slate-900 resize-none"
               />
               <button
                 type="button"
