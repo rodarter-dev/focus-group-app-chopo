@@ -97,16 +97,29 @@ Antes de correr la aplicación en local o desplegar en Cloud Run en un proyecto 
 - **Google Cloud CLI (`gcloud`)** autenticada en un proyecto GCP con facturación activa
 - **Docker** *(requerido únicamente para empaquetar/subir la imagen con `cloud_run.sh`)*
 
-### Opción Rápida (Script Automatizado)
-El script [`setup_gcp_resources.sh`](setup_gcp_resources.sh) crea automáticamente las 9 APIs base, Firestore Native `(default)`, ambos buckets privados y la cuenta de servicio dedicada `chopo-hub-sa` con sus 4 roles mínimos:
+### Opción Recomendada — 1 Solo Comando Automatizado (`setup_gcp_resources.sh`)
+El script [`setup_gcp_resources.sh`](setup_gcp_resources.sh) es **100% idempotente** (si algún recurso ya existe, lo respeta sin sobreescribirlo) y aprovisiona **todos los recursos GCP de una sola vez**:
+1. Habilita las **9 APIs base** *(agrega `iap.googleapis.com` si pasas `ENABLE_IAP=true`)*.
+2. Crea **Cloud Firestore Native `(default)`** en `us-central1`.
+3. Crea ambos **Buckets Privados** en Cloud Storage (`UBLA` + `Public Access Prevention`).
+4. Crea el repositorio Docker en **Artifact Registry** (`cloud-run-source-deploy`).
+5. Sube los **3 pilares clínicos/COFEPRIS**, crea el **Data Store `chopo-rag-datastore` en Vertex AI Search** (`CHUNKS`) y dispara la importación incremental.
+6. Crea la cuenta de servicio dedicada **`chopo-hub-sa`** y enlaza sus **4 roles IAM mínimos**.
+7. Imprime al final el bloque exacto listo para `.env` *(o crea `.env` automáticamente si pasas `--write-env` y aún no existe)*.
 
 ```bash
-export GOOGLE_CLOUD_PROJECT="project-nonprod-gcp-chopo" # o chopo-argolis
-./setup_gcp_resources.sh
-```
-*(Después solo completa los pasos **4.5 Artifact Registry** y **4.6 Vertex AI Search Data Store** de abajo si es un proyecto nuevo.)*
+gcloud auth login
+gcloud auth application-default login
 
-### Paso a Paso Completo por CLI (Todos los Recursos GCP)
+# Aprovisiona todo en 1 paso y genera tu archivo .env local si no existe:
+GOOGLE_CLOUD_PROJECT=project-nonprod-gcp-chopo ./setup_gcp_resources.sh --write-env
+
+# (Opcional si se activará Cloud IAP / Opción B desde el inicio):
+ENABLE_IAP=true GOOGLE_CLOUD_PROJECT=project-nonprod-gcp-chopo ./setup_gcp_resources.sh --write-env
+```
+
+<details>
+<summary><strong>Referencia Manual Paso a Paso por CLI (Auditoría para TI PROA — qué ejecuta internamente el script)</strong></summary>
 
 #### 4.1 Definir variables de tu sesión
 ```bash
@@ -118,8 +131,6 @@ export DATASTORE_ID="chopo-rag-datastore"
 export SA_NAME="chopo-hub-sa"
 export SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
-gcloud auth login
-gcloud auth application-default login
 gcloud config set project "${PROJECT_ID}"
 ```
 
@@ -138,7 +149,6 @@ gcloud services enable \
   iap.googleapis.com \
   --project="${PROJECT_ID}"
 ```
-*(Si usas Opción A de login en app, `iap.googleapis.com` es opcional.)*
 
 #### 4.3 Crear Cloud Firestore Native (`FIRESTORE_DATABASE=default`)
 ```bash
@@ -150,7 +160,6 @@ gcloud firestore databases create \
 ```
 
 #### 4.4 Crear los 2 Buckets Privados en Cloud Storage (`GCS_BUCKET_NAME` y `GCS_RAG_BUCKET_NAME`)
-Ambos buckets se crean estrictamente privados (`UBLA` + `Public Access Prevention`):
 ```bash
 gcloud storage buckets create "gs://${BUCKET_ASSETS}" \
   --project="${PROJECT_ID}" \
@@ -175,51 +184,44 @@ gcloud artifacts repositories create cloud-run-source-deploy \
 ```
 
 #### 4.6 Crear Data Store RAG en Vertex AI Search (`VERTEX_RAG_DATASTORE_ID`) e Indexar los 3 Pilares
-1. **Subir los 3 pilares clínicos y COFEPRIS** al bucket privado RAG:
-   ```bash
-   gcloud storage cp data/seeds/rag_docs/*.md "gs://${BUCKET_RAG}/" --project="${PROJECT_ID}"
-   ```
-2. **Crear el Data Store `chopo-rag-datastore`** en modo `CHUNKS` *(también se puede crear desde Consola GCP ➔ AI Applications / Vertex AI Search ➔ Data Stores ➔ Cloud Storage ➔ Documentos no estructurados)*:
-   ```bash
-   ACCESS_TOKEN=$(gcloud auth print-access-token)
+```bash
+gcloud storage cp data/seeds/rag_docs/*.md "gs://${BUCKET_RAG}/" --project="${PROJECT_ID}"
 
-   curl -X POST \
-     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-     -H "X-Goog-User-Project: ${PROJECT_ID}" \
-     -H "Content-Type: application/json" \
-     "https://discoveryengine.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores?dataStoreId=${DATASTORE_ID}" \
-     -d '{
-       "displayName": "Chopo COFEPRIS & Clinical RAG Datastore",
-       "industryVertical": "GENERIC",
-       "solutionTypes": ["SOLUTION_TYPE_SEARCH"],
-       "contentConfig": "CONTENT_REQUIRED",
-       "documentProcessingConfig": {
-         "chunkingConfig": {
-           "layoutBasedChunkingConfig": {
-             "chunkSize": 500,
-             "includeAncestorHeadings": true
-           }
-         }
-       }
-     }'
-   ```
-3. **Disparar la importación inicial desde Cloud Storage:**
-   ```bash
-   curl -X POST \
-     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-     -H "X-Goog-User-Project: ${PROJECT_ID}" \
-     -H "Content-Type: application/json" \
-     "https://discoveryengine.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores/${DATASTORE_ID}/branches/0/documents:import" \
-     -d "{
-       \"gcsSource\": {
-         \"inputUris\": [\"gs://${BUCKET_RAG}/*\"],
-         \"dataSchema\": \"content\"
-       },
-       \"reconciliationMode\": \"INCREMENTAL\"
-     }"
-   ```
-4. **Valor resultante para `.env`:**
-   `VERTEX_RAG_DATASTORE_ID="projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores/${DATASTORE_ID}"`
+ACCESS_TOKEN=$(gcloud auth print-access-token)
+
+curl -X POST \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "X-Goog-User-Project: ${PROJECT_ID}" \
+  -H "Content-Type: application/json" \
+  "https://discoveryengine.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores?dataStoreId=${DATASTORE_ID}" \
+  -d '{
+    "displayName": "Chopo COFEPRIS & Clinical RAG Datastore",
+    "industryVertical": "GENERIC",
+    "solutionTypes": ["SOLUTION_TYPE_SEARCH"],
+    "contentConfig": "CONTENT_REQUIRED",
+    "documentProcessingConfig": {
+      "chunkingConfig": {
+        "layoutBasedChunkingConfig": {
+          "chunkSize": 500,
+          "includeAncestorHeadings": true
+        }
+      }
+    }
+  }'
+
+curl -X POST \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "X-Goog-User-Project: ${PROJECT_ID}" \
+  -H "Content-Type: application/json" \
+  "https://discoveryengine.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores/${DATASTORE_ID}/branches/0/documents:import" \
+  -d "{
+    \"gcsSource\": {
+      \"inputUris\": [\"gs://${BUCKET_RAG}/*\"],
+      \"dataSchema\": \"content\"
+    },
+    \"reconciliationMode\": \"INCREMENTAL\"
+  }"
+```
 
 #### 4.7 Crear Cuenta de Servicio Dedicada (`chopo-hub-sa`) y sus 4 Roles Mínimos
 ```bash
@@ -238,9 +240,7 @@ for ROLE in \
 done
 ```
 
-#### 4.8 Generar el Archivo `.env` con los Recursos Recién Creados
-Una vez creados los recursos anteriores, genera tu `.env` local (nunca lo subas a Git):
-
+#### 4.8 Generar el Archivo `.env` manualmente
 ```bash
 cat <<EOF > .env
 GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
@@ -250,13 +250,13 @@ FIRESTORE_DATABASE=default
 GCS_BUCKET_NAME=${BUCKET_ASSETS}
 GCS_RAG_BUCKET_NAME=${BUCKET_RAG}
 VERTEX_RAG_DATASTORE_ID=projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores/${DATASTORE_ID}
-
-# Seguridad y límites (en local AUTH_MODE=none para demo sin login)
 AUTH_MODE=none
 GENAI_RATE_LIMIT_MAX=60
 API_RATE_LIMIT_MAX=300
 EOF
 ```
+
+</details>
 
 ### Mapa Completo de Recursos GCP ➔ Variables de Entorno
 
