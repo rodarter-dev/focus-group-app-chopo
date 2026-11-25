@@ -88,37 +88,191 @@ focus-group-app-chopo/
 
 ---
 
-## 4. Prerrequisitos y Variables de Entorno
+## 4. Aprovisionamiento de Recursos GCP desde Cero (y Mapeo a `.env`)
+
+Antes de correr la aplicación en local o desplegar en Cloud Run en un proyecto GCP nuevo (por ejemplo `project-nonprod-gcp-chopo`), hay que crear los recursos de GCP y colocar sus nombres en las variables de entorno.
 
 ### Prerrequisitos
 - **Node.js 20 LTS** y **npm**
-- **Google Cloud CLI (`gcloud`)** autenticada en el proyecto GCP destino
-- **Docker** *(requerido únicamente para construir/empujar imágenes en despliegue remoto con `cloud_run.sh`)*
+- **Google Cloud CLI (`gcloud`)** autenticada en un proyecto GCP con facturación activa
+- **Docker** *(requerido únicamente para empaquetar/subir la imagen con `cloud_run.sh`)*
 
-### Configuración de `.env` (Desarrollo Local)
-Copia la plantilla limpia (nunca subas `.env` a Git):
+### Opción Rápida (Script Automatizado)
+El script [`setup_gcp_resources.sh`](setup_gcp_resources.sh) crea automáticamente las 9 APIs base, Firestore Native `(default)`, ambos buckets privados y la cuenta de servicio dedicada `chopo-hub-sa` con sus 4 roles mínimos:
 
 ```bash
-cp .env.example .env
+export GOOGLE_CLOUD_PROJECT="project-nonprod-gcp-chopo" # o chopo-argolis
+./setup_gcp_resources.sh
+```
+*(Después solo completa los pasos **4.5 Artifact Registry** y **4.6 Vertex AI Search Data Store** de abajo si es un proyecto nuevo.)*
+
+### Paso a Paso Completo por CLI (Todos los Recursos GCP)
+
+#### 4.1 Definir variables de tu sesión
+```bash
+export PROJECT_ID="project-nonprod-gcp-chopo" # Cambia por tu proyecto destino (ej. chopo-argolis)
+export REGION="us-central1"
+export BUCKET_ASSETS="${PROJECT_ID}-chopo-assets"
+export BUCKET_RAG="${PROJECT_ID}-rag-docs"
+export DATASTORE_ID="chopo-rag-datastore"
+export SA_NAME="chopo-hub-sa"
+export SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+
+gcloud auth login
+gcloud auth application-default login
+gcloud config set project "${PROJECT_ID}"
 ```
 
-Variables principales:
+#### 4.2 Habilitar las APIs requeridas (9 base + IAP opcional)
+```bash
+gcloud services enable \
+  aiplatform.googleapis.com \
+  discoveryengine.googleapis.com \
+  run.googleapis.com \
+  cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com \
+  storage.googleapis.com \
+  firestore.googleapis.com \
+  iam.googleapis.com \
+  iamcredentials.googleapis.com \
+  iap.googleapis.com \
+  --project="${PROJECT_ID}"
+```
+*(Si usas Opción A de login en app, `iap.googleapis.com` es opcional.)*
 
-| Variable | Default | Descripción |
+#### 4.3 Crear Cloud Firestore Native (`FIRESTORE_DATABASE=default`)
+```bash
+gcloud firestore databases create \
+  --database="(default)" \
+  --location="${REGION}" \
+  --type=firestore-native \
+  --project="${PROJECT_ID}"
+```
+
+#### 4.4 Crear los 2 Buckets Privados en Cloud Storage (`GCS_BUCKET_NAME` y `GCS_RAG_BUCKET_NAME`)
+Ambos buckets se crean estrictamente privados (`UBLA` + `Public Access Prevention`):
+```bash
+gcloud storage buckets create "gs://${BUCKET_ASSETS}" \
+  --project="${PROJECT_ID}" \
+  --location="${REGION}" \
+  --uniform-bucket-level-access \
+  --public-access-prevention
+
+gcloud storage buckets create "gs://${BUCKET_RAG}" \
+  --project="${PROJECT_ID}" \
+  --location="${REGION}" \
+  --uniform-bucket-level-access \
+  --public-access-prevention
+```
+
+#### 4.5 Crear Repositorio Docker en Artifact Registry (usado por `cloud_run.sh`)
+```bash
+gcloud artifacts repositories create cloud-run-source-deploy \
+  --repository-format=docker \
+  --location="${REGION}" \
+  --description="Docker images for Chopo Intelligence Hub" \
+  --project="${PROJECT_ID}"
+```
+
+#### 4.6 Crear Data Store RAG en Vertex AI Search (`VERTEX_RAG_DATASTORE_ID`) e Indexar los 3 Pilares
+1. **Subir los 3 pilares clínicos y COFEPRIS** al bucket privado RAG:
+   ```bash
+   gcloud storage cp data/seeds/rag_docs/*.md "gs://${BUCKET_RAG}/" --project="${PROJECT_ID}"
+   ```
+2. **Crear el Data Store `chopo-rag-datastore`** en modo `CHUNKS` *(también se puede crear desde Consola GCP ➔ AI Applications / Vertex AI Search ➔ Data Stores ➔ Cloud Storage ➔ Documentos no estructurados)*:
+   ```bash
+   ACCESS_TOKEN=$(gcloud auth print-access-token)
+
+   curl -X POST \
+     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+     -H "X-Goog-User-Project: ${PROJECT_ID}" \
+     -H "Content-Type: application/json" \
+     "https://discoveryengine.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores?dataStoreId=${DATASTORE_ID}" \
+     -d '{
+       "displayName": "Chopo COFEPRIS & Clinical RAG Datastore",
+       "industryVertical": "GENERIC",
+       "solutionTypes": ["SOLUTION_TYPE_SEARCH"],
+       "contentConfig": "CONTENT_REQUIRED",
+       "documentProcessingConfig": {
+         "chunkingConfig": {
+           "layoutBasedChunkingConfig": {
+             "chunkSize": 500,
+             "includeAncestorHeadings": true
+           }
+         }
+       }
+     }'
+   ```
+3. **Disparar la importación inicial desde Cloud Storage:**
+   ```bash
+   curl -X POST \
+     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+     -H "X-Goog-User-Project: ${PROJECT_ID}" \
+     -H "Content-Type: application/json" \
+     "https://discoveryengine.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores/${DATASTORE_ID}/branches/0/documents:import" \
+     -d "{
+       \"gcsSource\": {
+         \"inputUris\": [\"gs://${BUCKET_RAG}/*\"],
+         \"dataSchema\": \"content\"
+       },
+       \"reconciliationMode\": \"INCREMENTAL\"
+     }"
+   ```
+4. **Valor resultante para `.env`:**
+   `VERTEX_RAG_DATASTORE_ID="projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores/${DATASTORE_ID}"`
+
+#### 4.7 Crear Cuenta de Servicio Dedicada (`chopo-hub-sa`) y sus 4 Roles Mínimos
+```bash
+gcloud iam service-accounts create "${SA_NAME}" \
+  --display-name="Chopo Intelligence Hub Cloud Run Runtime SA" \
+  --project="${PROJECT_ID}"
+
+for ROLE in \
+  "roles/aiplatform.user" \
+  "roles/datastore.user" \
+  "roles/storage.objectAdmin" \
+  "roles/discoveryengine.admin"; do
+  gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="${ROLE}"
+done
+```
+
+#### 4.8 Generar el Archivo `.env` con los Recursos Recién Creados
+Una vez creados los recursos anteriores, genera tu `.env` local (nunca lo subas a Git):
+
+```bash
+cat <<EOF > .env
+GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
+GOOGLE_CLOUD_LOCATION=${REGION}
+VERTEX_AI_LOCATION=global
+FIRESTORE_DATABASE=default
+GCS_BUCKET_NAME=${BUCKET_ASSETS}
+GCS_RAG_BUCKET_NAME=${BUCKET_RAG}
+VERTEX_RAG_DATASTORE_ID=projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores/${DATASTORE_ID}
+
+# Seguridad y límites (en local AUTH_MODE=none para demo sin login)
+AUTH_MODE=none
+GENAI_RATE_LIMIT_MAX=60
+API_RATE_LIMIT_MAX=300
+EOF
+```
+
+### Mapa Completo de Recursos GCP ➔ Variables de Entorno
+
+| Recurso GCP creado | Variable en `.env` / Cloud Run | Valor de ejemplo / Default |
 | :--- | :--- | :--- |
-| `GOOGLE_CLOUD_PROJECT` | *(Requerida)* | ID del proyecto GCP (`chopo-argolis` en sandbox / `project-nonprod-gcp-chopo` en PROA). |
-| `GOOGLE_CLOUD_LOCATION` | `us-central1` | Región fija de Cloud Run, Firestore y GCS. |
-| `VERTEX_AI_LOCATION` | `global` | Endpoint para modelos Gemini 3 y Vertex AI Search. |
-| `FIRESTORE_DATABASE` | `default` | Base de datos Firestore Native `(default)`. |
-| `GCS_BUCKET_NAME` | `${PROJECT_ID}-chopo-assets` | Bucket privado para retratos, artes y backup de estado. |
-| `GCS_RAG_BUCKET_NAME` | `${PROJECT_ID}-rag-docs` | Bucket privado de los 3 pilares clínicos/COFEPRIS y PDFs. |
-| `VERTEX_RAG_DATASTORE_ID` | `projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores/chopo-rag-datastore` | Resource Name del Data Store de Vertex AI Search. |
-| `VERTEX_TEXT_MODEL` / `VERTEX_EVALUATOR_MODEL` / `VERTEX_IMAGE_MODEL` / `VERTEX_VIDEO_MODEL` | `gemini-3.5-flash` / `gemini-3.1-pro-preview` / `gemini-3-pro-image` / `veo-3.1-lite-generate-001` | Versiones de modelos controladas por entorno. |
-| `AUTH_MODE` | `none` | `none` (local/demo), `iap` (Cloud IAP / SSO corporativo) o `login` (sesión HMAC-SHA256). |
-| `CHOPO_ADMIN_EMAILS` | *(Vacío)* | Lista CSV de correos con rol `admin` (Brand Owners / Regulatorio) para RBAC. |
-| `RBAC_ENFORCE` / `USER_SCOPED_RUNS` | `true` si `AUTH_MODE != none` | Bloquea escrituras admin a rol `marketing` (`403`) y separa `chopo_runs` por `userId`. |
-| `GENAI_RATE_LIMIT_MAX` / `API_RATE_LIMIT_MAX` | `60` / `300` | Límite de solicitudes por minuto (`HTTP 429` al exceder). |
-| `MAX_INSTANCES` / `MIN_INSTANCES` / `CLOUD_RUN_TIMEOUT` | `5` / `0` / `300` | Parámetros de escalado y timeout aplicados por `cloud_run.sh`. |
+| Proyecto GCP aislado | `GOOGLE_CLOUD_PROJECT` | `project-nonprod-gcp-chopo` *(o `chopo-argolis`)* |
+| Región Cloud Run / Firestore / GCS | `GOOGLE_CLOUD_LOCATION` | `us-central1` |
+| Endpoint Modelos Gemini 3 y RAG | `VERTEX_AI_LOCATION` | `global` |
+| Base Firestore Native `(default)` | `FIRESTORE_DATABASE` | `default` |
+| Bucket privado de retratos/artes | `GCS_BUCKET_NAME` | `${PROJECT_ID}-chopo-assets` |
+| Bucket privado 3 pilares COFEPRIS | `GCS_RAG_BUCKET_NAME` | `${PROJECT_ID}-rag-docs` |
+| Data Store Vertex AI Search | `VERTEX_RAG_DATASTORE_ID` | `projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores/chopo-rag-datastore` |
+| Service Account runtime Cloud Run | `CLOUD_RUN_SA_NAME` *(solo script)* | `chopo-hub-sa` |
+| Modelos Vertex AI (fijados por TI) | `VERTEX_TEXT_MODEL` / `VERTEX_EVALUATOR_MODEL` / `VERTEX_IMAGE_MODEL` / `VERTEX_VIDEO_MODEL` | `gemini-3.5-flash` / `gemini-3.1-pro-preview` / `gemini-3-pro-image` / `veo-3.1-lite-generate-001` |
+| Autenticación y RBAC | `AUTH_MODE`, `CHOPO_ADMIN_EMAILS`, `RBAC_ENFORCE`, `USER_SCOPED_RUNS` | `none` *(local)* · `iap` *(SSO)* · `login` *(sesión HMAC)* |
+| Cuotas Rate Limit y Escalado | `GENAI_RATE_LIMIT_MAX`, `API_RATE_LIMIT_MAX`, `MAX_INSTANCES`, `MIN_INSTANCES`, `CLOUD_RUN_TIMEOUT` | `60` / `300` / `5` / `0` / `300` |
 
 ---
 
