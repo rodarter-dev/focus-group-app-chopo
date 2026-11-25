@@ -4073,26 +4073,49 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                             </div>
                                         )}
                                             <div className="flex-1 p-6 bg-gray-50 rounded-xl border border-gray-100 text-sm shadow-sm flex flex-col justify-center">
-                                                <p className="font-black text-[#003B7A] text-[10px] uppercase tracking-widest mb-3 flex items-center gap-2">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
-                                                {t('Texto para Redes Sociales', 'Social Caption')}
-                                            </p>
-                                                <p className={`mb-6 leading-relaxed text-base ${activeCreativeAssets?.social?.caption ? 'italic text-heading font-medium' : 'text-subtext text-sm'}`}>
-                                                    {activeCreativeAssets?.social?.caption
-                                                        ? `"${activeCreativeAssets.social.caption}"`
-                                                        : t('Sin texto adicional. Al evaluar, el focus group analizará directamente el diseño y los textos incluidos dentro de tu imagen.', 'No additional copy. The focus group will evaluate the design and text inside your uploaded image directly.')}
-                                                </p>
-                                            <p className="font-black text-[#003B7A] text-[10px] uppercase tracking-widest mb-2 flex items-center gap-2">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
-                                                {t('Anuncio de Buscador', 'Search Ad copy')}
-                                            </p>
-                                                <p className={`text-base mb-1 ${activeCreativeAssets?.search?.headline ? 'text-heading font-black' : 'text-subtext font-semibold text-sm'}`}>
-                                                    {activeCreativeAssets?.search?.headline || t('Sin titular adicional (opcional)', 'No additional headline (optional)')}
-                                                </p>
-                                                <p className="text-subtext text-sm leading-relaxed font-medium">
-                                                    {activeCreativeAssets?.search?.description || t('Si deseas evaluar también textos complementarios, escríbelos arriba en Titular y Pie de Publicación.', 'If you also want to evaluate complementary copy, enter it in the Headline and Copy fields above.')}
-                                                </p>
-                                        </div>
+                                                {activeCreativeAssets?.isCustomUpload ? (
+                                                    <>
+                                                        <p className="font-black text-[#003B7A] text-[10px] uppercase tracking-widest mb-2 flex items-center gap-2">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
+                                                            {t('Titular / Encabezado', 'Headline / Title')}
+                                                        </p>
+                                                        <p className={`text-base mb-5 ${activeCreativeAssets?.search?.headline ? 'text-heading font-black' : 'text-subtext font-semibold text-sm'}`}>
+                                                            {activeCreativeAssets?.search?.headline || t('Sin titular adicional (opcional)', 'No additional headline (optional)')}
+                                                        </p>
+                                                        <p className="font-black text-[#003B7A] text-[10px] uppercase tracking-widest mb-2 flex items-center gap-2">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
+                                                            {t('Texto / Pie de Publicación', 'Post Copy / Caption')}
+                                                        </p>
+                                                        <p className={`leading-relaxed text-base ${activeCreativeAssets?.social?.caption ? 'italic text-heading font-medium' : 'text-subtext text-sm'}`}>
+                                                            {activeCreativeAssets?.social?.caption
+                                                                ? `"${activeCreativeAssets.social.caption}"`
+                                                                : t('Sin texto adicional. Al evaluar, el focus group analizará directamente el diseño y los textos incluidos dentro de tu imagen.', 'No additional copy. The focus group will evaluate the design and text inside your uploaded image directly.')}
+                                                        </p>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <p className="font-black text-[#003B7A] text-[10px] uppercase tracking-widest mb-3 flex items-center gap-2">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
+                                                            {t('Texto para Redes Sociales', 'Social Caption')}
+                                                        </p>
+                                                        <p className={`mb-6 leading-relaxed text-base ${activeCreativeAssets?.social?.caption ? 'italic text-heading font-medium' : 'text-subtext text-sm'}`}>
+                                                            {activeCreativeAssets?.social?.caption
+                                                                ? `"${activeCreativeAssets.social.caption}"`
+                                                                : t('Sin texto adicional. Al evaluar, el focus group analizará directamente el diseño y los textos incluidos dentro de tu imagen.', 'No additional copy. The focus group will evaluate the design and text inside your uploaded image directly.')}
+                                                        </p>
+                                                        <p className="font-black text-[#003B7A] text-[10px] uppercase tracking-widest mb-2 flex items-center gap-2">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
+                                                            {t('Anuncio de Buscador', 'Search Ad copy')}
+                                                        </p>
+                                                        <p className={`text-base mb-1 ${activeCreativeAssets?.search?.headline ? 'text-heading font-black' : 'text-subtext font-semibold text-sm'}`}>
+                                                            {activeCreativeAssets?.search?.headline || t('Sin titular adicional (opcional)', 'No additional headline (optional)')}
+                                                        </p>
+                                                        <p className="text-subtext text-sm leading-relaxed font-medium">
+                                                            {activeCreativeAssets?.search?.description || t('Si deseas evaluar también textos complementarios, escríbelos arriba en Titular y Pie de Publicación.', 'If you also want to evaluate complementary copy, enter it in the Headline and Copy fields above.')}
+                                                        </p>
+                                                    </>
+                                                )}
+                                            </div>
                                     </div>
                                 )}
                             </div>
