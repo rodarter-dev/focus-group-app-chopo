@@ -13,6 +13,43 @@ import { STANDARD_AUDIENCES } from './data/simulationData';
 import { CompanyProvider } from './context/CompanyContext';
 import { LanguageProvider } from './context/LanguageContext';
 
+const MODE_TO_HASH: Record<AppMode, string> = {
+  [AppMode.HOME]: '#/inicio',
+  [AppMode.AUDIENCE_GEN]: '#/audiencias',
+  [AppMode.SYNTHETIC_USERS]: '#/usuarios-sinteticos',
+  [AppMode.MARKETING_BRIEF]: '#/brief',
+  [AppMode.SYNTHETIC_FOCUS_GROUP]: '#/focus-group',
+  [AppMode.SYNTHETIC_CHAT]: '#/chat',
+  [AppMode.BRAND_MANUAL]: '#/manual-de-marca',
+};
+
+const HASH_TO_MODE: Record<string, AppMode> = Object.entries(MODE_TO_HASH).reduce(
+  (acc, [modeKey, hashVal]) => {
+    acc[hashVal] = modeKey as AppMode;
+    return acc;
+  },
+  {} as Record<string, AppMode>
+);
+
+const ACTIVE_MODE_STORAGE_KEY = 'chopo_active_mode';
+
+function resolveInitialMode(): AppMode {
+  if (typeof window === 'undefined') return AppMode.HOME;
+  const normalizedHash = window.location.hash.trim().toLowerCase();
+  if (normalizedHash && HASH_TO_MODE[normalizedHash]) {
+    return HASH_TO_MODE[normalizedHash];
+  }
+  try {
+    const saved = window.sessionStorage.getItem(ACTIVE_MODE_STORAGE_KEY) as AppMode | null;
+    if (saved && Object.values(AppMode).includes(saved)) {
+      return saved;
+    }
+  } catch {
+    // Ignore restricted storage environments
+  }
+  return AppMode.HOME;
+}
+
 function App() {
   return (
     <LanguageProvider>
@@ -24,11 +61,48 @@ function App() {
 }
 
 function AppContent() {
-  const [mode, setMode] = useState<AppMode>(AppMode.HOME);
+  const [mode, setModeState] = useState<AppMode>(resolveInitialMode);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [personas, setPersonas] = useState<CombinedPersona[]>(
     STANDARD_AUDIENCES as unknown as CombinedPersona[]
   );
+
+  const setMode = (nextMode: AppMode) => {
+    setModeState(nextMode);
+    try {
+      window.sessionStorage.setItem(ACTIVE_MODE_STORAGE_KEY, nextMode);
+    } catch {
+      // Ignore storage errors
+    }
+    const targetHash = MODE_TO_HASH[nextMode] || '#/inicio';
+    if (typeof window !== 'undefined' && window.location.hash !== targetHash) {
+      window.location.hash = targetHash;
+    }
+  };
+
+  useEffect(() => {
+    const targetHash = MODE_TO_HASH[mode] || '#/inicio';
+    if (window.location.hash !== targetHash) {
+      window.history.replaceState(null, '', targetHash);
+    }
+    try {
+      window.sessionStorage.setItem(ACTIVE_MODE_STORAGE_KEY, mode);
+    } catch {
+      // Ignore storage errors
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const normalizedHash = window.location.hash.trim().toLowerCase();
+      const matched = HASH_TO_MODE[normalizedHash];
+      if (matched) {
+        setModeState(matched);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   useEffect(() => {
     document.title = brandConfig.meta.title;
