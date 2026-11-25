@@ -2293,12 +2293,22 @@ export const simulateCreativeFocusGroup = async (
     }
 
     const adaptedCopy = (assets as any)?.channelAdaptedCopy;
-    const adCopySummary = [
+    const socialCaption = (assets.social?.caption || '').trim();
+    const searchHeadline = (assets.search?.headline || '').trim();
+    const searchDesc = (assets.search?.description || '').trim();
+    const emailSubject = (assets.email?.subject || '').trim();
+    const emailBody = (assets.email?.body || '').trim();
+
+    const copyLines = [
         adaptedCopy ? `- Pieza Principal del Canal (${channelLabel}): "${adaptedCopy}"` : '',
-        `- Post Redes Sociales: "${assets.social?.caption || ''}" (${(assets.social?.hashtags || []).join(' ')})`,
-        `- Anuncio Buscador: "${assets.search?.headline || ''}" — "${assets.search?.description || ''}"`,
-        `- Correo: "${assets.email?.subject || ''}"${assets.email?.bannerHeadline ? ` | Banner: "${assets.email.bannerHeadline}"` : ''}${assets.email?.body ? ` | Cuerpo: "${assets.email.body}"` : ''}`
-    ].filter(Boolean).join('\n').trim();
+        socialCaption ? `- Post Redes Sociales: "${socialCaption}"${(assets.social?.hashtags || []).length > 0 ? ` (${(assets.social?.hashtags || []).join(' ')})` : ''}` : '',
+        (searchHeadline || searchDesc) ? `- Anuncio Buscador: "${searchHeadline}"${searchDesc ? ` — "${searchDesc}"` : ''}` : '',
+        (emailSubject || assets.email?.bannerHeadline || emailBody) ? `- Correo: "${emailSubject}"${assets.email?.bannerHeadline ? ` | Banner: "${assets.email.bannerHeadline}"` : ''}${emailBody ? ` | Cuerpo: "${emailBody}"` : ''}` : ''
+    ].filter(Boolean);
+
+    const adCopySummary = copyLines.length > 0
+        ? copyLines.join('\n').trim()
+        : `- Material visual cargado sin copy externo adicional. Evalúa directamente el diseño, los textos visibles dentro de la imagen adjunta, la identidad visual de ${effectiveCompanyName} y el cumplimiento regulatorio.`;
 
     const processBatch = async (batchPersonas: any[]) => {
         try {

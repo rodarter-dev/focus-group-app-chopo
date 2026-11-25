@@ -1360,14 +1360,16 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                 console.warn("Backend image upload failed, falling back to local base64 data URL:", uploadErr);
             }
 
-            const headlineText = customCreativeHeadline.trim() || "Chopo Clinical Diagnostics — Precision You Can Trust";
-            const captionText = customCreativeCaption.trim() || "Take care of your health with Chopo Diagnostics. Book your study online and receive fast digital results.";
+            const headlineText = customCreativeHeadline.trim();
+            const captionText = customCreativeCaption.trim();
 
             const customAsset = {
+                isCustomUpload: true,
+                fileName: file.name,
                 image: uploadedUrl,
                 social: {
                     caption: captionText,
-                    hashtags: ["#ChopoDiagnostics", "#PreventiveHealth", "#ClinicalPrecision"]
+                    hashtags: captionText ? ["#Chopo", "#SaludPreventiva"] : []
                 },
                 search: {
                     headline: headlineText,
@@ -1376,7 +1378,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                 },
                 email: {
                     subject: headlineText,
-                    preheader: "Accredited clinical laboratory diagnostics",
+                    preheader: "Estudios clínicos y de gabinete en Laboratorio Médico del Chopo",
                     body: captionText
                 },
                 youtube: {
@@ -1384,15 +1386,16 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                     script: captionText
                 },
                 website: {
-                    recommendations: ["Online appointment booking", "WhatsApp results delivery"]
+                    recommendations: ["Agendar cita en línea en chopo.com.mx", "Resultados digitales en App Chopo"]
                 }
             };
 
+            const existingCustomCount = Object.keys(customCreativesMap).length;
             const targetKey = (selectedCreativeAudience && customCreativesMap[selectedCreativeAudience])
                 ? selectedCreativeAudience
-                : (Object.keys(customCreativesMap).length === 0
-                    ? "Custom Creative"
-                    : `Custom Creative ${Object.keys(customCreativesMap).length + 1}`);
+                : (existingCustomCount === 0
+                    ? t("Imagen Propia", "Custom Creative")
+                    : t(`Imagen Propia ${existingCustomCount + 1}`, `Custom Creative ${existingCustomCount + 1}`));
 
             setCustomCreativesMap(prev => ({
                 ...prev,
@@ -1420,8 +1423,8 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
             : Object.keys(customCreativesMap)[0];
 
         if (activeCustomKey && customCreativesMap[activeCustomKey]) {
-            const headlineText = newHeadline.trim() || "Chopo Clinical Diagnostics — Precision You Can Trust";
-            const captionText = newCaption.trim() || "Take care of your health with Chopo Diagnostics. Book your study online and receive fast digital results.";
+            const headlineText = newHeadline.trim();
+            const captionText = newCaption.trim();
 
             setCustomCreativesMap(prev => ({
                 ...prev,
@@ -1429,7 +1432,8 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                     ...prev[activeCustomKey],
                     social: {
                         ...prev[activeCustomKey].social,
-                        caption: captionText
+                        caption: captionText,
+                        hashtags: captionText ? ["#Chopo", "#SaludPreventiva"] : []
                     },
                     search: {
                         ...prev[activeCustomKey].search,
@@ -1470,11 +1474,11 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                     testQueue.push({ name: variantName, assets });
                 });
             } else if (brief?.campaignAssets) {
-                testQueue.push({ name: 'Default', assets: brief.campaignAssets });
+                testQueue.push({ name: t('Campaña Principal', 'Default'), assets: brief.campaignAssets });
             } else if (brief) {
                 setStatus(t("Generando nuevos materiales de campaña...", "Generating new campaign assets..."));
-                const productName = brief.productName || "Diabetes Control Panel (HbA1c)";
-                const targetAudience = brief.audiences?.[0]?.name || "General Audience";
+                const productName = brief.productName || "Estudio Clínico de Laboratorio Médico del Chopo";
+                const targetAudience = brief.audiences?.[0]?.name || "Audiencia General";
                 const combinedGoal = `Goal: ${brief.campaignGoal}. Persona: ${targetAudience}. Context: ${description}`;
 
                 const generatedAssets = await generateMarketingCampaignAssets(productName, combinedGoal, combinedGoal, { channelKey: selectedChannelKey });
@@ -1482,7 +1486,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
 
                 const updatedBrief = { ...brief, campaignAssets: generatedAssets };
                 setBrief(updatedBrief);
-                testQueue.push({ name: 'Default', assets: generatedAssets });
+                testQueue.push({ name: t('Campaña Principal', 'Default'), assets: generatedAssets });
             }
 
             if (testQueue.length === 0) {
@@ -1495,7 +1499,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
 
             // Loop through each creative variant
             for (const { name: variantKey, assets } of testQueue) {
-                const variantName = variantKey || 'Default';
+                const variantName = variantKey || t('Campaña Principal', 'Default');
                 setStatus(t(`Evaluando variante para: ${variantName}...`, `Testing variant for: ${variantName}...`));
 
                 let pool = effectiveUsers.map((u, i) => ({
@@ -1509,7 +1513,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                     assets,
                     name,
                     rubrics,
-                    brief?.productName || "Check-up Control Diabetes",
+                    brief?.productName || assets?.search?.headline || "Material Visual de Laboratorio Médico del Chopo",
                     selectedChannelKey
                 );
 
@@ -1550,9 +1554,9 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
             const { generateRegionalVariants, simulateABTestFocusGroup } = await import('../services/geminiService');
 
             // Generate Variants based on the current brief or custom creative
-            const productName = brief?.productName || activeCreativeAssets?.search?.headline || "Chopo Clinical Study";
-            const campaignGoal = brief?.campaignGoal || activeCreativeAssets?.social?.caption || "Drive online appointments and diagnostic awareness";
-            const valueProp = brief?.valueProp?.main?.en || "Accredited clinical precision and fast digital delivery";
+            const productName = brief?.productName || activeCreativeAssets?.search?.headline || "Material Visual de Laboratorio Médico del Chopo";
+            const campaignGoal = brief?.campaignGoal || activeCreativeAssets?.social?.caption || "Impulsar citas en línea y conciencia sobre salud preventiva";
+            const valueProp = brief?.valueProp?.main?.es || brief?.valueProp?.main?.en || "Precisión clínica acreditada y entrega rápida de resultados digitales";
             const basePrompt = `Product: ${productName}. Goal: ${campaignGoal}. Value Prop: ${valueProp}. Asset Context: ${activeCreativeAssets?.social?.caption || ''}`;
 
             const variants = await generateRegionalVariants(basePrompt, name, description);
@@ -4073,13 +4077,21 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                                 <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
                                                 {t('Copy para Redes Sociales', 'Social Caption')}
                                             </p>
-                                                <p className="italic text-heading mb-6 font-medium leading-relaxed text-base">"{activeCreativeAssets?.social?.caption || t('Sin copy generado', 'No caption generated')}"</p>
+                                                <p className={`mb-6 leading-relaxed text-base ${activeCreativeAssets?.social?.caption ? 'italic text-heading font-medium' : 'text-subtext text-sm'}`}>
+                                                    {activeCreativeAssets?.social?.caption
+                                                        ? `"${activeCreativeAssets.social.caption}"`
+                                                        : t('Sin copy adicional. Al evaluar, el focus group analizará directamente el diseño y los textos incluidos dentro de tu imagen.', 'No additional copy. The focus group will evaluate the design and text inside your uploaded image directly.')}
+                                                </p>
                                             <p className="font-black text-[#003B7A] text-[10px] uppercase tracking-widest mb-2 flex items-center gap-2">
                                                 <div className="w-1.5 h-1.5 rounded-full bg-[#0066FF]" />
                                                 {t('Anuncio de Buscador', 'Search Ad copy')}
                                             </p>
-                                                <p className="text-heading font-black text-base mb-1">{activeCreativeAssets?.search?.headline || t('Sin titular', 'No headline')}</p>
-                                                <p className="text-subtext text-sm leading-relaxed font-medium">{activeCreativeAssets?.search?.description || t('Sin descripción', 'No description')}</p>
+                                                <p className={`text-base mb-1 ${activeCreativeAssets?.search?.headline ? 'text-heading font-black' : 'text-subtext font-semibold text-sm'}`}>
+                                                    {activeCreativeAssets?.search?.headline || t('Sin titular adicional (opcional)', 'No additional headline (optional)')}
+                                                </p>
+                                                <p className="text-subtext text-sm leading-relaxed font-medium">
+                                                    {activeCreativeAssets?.search?.description || t('Si deseas evaluar también textos complementarios, escríbelos arriba en Titular y Copy.', 'If you also want to evaluate complementary copy, enter it in the Headline and Copy fields above.')}
+                                                </p>
                                         </div>
                                     </div>
                                 )}
