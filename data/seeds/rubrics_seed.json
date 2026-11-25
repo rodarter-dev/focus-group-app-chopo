@@ -1,8 +1,8 @@
 {
   "metadata": {
-    "version": "1.0.0",
-    "client": "Grupo Proa / Laboratorios Médicos El Chopo",
-    "purpose": "Dynamic, customer-editable Focus Group evaluation rubrics for Patient (B2C) and Physician (B2B) tracks.",
+    "version": "1.1.0",
+    "client": "Grupo Diagnóstico Médico PROA / Laboratorio Médico del Chopo",
+    "purpose": "Dynamic, customer-editable Focus Group evaluation rubrics for Patient (B2C), Physician (B2D), and Enterprise (B2B) tracks.",
     "howItWorks": "Non-technical Chopo users can add, edit, or delete rubrics here (or in Firestore/UI). Active rubrics matching the selected track ('both' + track) are injected into the Focus Group prompt, and Gemini returns a dynamic 'rubricScores' array."
   },
   "rubrics": [
@@ -23,7 +23,7 @@
       "name": "Confianza Visual y Realismo Clínico",
       "track": "both",
       "weight": 25,
-      "evaluationQuestion": "¿La imagen y el tono transmiten la confianza, modernidad tecnológica y calidez de 'Tu laboratorio de cabecera'?",
+      "evaluationQuestion": "¿La imagen y el tono transmiten la confianza, calidez humana y realismo clínico oficial de Laboratorio Médico del Chopo?",
       "scoringAnchors": {
         "low_0_to_40": "La imagen se ve falsa, fría, anticuada (ej. doctores viendo placas radiográficas físicas viejas a contraluz), muestra agujas/sangre o tiene errores de vestimenta/equipo médico.",
         "mid_41_to_79": "Imagen aceptable pero genérica de foto de stock sin identidad clara de Chopo.",
@@ -71,7 +71,7 @@
       "name": "Intención de Prescribir / Recomendar a Pacientes",
       "track": "physician",
       "weight": 25,
-      "evaluationQuestion": "¿Qué tan probable es que recomiendes o envíes a tus pacientes a realizarse este estudio en Laboratorios Médicos El Chopo?",
+      "evaluationQuestion": "¿Qué tan probable es que recomiendes o envíes a tus pacientes a realizarse este estudio en Laboratorio Médico del Chopo?",
       "scoringAnchors": {
         "low_0_to_40": "No lo recomendaría porque el anuncio confunde al paciente o muestra inconsistencias clínicas.",
         "mid_41_to_79": "Lo consideraría como una opción más entre varios laboratorios.",

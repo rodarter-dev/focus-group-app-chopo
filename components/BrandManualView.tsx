@@ -2274,20 +2274,11 @@ export const BrandManualView: React.FC = () => {
               >
                 {/* Live Color Swatch Preview */}
                 <div
-                  className="h-24 p-3.5 flex items-end justify-between relative border-b border-slate-200/70"
+                  className="min-h-[6.25rem] p-3 flex flex-col justify-between gap-2 relative border-b border-slate-200/70"
                   style={{ backgroundColor: safeHex }}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold tracking-wide shadow-sm ${
-                        light
-                          ? 'bg-white/85 text-[#004699] border border-slate-200/80'
-                          : 'bg-slate-900/35 text-white backdrop-blur-sm'
-                      }`}
-                    >
-                      {colorItem.hex}
-                    </span>
-                    {isProtected && (
+                  <div className="flex items-center justify-between gap-2">
+                    {isProtected ? (
                       <span
                         className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
                           light
@@ -2298,12 +2289,54 @@ export const BrandManualView: React.FC = () => {
                       >
                         Institucional
                       </span>
+                    ) : (
+                      <span />
+                    )}
+
+                    {isProtected ? (
+                      <button
+                        type="button"
+                        disabled
+                        className={`p-1.5 rounded-lg cursor-not-allowed opacity-90 shrink-0 ${
+                          light
+                            ? 'bg-white/90 text-[#004699] border border-slate-200'
+                            : 'bg-slate-900/35 text-white/90 border border-white/20'
+                        }`}
+                        title="Color institucional obligatorio"
+                        aria-label="Color institucional obligatorio"
+                      >
+                        <Lock size={14} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isControlsDisabled}
+                        onClick={() => handleDeleteColor(groupKey, idx, colorItem)}
+                        className={`p-1.5 rounded-lg transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                          light
+                            ? 'bg-white/90 text-slate-500 hover:text-rose-600 border border-slate-200'
+                            : 'bg-slate-900/30 text-white/90 hover:bg-rose-600'
+                        }`}
+                        title="Eliminar color"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold tracking-wide shadow-sm ${
+                        light
+                          ? 'bg-white/85 text-[#004699] border border-slate-200/80'
+                          : 'bg-slate-900/35 text-white backdrop-blur-sm'
+                      }`}
+                    >
+                      {colorItem.hex}
+                    </span>
+
                     <label
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 shadow-sm transition-opacity ${
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 shadow-sm shrink-0 transition-opacity ${
                         isControlsDisabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:opacity-90'
                       } ${
                         light
@@ -2328,36 +2361,6 @@ export const BrandManualView: React.FC = () => {
                       />
                       <span>Selector</span>
                     </label>
-
-                    {isProtected ? (
-                      <button
-                        type="button"
-                        disabled
-                        className={`p-1.5 rounded-lg cursor-not-allowed opacity-85 ${
-                          light
-                            ? 'bg-white/90 text-[#004699] border border-slate-200'
-                            : 'bg-slate-900/35 text-white/90 border border-white/20'
-                        }`}
-                        title="Color institucional obligatorio"
-                        aria-label="Color institucional obligatorio"
-                      >
-                        <Lock size={14} />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={isControlsDisabled}
-                        onClick={() => handleDeleteColor(groupKey, idx, colorItem)}
-                        className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                          light
-                            ? 'bg-white/90 text-slate-500 hover:text-rose-600 border border-slate-200'
-                            : 'bg-slate-900/30 text-white/90 hover:bg-rose-600'
-                        }`}
-                        title="Eliminar color"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
                   </div>
                 </div>
 
@@ -3896,10 +3899,10 @@ export const BrandManualView: React.FC = () => {
                       </div>
 
                       {/* Allowed, Forbidden & Notes Columns */}
-                      <div className="lg:col-span-9 p-4 bg-white space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="lg:col-span-9 p-4 bg-white space-y-4 min-w-0">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
                           {/* Allowed Foregrounds */}
-                          <div className="space-y-2">
+                          <div className="space-y-2 min-w-0">
                             <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700">
                               <CheckCircle2 size={14} />
                               <span>Permitidos (✓)</span>
@@ -3940,7 +3943,7 @@ export const BrandManualView: React.FC = () => {
                                 );
                               })}
                             </div>
-                            <div className="flex items-center gap-1.5 pt-1">
+                            <div className="flex items-center gap-1.5 pt-1 min-w-0">
                               <select
                                 disabled={isControlsDisabled}
                                 value=""
@@ -3950,7 +3953,7 @@ export const BrandManualView: React.FC = () => {
                                     handleAddContrastChip(rowIdx, 'allowedForegrounds', e.target.value);
                                   }
                                 }}
-                                className="flex-1 px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                                className="flex-1 min-w-0 w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-300 disabled:opacity-60 disabled:cursor-not-allowed"
                               >
                                 <option value="">+ Elegir de la paleta...</option>
                                 {allPaletteColors.map((c) => (
@@ -3983,7 +3986,7 @@ export const BrandManualView: React.FC = () => {
                                   }
                                 }}
                                 placeholder="#HEX"
-                                className={`w-20 px-2 py-1.5 text-xs bg-slate-50 border rounded-lg disabled:opacity-60 disabled:cursor-not-allowed ${
+                                className={`w-20 shrink-0 px-2 py-1.5 text-xs bg-slate-50 border rounded-lg disabled:opacity-60 disabled:cursor-not-allowed ${
                                   contrastHexErrors[allowedKey]
                                     ? 'border-rose-400 focus:ring-rose-300'
                                     : 'border-slate-200'
@@ -3999,7 +4002,7 @@ export const BrandManualView: React.FC = () => {
                                     contrastHexDrafts[allowedKey] || ''
                                   )
                                 }
-                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-2.5 py-1.5 shrink-0 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Agregar HEX permitido"
                               >
                                 +
@@ -4014,7 +4017,7 @@ export const BrandManualView: React.FC = () => {
                           </div>
 
                           {/* Forbidden Foregrounds */}
-                          <div className="space-y-2">
+                          <div className="space-y-2 min-w-0">
                             <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700">
                               <Ban size={14} />
                               <span>Prohibidos (✕)</span>
@@ -4055,7 +4058,7 @@ export const BrandManualView: React.FC = () => {
                                 );
                               })}
                             </div>
-                            <div className="flex items-center gap-1.5 pt-1">
+                            <div className="flex items-center gap-1.5 pt-1 min-w-0">
                               <select
                                 disabled={isControlsDisabled}
                                 value=""
@@ -4065,7 +4068,7 @@ export const BrandManualView: React.FC = () => {
                                     handleAddContrastChip(rowIdx, 'forbiddenForegrounds', e.target.value);
                                   }
                                 }}
-                                className="flex-1 px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                                className="flex-1 min-w-0 w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-300 disabled:opacity-60 disabled:cursor-not-allowed"
                               >
                                 <option value="">+ Elegir de la paleta...</option>
                                 {allPaletteColors.map((c) => (
@@ -4098,7 +4101,7 @@ export const BrandManualView: React.FC = () => {
                                   }
                                 }}
                                 placeholder="#HEX"
-                                className={`w-20 px-2 py-1.5 text-xs bg-slate-50 border rounded-lg disabled:opacity-60 disabled:cursor-not-allowed ${
+                                className={`w-20 shrink-0 px-2 py-1.5 text-xs bg-slate-50 border rounded-lg disabled:opacity-60 disabled:cursor-not-allowed ${
                                   contrastHexErrors[forbiddenKey]
                                     ? 'border-rose-400 focus:ring-rose-300'
                                     : 'border-slate-200'
@@ -4114,7 +4117,7 @@ export const BrandManualView: React.FC = () => {
                                     contrastHexDrafts[forbiddenKey] || ''
                                   )
                                 }
-                                className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-2.5 py-1.5 shrink-0 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Agregar HEX prohibido"
                               >
                                 +

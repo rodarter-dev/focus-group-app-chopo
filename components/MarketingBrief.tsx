@@ -1248,12 +1248,12 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                                 : 'bg-[#F8FAFC] hover:bg-[#EFF9FE] text-[#004699] border-slate-200'
                             }`}
                           >
-                            <div className="flex items-center gap-1.5 min-w-0">
+                            <div className="flex items-start gap-1.5 min-w-0">
                               {renderChannelIcon(
                                 ch.key,
-                                `shrink-0 ${isActive ? 'text-white' : 'text-[#005FFC]'}`
+                                `shrink-0 mt-0.5 ${isActive ? 'text-white' : 'text-[#005FFC]'}`
                               )}
-                              <span className="text-xs font-bold leading-tight truncate">{ch.label}</span>
+                              <span className="text-[11px] font-bold leading-tight break-words">{ch.label}</span>
                             </div>
                             <div className={`text-[10px] mt-0.5 leading-tight line-clamp-2 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
                               {ch.shortDesc}
