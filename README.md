@@ -118,6 +118,11 @@ GOOGLE_CLOUD_PROJECT=project-nonprod-gcp-chopo ./setup_gcp_resources.sh --write-
 ENABLE_IAP=true GOOGLE_CLOUD_PROJECT=project-nonprod-gcp-chopo ./setup_gcp_resources.sh --write-env
 ```
 
+> **Notas importantes al correrlo por primera vez en un proyecto GCP vacío (`project-nonprod-gcp-chopo`):**
+> 1. **Creación de `chopo-hub-sa` y enlace de roles IAM (Pasos 6–7):** si por política interna de TI tu cuenta no tiene permisos de `Service Account Admin` / `Project IAM Admin`, el script **no falla** — imprime un `! Warning` y continúa con el resto. En ese caso, un Administrador IAM de PROA solo debe ejecutar los comandos del Paso 4.7 del bloque desplegable de abajo (o del archivo `requerimiento_tecnicos_chopo_gcp.txt`) para crear `chopo-hub-sa` y enlazar sus 4 roles mínimos.
+> 2. **Propagación inicial de Vertex AI Search (Paso 5):** en un proyecto nuevo desde cero, el Data Store `chopo-rag-datastore` puede tardar ~20–30 segundos en quedar listo tras crearse. Si el primer `documents:import` devuelve advertencia HTTP, espera 30 segundos y ejecuta de nuevo:
+>    `FORCE_RAG_IMPORT=true GOOGLE_CLOUD_PROJECT=project-nonprod-gcp-chopo ./setup_gcp_resources.sh` (es 100% idempotente).
+
 <details>
 <summary><strong>Referencia Manual Paso a Paso por CLI (Auditoría para TI PROA — qué ejecuta internamente el script)</strong></summary>
 
