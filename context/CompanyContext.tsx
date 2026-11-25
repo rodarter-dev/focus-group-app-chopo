@@ -10,9 +10,9 @@ interface CompanyContextType {
   isLoaded: boolean;
 }
 
-const DEFAULT_NAME = 'Laboratorios Chopo';
+const DEFAULT_NAME = 'Laboratorio Médico del Chopo';
 const DEFAULT_DESCRIPTION =
-  'Laboratorios Chopo (Grupo PROA) — Red líder de diagnóstico clínico e imagenología en México. Enfoque estratégico dual: Pista Paciente B2C (prevención accesible, calidez en el servicio, indicaciones claras de preparación y entrega digital en App Chopo) y Pista Médico B2B (rigor analítico acreditado, precisión diagnóstica para especialistas y tiempos de respuesta oportunos) en estricto apego a la regulación sanitaria de COFEPRIS.';
+  'Laboratorio Médico del Chopo (Grupo PROA) — Red líder de diagnóstico clínico e imagenología en México. Comunicación estructurada en tres segmentos oficiales: Pacientes B2C (prevención accesible, calidez en el servicio, indicaciones claras de preparación y entrega digital en App Chopo), Médicos B2D (rigor analítico acreditado, precisión diagnóstica para especialistas y tiempos de respuesta oportunos) y Empresas B2B (programas de salud ocupacional, convenios corporativos y cobertura nacional), en estricto apego al Manual de Marca V4 y la regulación sanitaria de COFEPRIS.';
 
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 
@@ -37,8 +37,10 @@ export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children })
         const isStaleOrEnglish =
           rawName.toLowerCase().includes('qvc') ||
           rawName.toLowerCase() === 'chopo diagnostics' ||
+          rawName.toLowerCase() === 'laboratorios chopo' ||
           rawDesc.includes('Leading clinical laboratory') ||
-          rawDesc.includes('Dual strategic focus');
+          rawDesc.includes('Dual strategic focus') ||
+          rawDesc.includes('Pista Médico B2B');
         if (isStaleOrEnglish) {
           setName(DEFAULT_NAME);
           setDescription(DEFAULT_DESCRIPTION);

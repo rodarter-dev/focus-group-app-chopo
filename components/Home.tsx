@@ -62,11 +62,11 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div className="text-center mb-16">
                 <div className="flex items-center justify-center gap-4 mb-4">
-                  <div className="p-3 bg-[#0066FF]/10 rounded-2xl backdrop-blur-md">
-                    <BarChart3 className="w-8 h-8 text-[#0066FF]" />
+                  <div className="p-3 bg-[#005FFC]/10 rounded-2xl backdrop-blur-md">
+                    <BarChart3 className="w-8 h-8 text-[#005FFC]" />
                   </div>
-                  <h1 className="text-4xl md:text-6xl font-black text-[#003B7A] tracking-tight">
-                    Chopo <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0066FF] to-[#003B7A]">Intelligence Hub</span>
+                  <h1 className="text-4xl md:text-6xl font-black text-[#004699] tracking-tight">
+                    Chopo <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#005FFC] to-[#004699]">Intelligence Hub</span>
                   </h1>
                 </div>
                 <p className="text-xl text-gray-600 max-w-3xl mx-auto font-medium leading-relaxed mb-10">
@@ -78,8 +78,8 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                 
                 <div className="max-w-5xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100 border-t-4 border-t-[#63CF00] text-left mb-8">
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-                        <h2 className="text-xl font-bold text-[#003B7A] flex items-center gap-2">
-                            <Sparkles className="text-[#0066FF]" size={20} />
+                        <h2 className="text-xl font-bold text-[#004699] flex items-center gap-2">
+                            <Sparkles className="text-[#005FFC]" size={20} />
                             {t('Flujo de Trabajo — Chopo Intelligence Hub', 'Flujo de Trabajo — Chopo Intelligence Hub')}
                         </h2>
                         <span className="text-xs font-bold text-[#004699] bg-[#EFF9FE] border border-blue-200 px-3 py-1 rounded-full">
@@ -91,32 +91,32 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                             onClick={() => setMode(AppMode.AUDIENCE_GEN)}
                             className="space-y-2 p-4 rounded-xl bg-slate-50/70 hover:bg-[#EFF6FF] border border-slate-100 hover:border-blue-200 cursor-pointer transition-all"
                         >
-                            <div className="w-8 h-8 rounded-full bg-blue-100 text-[#0066FF] flex items-center justify-center font-bold text-sm">1</div>
-                            <h3 className="font-bold text-[#003B7A]">{t('1. Audiencias', '1. Audiencias')}</h3>
+                            <div className="w-8 h-8 rounded-full bg-blue-100 text-[#005FFC] flex items-center justify-center font-bold text-sm">1</div>
+                            <h3 className="font-bold text-[#004699]">{t('1. Audiencias', '1. Audiencias')}</h3>
                             <p className="text-sm text-gray-600">{t('Define o crea perfiles de Pacientes B2C, Médicos B2D y Empresas B2B.', 'Define o crea perfiles de Pacientes B2C, Médicos B2D y Empresas B2B.')}</p>
                         </div>
                         <div
                             onClick={() => setMode(AppMode.SYNTHETIC_USERS)}
                             className="space-y-2 p-4 rounded-xl bg-slate-50/70 hover:bg-[#EFF6FF] border border-slate-100 hover:border-blue-200 cursor-pointer transition-all"
                         >
-                            <div className="w-8 h-8 rounded-full bg-blue-100 text-[#0066FF] flex items-center justify-center font-bold text-sm">2</div>
-                            <h3 className="font-bold text-[#003B7A]">{t('2. Usuarios Sintéticos', '2. Usuarios Sintéticos')}</h3>
+                            <div className="w-8 h-8 rounded-full bg-blue-100 text-[#005FFC] flex items-center justify-center font-bold text-sm">2</div>
+                            <h3 className="font-bold text-[#004699]">{t('2. Usuarios Sintéticos', '2. Usuarios Sintéticos')}</h3>
                             <p className="text-sm text-gray-600">{t('Genera tu muestra de 1 a 15 personas simuladas.', 'Genera tu muestra de 1 a 15 personas simuladas.')}</p>
                         </div>
                         <div
                             onClick={() => setMode(AppMode.MARKETING_BRIEF)}
                             className="space-y-2 p-4 rounded-xl bg-slate-50/70 hover:bg-[#EFF6FF] border border-slate-100 hover:border-blue-200 cursor-pointer transition-all"
                         >
-                            <div className="w-8 h-8 rounded-full bg-blue-100 text-[#0066FF] flex items-center justify-center font-bold text-sm">3</div>
-                            <h3 className="font-bold text-[#003B7A]">{t('3. Brief de Marketing', '3. Brief de Marketing')}</h3>
+                            <div className="w-8 h-8 rounded-full bg-blue-100 text-[#005FFC] flex items-center justify-center font-bold text-sm">3</div>
+                            <h3 className="font-bold text-[#004699]">{t('3. Brief de Marketing', '3. Brief de Marketing')}</h3>
                             <p className="text-sm text-gray-600">{t('Crea mensajes, correos, promociones e imágenes por etapa del Funnel y canal.', 'Crea mensajes, correos, promociones e imágenes por etapa del Funnel y canal.')}</p>
                         </div>
                         <div
                             onClick={() => setMode(AppMode.SYNTHETIC_FOCUS_GROUP)}
                             className="space-y-2 p-4 rounded-xl bg-slate-50/70 hover:bg-[#EFF6FF] border border-slate-100 hover:border-blue-200 cursor-pointer transition-all"
                         >
-                            <div className="w-8 h-8 rounded-full bg-blue-100 text-[#0066FF] flex items-center justify-center font-bold text-sm">4</div>
-                            <h3 className="font-bold text-[#003B7A]">{t('4. Focus Group', '4. Focus Group')}</h3>
+                            <div className="w-8 h-8 rounded-full bg-blue-100 text-[#005FFC] flex items-center justify-center font-bold text-sm">4</div>
+                            <h3 className="font-bold text-[#004699]">{t('4. Focus Group', '4. Focus Group')}</h3>
                             <p className="text-sm text-gray-600">{t('Evalúa tus piezas o entrevista a los perfiles.', 'Evalúa tus piezas o entrevista a los perfiles.')}</p>
                         </div>
                     </div>
@@ -127,10 +127,10 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                     {/* Atajo Rápido para Agencia / Parrilla */}
                     <div className="bg-gradient-to-r from-[#EFF6FF] via-blue-50 to-emerald-50/70 p-5 sm:p-6 rounded-2xl border border-blue-200 shadow-sm flex flex-col justify-between gap-4">
                         <div className="space-y-1.5">
-                            <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-[#0066FF] bg-white px-2.5 py-0.5 rounded-full border border-blue-200">
+                            <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-[#005FFC] bg-white px-2.5 py-0.5 rounded-full border border-blue-200">
                                 {t('Atajo Rápido para Agencia / Parrilla', 'Atajo Rápido para Agencia / Parrilla')}
                             </span>
-                            <p className="text-sm sm:text-base font-bold text-[#003B7A] leading-snug">
+                            <p className="text-sm sm:text-base font-bold text-[#004699] leading-snug">
                                 {t(
                                     '⚡ ¿Ya tienes un banner, correo o promoción lista de tu agencia? Sáltate el Brief y evalúalo directo con tus usuarios sintéticos.',
                                     '⚡ ¿Ya tienes un banner, correo o promoción lista de tu agencia? Sáltate el Brief y evalúalo directo con tus usuarios sintéticos.'
@@ -141,7 +141,7 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                             <button
                                 type="button"
                                 onClick={() => setMode(AppMode.SYNTHETIC_FOCUS_GROUP)}
-                                className="px-5 py-2.5 rounded-xl bg-[#0066FF] hover:bg-[#0052CC] text-white font-bold text-sm shadow-sm transition-all whitespace-nowrap"
+                                className="px-5 py-2.5 rounded-xl bg-[#005FFC] hover:bg-[#004699] text-white font-bold text-sm shadow-sm transition-all whitespace-nowrap"
                             >
                                 {t('Ir Directo al Focus Group ➔', 'Ir Directo al Focus Group ➔')}
                             </button>
@@ -155,7 +155,7 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                                 <Palette size={12} className="text-[#005FFC]" />
                                 {t('Manual de Marca V4 Oficial', 'Manual de Marca V4 Oficial')}
                             </span>
-                            <p className="text-sm sm:text-base font-bold text-[#003B7A] leading-snug">
+                            <p className="text-sm sm:text-base font-bold text-[#004699] leading-snug">
                                 {t(
                                     'Edita en 5 secciones la voz de marca (B2C, B2D, B2B), fotografía cálida, paleta oficial, Línea Basal y reglas por canal.',
                                     'Edita en 5 secciones la voz de marca (B2C, B2D, B2B), fotografía cálida, paleta oficial, Línea Basal y reglas por canal.'
@@ -181,14 +181,14 @@ export const Home: React.FC<HomeProps> = ({ setMode }) => {
                     <div
                         key={idx}
                         onClick={() => setMode(tool.mode)}
-                        className="tool-card group p-8 bg-white rounded-2xl border border-gray-100 hover:border-[#0066FF] transition-all duration-300 cursor-pointer shadow-sm hover:shadow-xl relative overflow-hidden h-full flex flex-col"
+                        className="tool-card group p-8 bg-white rounded-2xl border border-gray-100 hover:border-[#005FFC] transition-all duration-300 cursor-pointer shadow-sm hover:shadow-xl relative overflow-hidden h-full flex flex-col"
                     >
-                        <div className="tool-icon-wrapper mb-6 w-14 h-14 bg-blue-50 rounded-xl flex items-center justify-center group-hover:bg-[#0066FF] group-hover:text-white transition-colors">
-                            {React.cloneElement(tool.icon as React.ReactElement<any>, { className: "text-[#0066FF] group-hover:text-white" })}
+                        <div className="tool-icon-wrapper mb-6 w-14 h-14 bg-blue-50 rounded-xl flex items-center justify-center group-hover:bg-[#005FFC] group-hover:text-white transition-colors">
+                            {React.cloneElement(tool.icon as React.ReactElement<any>, { className: "text-[#005FFC] group-hover:text-white" })}
                         </div>
-                        <h3 className="text-xl font-bold text-[#003B7A] mb-3 group-hover:text-[#0066FF] transition-colors">{tool.label}</h3>
+                        <h3 className="text-xl font-bold text-[#004699] mb-3 group-hover:text-[#005FFC] transition-colors">{tool.label}</h3>
                         <p className="text-gray-600 text-sm leading-relaxed mb-6 flex-grow">{tool.desc}</p>
-                        <div className="flex items-center text-[#0066FF] font-bold text-sm">
+                        <div className="flex items-center text-[#005FFC] font-bold text-sm">
                             {t('Abrir Herramienta', 'Abrir Herramienta')} 
                             <span className="ml-2 transform group-hover:translate-x-1 transition-transform">&rarr;</span>
                         </div>

@@ -7,7 +7,8 @@ import {
   exportBrandManualToMarkdown,
   resolveSegmentKey,
   resolveTrackFromSegment,
-  getSubformatsForChannel
+  getSubformatsForChannel,
+  getChannelOptionsFromManual
 } from '../services/brandManualUtils.js';
 import type { BrandManualConfig } from '../types';
 
@@ -42,6 +43,48 @@ describe('Chopo Brand Manual V4 — Seed Integrity & RAG Separation', () => {
     expect(fs.existsSync(path.join(RAG_SEEDS_DIR, '01_cofepris_lineamientos.md'))).toBe(true);
     expect(fs.existsSync(path.join(RAG_SEEDS_DIR, '03_catalogo_estudios_diabetes.md'))).toBe(true);
     expect(fs.existsSync(path.join(RAG_SEEDS_DIR, '04_reglas_realismo_clinico_y_operativo.md'))).toBe(true);
+  });
+
+  test('contactTouchpointsOrder.strictOrder in seed has no double numbering prefixes', () => {
+    const order = officialSeed.identity_and_voice.contactTouchpointsOrder.strictOrder;
+    expect(order.length).toBe(4);
+    for (const item of order) {
+      expect(item).not.toMatch(/^\d+\./);
+    }
+    expect(order[0]).toBe('App Chopo');
+  });
+
+  test('contrastMatrix in seed covers #81A4EE, #D200F4, and #E20613 and keeps #F24360 cleanly separated', () => {
+    const matrix = officialSeed.color_palette.contrastMatrix;
+    const byHex = new Map(matrix.map((row) => [row.backgroundHex.toUpperCase(), row]));
+
+    expect(byHex.has('#81A4EE')).toBe(true);
+    expect(byHex.get('#81A4EE')?.allowedForegrounds).toEqual(expect.arrayContaining(['#004699', '#FFFFFF']));
+    expect(byHex.get('#81A4EE')?.forbiddenForegrounds).toEqual(expect.arrayContaining(['#63CF00', '#BDD4F2', '#EFF9FE']));
+
+    expect(byHex.has('#D200F4')).toBe(true);
+    expect(byHex.get('#D200F4')?.allowedForegrounds).toEqual(['#FFFFFF']);
+    expect(byHex.get('#D200F4')?.forbiddenForegrounds).toEqual(expect.arrayContaining(['#004699', '#63CF00', '#F24360', '#E20613']));
+
+    expect(byHex.has('#E20613')).toBe(true);
+    expect(byHex.get('#E20613')?.allowedForegrounds).toEqual(['#FFFFFF']);
+    expect(byHex.get('#E20613')?.forbiddenForegrounds).toEqual(expect.arrayContaining(['#63CF00', '#005FFC', '#F24360', '#D200F4']));
+
+    expect(byHex.get('#F24360')?.backgroundName).not.toContain('#E20613');
+    expect(byHex.get('#004699')?.notes).toContain('Regla de Folletos PDV');
+  });
+
+  test('seed avoids technical jargon (CSS, rasterizadas, campaña umbrella) and harmonizes social_media subformats', () => {
+    expect(officialSeed.graphic_design_and_layout.usageNote).not.toContain('CSS');
+    expect(officialSeed.graphic_design_and_layout.typographyRules.visionAuditGuidance).not.toMatch(/rasterizadas/i);
+    expect(officialSeed.graphic_design_and_layout.typographyRules.visionAuditGuidance).toContain('artes finales en imagen');
+    expect(JSON.stringify(officialSeed.channels)).not.toMatch(/campaña umbrella/i);
+    expect(officialSeed.channels.items.social_media.supportedFormats).toEqual([
+      'Post Fijo 1:1',
+      'Post / Carrusel 4:5',
+      'Historia 9:16',
+      'Reel / TikTok 9:16'
+    ]);
   });
 });
 
@@ -90,15 +133,41 @@ describe('Segment & Track Mapping (B2C / B2D / B2B)', () => {
     expect(b2bFromKey.dynamicVars.primaryDestination).toBe('chopo.com.mx/empresas');
   });
 
-  test('getSubformatsForChannel returns channel-specific subformats and handles custom/fallback channels', () => {
-    expect(getSubformatsForChannel('social_media', officialSeed)).toContain('Post Fijo 1:1');
-    expect(getSubformatsForChannel('social_media', officialSeed)).toContain('Historia 9:16');
-    expect(getSubformatsForChannel('mailing_ecommerce', officialSeed)).toContain('Mailing Promocional');
-    expect(getSubformatsForChannel('web', officialSeed)).toContain('Hero Banner Carrusel Web');
-    expect(getSubformatsForChannel('pdv_sucursal', officialSeed)).toContain('Póster Interior de Sucursal');
+  test('getSubformatsForChannel prioritizes edited manual.channels formats over hardcoded defaults and falls back safely', () => {
+    // Official seed harmonized social_media formats
+    expect(getSubformatsForChannel('social_media', officialSeed)).toEqual([
+      'Post Fijo 1:1',
+      'Post / Carrusel 4:5',
+      'Historia 9:16',
+      'Reel / TikTok 9:16'
+    ]);
+    // Seed-defined formats returned first for other built-in channels
+    expect(getSubformatsForChannel('mailing_ecommerce', officialSeed)).toEqual(
+      officialSeed.channels.items.mailing_ecommerce.supportedFormats
+    );
+    expect(getSubformatsForChannel('web', officialSeed)).toEqual(
+      officialSeed.channels.items.web.supportedFormats
+    );
+    expect(getSubformatsForChannel('pdv_sucursal', officialSeed)).toEqual(
+      officialSeed.channels.items.pdv_sucursal.supportedFormats
+    );
 
-    const cloned = structuredClone(officialSeed);
-    cloned.channels.items.custom_ooh = {
+    // Mutating a built-in channel's supportedFormats must take priority over CHANNEL_SUBFORMATS
+    const edited = structuredClone(officialSeed);
+    edited.channels.items.social_media.supportedFormats = ['Carrusel Educativo 4:5', 'Video Vertical Corto 9:16'];
+    expect(getSubformatsForChannel('social_media', edited)).toEqual([
+      'Carrusel Educativo 4:5',
+      'Video Vertical Corto 9:16'
+    ]);
+
+    // Empty supportedFormats or missing manual falls back to CHANNEL_SUBFORMATS
+    edited.channels.items.mailing_ecommerce.supportedFormats = [];
+    expect(getSubformatsForChannel('mailing_ecommerce', edited)).toContain('Mailing Promocional');
+    expect(getSubformatsForChannel('web', null)).toContain('Hero Banner Carrusel Web');
+    expect(getSubformatsForChannel('pdv_sucursal', undefined)).toContain('Póster Interior de Sucursal');
+
+    // Custom channel added by Brand Owner
+    edited.channels.items.custom_ooh = {
       id: 'custom_ooh',
       label: 'Espectaculares Exteriores',
       supportedFormats: ['Cartelera 12x7m', 'Mupi Urbano'],
@@ -107,8 +176,56 @@ describe('Segment & Track Mapping (B2C / B2D / B2B)', () => {
       focusGroupContext: 'En traslado diario',
       auditorRules: ['Legibilidad a 50 metros']
     };
-    expect(getSubformatsForChannel('custom_ooh', cloned)).toEqual(['Cartelera 12x7m', 'Mupi Urbano']);
+    expect(getSubformatsForChannel('custom_ooh', edited)).toEqual(['Cartelera 12x7m', 'Mupi Urbano']);
     expect(getSubformatsForChannel('nonexistent_channel', officialSeed)).toEqual(['Formato Estándar']);
+  });
+
+  test('getChannelOptionsFromManual returns ordered built-in + custom channels with safe fallback when empty', () => {
+    const baseOptions = getChannelOptionsFromManual(officialSeed);
+    expect(baseOptions.map((c) => c.id)).toEqual([
+      'social_media',
+      'mailing_ecommerce',
+      'web',
+      'pdv_sucursal'
+    ]);
+    expect(baseOptions.every((c) => c.isBuiltIn)).toBe(true);
+
+    const withCustom = structuredClone(officialSeed);
+    withCustom.channels.items.pantallas_sucursal = {
+      id: 'pantallas_sucursal',
+      label: 'Pantallas Digitales en Sala de Espera',
+      supportedFormats: ['Pantalla Horizontal 16:9', 'Totem Vertical 9:16'],
+      copyRules: 'Titular claro y legible a distancia.',
+      photoRules: 'Alto contraste luminoso.',
+      focusGroupContext: 'Paciente esperando turno en sucursal.',
+      auditorRules: ['Sin saturación de texto']
+    };
+
+    const dynamicOptions = getChannelOptionsFromManual(withCustom);
+    expect(dynamicOptions.map((c) => c.id)).toEqual([
+      'social_media',
+      'mailing_ecommerce',
+      'web',
+      'pdv_sucursal',
+      'pantallas_sucursal'
+    ]);
+    const customEntry = dynamicOptions.find((c) => c.id === 'pantallas_sucursal');
+    expect(customEntry).toEqual({
+      id: 'pantallas_sucursal',
+      label: 'Pantallas Digitales en Sala de Espera',
+      supportedFormats: ['Pantalla Horizontal 16:9', 'Totem Vertical 9:16'],
+      isBuiltIn: false
+    });
+
+    // Safe fallback when manual is null or has empty channels
+    const fallbackOptions = getChannelOptionsFromManual(null);
+    expect(fallbackOptions.map((c) => c.id)).toEqual([
+      'social_media',
+      'mailing_ecommerce',
+      'web',
+      'pdv_sucursal'
+    ]);
+    expect(fallbackOptions.every((c) => c.isBuiltIn && c.supportedFormats.length > 0)).toBe(true);
   });
 });
 
@@ -295,7 +412,7 @@ describe('Dynamic Variables — Zero Hardcoded Leakage Proof', () => {
 });
 
 describe('Brand Manual Markdown Exporter', () => {
-  test('exportBrandManualToMarkdown renders all 5 sections cleanly with dynamic data', () => {
+  test('exportBrandManualToMarkdown renders all 5 sections including Pyramid and complete Tab 4 rules with ZERO technical slugs or CSS', () => {
     const md = exportBrandManualToMarkdown(officialSeed);
 
     expect(md).toContain('# Manual de Marca — Grupo PROA / Laboratorio Médico del Chopo (v4.0.0)');
@@ -305,26 +422,63 @@ describe('Brand Manual Markdown Exporter', () => {
     expect(md).toContain('## 4. Diseño Gráfico, Logo y Línea Basal');
     expect(md).toContain('## 5. Reglas por Canal');
 
-    // Verify key content from each section appears cleanly
+    // Section 1: Pyramid & core voice
     expect(md).toContain(officialSeed.identity_and_voice.mandatorySlogan.text);
+    expect(md).toContain('### Pirámide de Atributos de Marca');
+    expect(md).toContain('Cúspide Única');
+    expect(md).toContain('Refugio');
+    expect(md).toContain('Pilares de Experiencia');
     expect(md).toContain('B2C — Compañeros de los Pacientes');
     expect(md).toContain('B2D — Compañeros de los Médicos');
     expect(md).toContain('B2B — Compañero de las Empresas');
+
+    // Section 2 & 3
     expect(md).toContain('estetoscopio');
     expect(md).toContain('Matriz de Contrastes');
     expect(md).toContain('#63CF00');
+    expect(md).toContain('#81A4EE');
+    expect(md).toContain('#D200F4');
+    expect(md).toContain('#E20613');
+
+    // Section 4: Complete subsections (Logo/Cobranding, Typography weights, complete Línea Basal, Modularity, Pricing, Icons/Legals/No-Photo)
+    expect(md).toContain('### Logotipo y Cobrandeo / Alianzas');
+    expect(md).toContain('Cobrandeo y Alianzas');
+    expect(md).toContain('### Tipografía y Jerarquía de Pesos');
     expect(md).toContain('Avenir');
-    expect(md).toContain('social_media');
-    expect(md).toContain('mailing_ecommerce');
-    expect(md).toContain('web');
-    expect(md).toContain('pdv_sucursal');
+    expect(md).toContain('**BLACK:**');
+    expect(md).toContain('**HEAVY:**');
+    expect(md).toContain('**MEDIUM:**');
+    expect(md).toContain('**LIGHT:**');
+    expect(md).toContain('### Línea Basal');
+    expect(md).toContain('Proporciones invariables');
+    expect(md).toContain('Interacción tridimensional (abrazo) y tamaño');
+    expect(md).toContain('Recortes permitidos y prohibidos');
+    expect(md).toContain('Reglas de no agresión');
+    expect(md).toContain('### Íconos, Legales y Piezas sin Fotografía');
+    expect(md).toContain('Ubicación de legales');
+    expect(md).toContain('Piezas sin fotografía');
+
+    // Section 5: Friendly channel labels WITHOUT internal technical slugs
+    expect(md).toContain('### Redes Sociales (Feed 1:1, Vertical 4:5, Carruseles, Historias y Reels/TikTok 9:16)');
+    expect(md).toContain('### Mailings (Email Marketing) y E-commerce');
+    expect(md).toContain('### Sitio Web y Banners Digitales (chopo.com.mx)');
+    expect(md).toContain('### Punto de Venta en Sucursal — PDV (Pósters, Folletos, Lonas Exteriores y Regionales)');
+
+    // Zero internal slugs and zero CSS jargon in exported text
+    expect(md).not.toContain('(`social_media`)');
+    expect(md).not.toContain('social_media');
+    expect(md).not.toContain('mailing_ecommerce');
+    expect(md).not.toContain('pdv_sucursal');
+    expect(md).not.toMatch(/\bCSS\b/);
   });
 
-  test('exportBrandManualToMarkdown reflects edits on a mutated manual and handles null safely', () => {
+  test('exportBrandManualToMarkdown reflects edits, sanitizes legacy CSS mentions, and handles null safely', () => {
     const mutated = structuredClone(officialSeed);
     mutated.identity_and_voice.mandatorySlogan.text = 'Slogan actualizado para validación.';
+    mutated.graphic_design_and_layout.usageNote = 'Reglas para plantillas CSS heredadas.';
     const md = exportBrandManualToMarkdown(mutated);
     expect(md).toContain('Slogan actualizado para validación.');
+    expect(md).not.toMatch(/\bCSS\b/);
 
     expect(exportBrandManualToMarkdown(null)).toBe('# Manual de Marca\n');
   });

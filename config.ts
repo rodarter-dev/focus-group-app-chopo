@@ -1,22 +1,22 @@
 export const brandConfig = {
-  companyName: "Laboratorios Chopo",
+  companyName: "Laboratorio Médico del Chopo",
   logo: {
     sidebar: "/images/chopo-logo.svg",
     width: "w-[190px]",
   },
   colors: {
     primary: "#FFFFFF", // Pure White
-    secondary: "#003B7A", // Chopo Institutional Navy Blue
-    accent: "#0066FF", // Chopo Royal Blue (Primary Action Buttons)
-    lime: "#78D600", // Chopo Characteristic Pulse Wave Lime Green
-    coral: "#F2385A", // Chopo Promo Coral Accent
+    secondary: "#004699", // Chopo Azul Marino Oficial V4
+    accent: "#005FFC", // Chopo Azul Brillante Oficial V4 (Primary Action Buttons)
+    lime: "#63CF00", // Chopo Verde Línea Basal Oficial V4
+    coral: "#F24360", // Chopo Rosa Promocional Oficial V4
   },
   meta: {
-    title: "Laboratorios Chopo | Intelligence Hub",
+    title: "Laboratorio Médico del Chopo | Intelligence Hub",
   },
   ui: {
     welcomeTitle: "Chopo Intelligence Hub",
-    welcomeColor: "text-[#0066FF]",
+    welcomeColor: "text-[#005FFC]",
     button: {
       primary: "btn-primary",
       secondary: "btn-secondary",

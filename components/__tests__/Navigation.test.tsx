@@ -119,13 +119,16 @@ describe('Navigation & LanguageContext (Spanish-only Lock & Manual V4)', () => {
       expect(screen.getByRole('heading', { name: /Base de Conocimiento \(COFEPRIS y Clínico\)/i })).toBeDefined();
     });
 
-    // Verify 3 clinical/regulatory pillars load and Brand Manual V4 callout redirects in 1 click
+    // Verify 3 clinical/regulatory pillars load, upload button has no .md jargon, raw .md filenames are hidden, and Brand Manual V4 callout redirects in 1 click
     await waitFor(() => {
       expect(screen.getAllByText(/Lineamientos Regulatorios COFEPRIS/i).length).toBeGreaterThan(0);
       expect(screen.getByText(/Catálogo de Estudios y Preparación Clínica/i)).toBeDefined();
       expect(screen.getByText(/Reglas de Imagen y Realismo Clínico/i)).toBeDefined();
+      expect(screen.getByRole('button', { name: /Subir PDF o Documento de Texto/i })).toBeDefined();
     });
 
+    expect(screen.queryByText(/01_cofepris_lineamientos\.md/i)).toBeNull();
+    expect(screen.queryByText(/Subir PDF \/ TXT \/ MD/i)).toBeNull();
     expect(screen.queryByText(/Manual de Identidad y Marca Chopo/i)).toBeNull();
 
     const jumpBtn = screen.getByRole('button', { name: /Ir al Manual de Marca V4 ➔/i });

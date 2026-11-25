@@ -7,7 +7,16 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-describe('Logo Configuration (Laboratorios Chopo)', () => {
+describe('Logo & Brand Identity V4 Configuration (Laboratorio Médico del Chopo)', () => {
+  test('brandConfig uses official Brand Manual V4 name, page title, and HEX palette', () => {
+    expect(brandConfig.companyName).toBe('Laboratorio Médico del Chopo');
+    expect(brandConfig.meta.title).toBe('Laboratorio Médico del Chopo | Intelligence Hub');
+    expect(brandConfig.colors.secondary).toBe('#004699');
+    expect(brandConfig.colors.accent).toBe('#005FFC');
+    expect(brandConfig.colors.lime).toBe('#63CF00');
+    expect(brandConfig.colors.coral).toBe('#F24360');
+  });
+
   test('brandConfig.logo.sidebar is set to the official Chopo SVG logo', () => {
     expect(brandConfig.logo.sidebar).toBe('/images/chopo-logo.svg');
   });

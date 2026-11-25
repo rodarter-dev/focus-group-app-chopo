@@ -50,15 +50,73 @@ export function resolveTrackFromSegment(segmentOrTrack) {
   return 'patient';
 }
 
+export const BUILT_IN_CHANNEL_ORDER = [
+  'social_media',
+  'mailing_ecommerce',
+  'web',
+  'pdv_sucursal'
+];
+
+const DEFAULT_CHANNEL_LABELS = {
+  social_media: 'Redes Sociales',
+  mailing_ecommerce: 'Mailings (Email Marketing) y E-commerce',
+  web: 'Sitio Web y Banners Digitales (chopo.com.mx)',
+  pdv_sucursal: 'Punto de Venta en Sucursal — PDV'
+};
+
 export function getSubformatsForChannel(channelKey, manual) {
-  const fromManual = manual?.channels?.items?.[channelKey]?.supportedFormats;
+  const rawFromManual =
+    manual?.channels?.items?.[channelKey]?.supportedFormats ??
+    manual?.channels?.[channelKey]?.supportedFormats;
+  if (Array.isArray(rawFromManual)) {
+    const cleaned = rawFromManual
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean);
+    if (cleaned.length > 0) {
+      return cleaned;
+    }
+  }
   if (CHANNEL_SUBFORMATS[channelKey]?.length) {
     return CHANNEL_SUBFORMATS[channelKey];
   }
-  if (Array.isArray(fromManual) && fromManual.length > 0) {
-    return fromManual;
-  }
   return ['Formato Estándar'];
+}
+
+export function getChannelOptionsFromManual(manual) {
+  const items =
+    manual?.channels?.items && typeof manual.channels.items === 'object'
+      ? manual.channels.items
+      : null;
+
+  if (!items || Object.keys(items).length === 0) {
+    return BUILT_IN_CHANNEL_ORDER.map((id) => ({
+      id,
+      label: DEFAULT_CHANNEL_LABELS[id] || id,
+      supportedFormats: CHANNEL_SUBFORMATS[id] ? [...CHANNEL_SUBFORMATS[id]] : ['Formato Estándar'],
+      isBuiltIn: true
+    }));
+  }
+
+  const allKeys = Object.keys(items);
+  const orderedKeys = [
+    ...BUILT_IN_CHANNEL_ORDER.filter((k) => allKeys.includes(k)),
+    ...allKeys.filter((k) => !BUILT_IN_CHANNEL_ORDER.includes(k))
+  ];
+
+  return orderedKeys.map((key) => {
+    const ch = items[key] || {};
+    const id = ch.id || key;
+    const label =
+      typeof ch.label === 'string' && ch.label.trim()
+        ? ch.label.trim()
+        : DEFAULT_CHANNEL_LABELS[key] || key;
+    return {
+      id,
+      label,
+      supportedFormats: getSubformatsForChannel(key, manual),
+      isBuiltIn: BUILT_IN_CHANNEL_ORDER.includes(key)
+    };
+  });
 }
 
 function findColorHex(palette, id, fallbackHex) {
@@ -218,6 +276,14 @@ export function buildBrandSlices(manual, options = {}) {
   };
 }
 
+function cleanExportText(value) {
+  return String(value || '')
+    .replace(/\bplantillas\s+CSS\b/gi, 'plantillas visuales')
+    .replace(/\bCSS\b/g, 'diseño visual')
+    .replace(/imágenes rasterizadas/gi, 'artes finales en imagen')
+    .trim();
+}
+
 export function exportBrandManualToMarkdown(manual) {
   if (!manual || typeof manual !== 'object') return '# Manual de Marca\n';
   const meta = manual.metadata || {};
@@ -236,15 +302,50 @@ export function exportBrandManualToMarkdown(manual) {
   lines.push('');
 
   lines.push(`## ${idv.uiTabTitle || '1. Identidad y Voz'}`);
+  if (idv.sourcePages) lines.push(`*Referencia Manual V4: ${idv.sourcePages}*`);
   lines.push(`- **Nombres oficiales:** ${(idv.officialBrandNames || []).join(' / ')}`);
   lines.push(`- **Descriptivo del logotipo:** ${idv.logoDescriptor || ''}`);
   lines.push(`- **Slogan obligatorio:** ${idv.mandatorySlogan?.text || ''}`);
   if (idv.mandatorySlogan?.usageRule) lines.push(`  - *Regla:* ${idv.mandatorySlogan.usageRule}`);
   lines.push(`- **Propósito:** ${idv.purpose || ''}`);
   lines.push('');
+
+  const pyramid = idv.brandAttributesPyramid || idv.attributePyramid || idv.pyramid;
+  if (pyramid && typeof pyramid === 'object') {
+    const hasPyramid =
+      (Array.isArray(pyramid.cuspUnique) && pyramid.cuspUnique.length > 0) ||
+      (Array.isArray(pyramid.centerDifferentiators) && pyramid.centerDifferentiators.length > 0) ||
+      (Array.isArray(pyramid.baseCategoryEssentials) && pyramid.baseCategoryEssentials.length > 0) ||
+      (pyramid.experiencePillars && Object.keys(pyramid.experiencePillars).length > 0);
+    if (hasPyramid) {
+      lines.push('### Pirámide de Atributos de Marca');
+      if (Array.isArray(pyramid.cuspUnique) && pyramid.cuspUnique.length) {
+        lines.push(`- **Cúspide Única:** ${pyramid.cuspUnique.join(', ')}`);
+      }
+      if (Array.isArray(pyramid.centerDifferentiators) && pyramid.centerDifferentiators.length) {
+        lines.push(`- **Diferenciadores Centrales:** ${pyramid.centerDifferentiators.join(', ')}`);
+      }
+      if (Array.isArray(pyramid.baseCategoryEssentials) && pyramid.baseCategoryEssentials.length) {
+        lines.push(`- **Esenciales de Categoría:** ${pyramid.baseCategoryEssentials.join(', ')}`);
+      }
+      if (pyramid.experiencePillars && typeof pyramid.experiencePillars === 'object') {
+        const pillarEntries = Object.entries(pyramid.experiencePillars);
+        if (pillarEntries.length > 0) {
+          lines.push('- **Pilares de Experiencia:**');
+          pillarEntries.forEach(([pillarName, attrs]) => {
+            const title = pillarName.charAt(0).toUpperCase() + pillarName.slice(1);
+            const valueText = Array.isArray(attrs) ? attrs.join(', ') : String(attrs || '');
+            lines.push(`  - **${title}:** ${valueText}`);
+          });
+        }
+      }
+      lines.push('');
+    }
+  }
+
   lines.push('### Segmentos de Audiencia');
   Object.values(idv.audienceSegments || {}).forEach((seg) => {
-    lines.push(`- **${seg.label} (${seg.code})** — Pronombre: **${seg.pronoun}** | Destino: \`${seg.primaryDestination}\``);
+    lines.push(`- **${seg.label} (${seg.code})** — Pronombre: **${seg.pronoun}** | Destino: ${seg.primaryDestination}`);
     lines.push(`  - Tono: ${seg.toneGuidance}`);
     lines.push(`  - Leyenda precautoria: ${seg.mandatoryPrecautionaryLegend}`);
     if (Array.isArray(seg.valueDrivers) && seg.valueDrivers.length) {
@@ -270,17 +371,21 @@ export function exportBrandManualToMarkdown(manual) {
     lines.push(`  - CTA: ${f.ctaPlacementAndStyle}`);
   });
   lines.push('');
-  lines.push(`### Orden de Contacto y Citas Médicas`);
-  lines.push(`- **Orden estricto:** ${(idv.contactTouchpointsOrder?.strictOrder || []).join(' → ')}`);
+  lines.push('### Orden de Contacto y Citas Médicas');
+  const cleanContactOrder = (idv.contactTouchpointsOrder?.strictOrder || [])
+    .map((entry) => String(entry || '').replace(/^\s*\d+\.\s*/, '').trim())
+    .filter(Boolean);
+  lines.push(`- **Orden estricto:** ${cleanContactOrder.join(' → ')}`);
   lines.push(`- **Regla de contacto:** ${idv.contactTouchpointsOrder?.rule || ''}`);
   lines.push(`- **Citas médicas (${idv.medicalCitationsRule?.citationStandard || 'APA 7'}, máx. ${idv.medicalCitationsRule?.maxAgeYears || 5} años):** ${idv.medicalCitationsRule?.rule || ''}`);
   lines.push(`- **Permiso COFEPRIS:** ${idv.advertisingPermitRule || ''}`);
   lines.push('');
 
   lines.push(`## ${photo.uiTabTitle || '2. Fotografía e Imagen'}`);
+  if (photo.sourcePages) lines.push(`*Referencia Manual V4: ${photo.sourcePages}*`);
   lines.push(`- **Filosofía visual:** ${photo.generalPhilosophy || ''}`);
   lines.push(`- **Temperatura de color:** ${photo.colorTemperatureRule || ''}`);
-  lines.push(`- **Foto base limpia (IA):** ${photo.cleanBaseImageRuleForAI || ''}`);
+  lines.push(`- **Fotografía base limpia:** ${photo.cleanBaseImageRuleForAI || ''}`);
   lines.push(`- **Guía de calidez (Focus Group):** ${photo.focusGroupWarmthHint || ''}`);
   lines.push('- **Sí hacer:**');
   (photo.dos || []).forEach((item) => lines.push(`  - ${item}`));
@@ -289,11 +394,12 @@ export function exportBrandManualToMarkdown(manual) {
   lines.push('');
 
   lines.push(`## ${pal.uiTabTitle || '3. Paleta de Color y Contrastes'}`);
+  if (pal.sourcePages) lines.push(`*Referencia Manual V4: ${pal.sourcePages}*`);
   lines.push(`- **Ambientación fotográfica:** ${pal.ambientPromptGuidance || ''}`);
   const renderPaletteGroup = (title, items) => {
     if (!Array.isArray(items) || !items.length) return;
     lines.push(`### ${title}`);
-    items.forEach((c) => lines.push(`- **${c.name}** (\`${c.hex}\` / ${c.rgb}): ${c.usage}`));
+    items.forEach((c) => lines.push(`- **${c.name}** (${c.hex} / ${c.rgb}): ${c.usage}`));
   };
   renderPaletteGroup('Primarios Digitales', pal.primaryDigital);
   renderPaletteGroup('Secundarios y Modulares', pal.secondaryDigital);
@@ -301,32 +407,98 @@ export function exportBrandManualToMarkdown(manual) {
   if (Array.isArray(pal.contrastMatrix) && pal.contrastMatrix.length) {
     lines.push('### Matriz de Contrastes');
     pal.contrastMatrix.forEach((row) => {
-      lines.push(`- Fondo **${row.backgroundName} (\`${row.backgroundHex}\`)**: Permitidos [${(row.allowedForegrounds || []).join(', ')}] | Prohibidos [${(row.forbiddenForegrounds || []).join(', ')}] — ${row.notes}`);
+      lines.push(`- Fondo **${row.backgroundName} (${row.backgroundHex})**: Permitidos [${(row.allowedForegrounds || []).join(', ')}] | Prohibidos [${(row.forbiddenForegrounds || []).join(', ')}] — ${row.notes}`);
     });
   }
   lines.push('');
 
   lines.push(`## ${gfx.uiTabTitle || '4. Diseño Gráfico, Logo y Línea Basal'}`);
-  if (gfx.usageNote) lines.push(`> ${gfx.usageNote}`);
+  if (gfx.sourcePages) lines.push(`*Referencia Manual V4: ${gfx.sourcePages}*`);
+  if (gfx.usageNote) lines.push(`> ${cleanExportText(gfx.usageNote)}`);
   lines.push('');
-  lines.push(`- **Descriptivo de logo:** ${gfx.logoRules?.mandatoryDescriptor || ''}`);
-  lines.push(`- **Ubicación de logo:** ${gfx.logoRules?.placement || ''}`);
-  lines.push(`- **Tipografía:** ${gfx.typographyRules?.primaryFontFamily || ''} | Web: ${gfx.typographyRules?.webAlternativeFontFamily || ''}`);
-  lines.push(`- **Línea Basal:** ${gfx.lineaBasalRules?.description || ''}`);
-  lines.push(`- **Modularidad:** ${gfx.modularityRules?.cornerGeometry || ''} ${gfx.modularityRules?.maxSizeLimits || ''}`);
-  lines.push(`- **Preciadores:** ${gfx.pricingAndDiscountsRules?.mandatoryColor || ''} ${gfx.pricingAndDiscountsRules?.circularBadgeBleed || ''}`);
+
+  lines.push('### Logotipo y Cobrandeo / Alianzas');
+  if (gfx.logoRules?.mandatoryDescriptor) lines.push(`- **Descriptivo obligatorio:** ${gfx.logoRules.mandatoryDescriptor}`);
+  if (gfx.logoRules?.contrastOnPhotos) lines.push(`- **Contraste sobre fotografías:** ${gfx.logoRules.contrastOnPhotos}`);
+  if (gfx.logoRules?.modularLogoColor) lines.push(`- **Color en aplicaciones modulares:** ${gfx.logoRules.modularLogoColor}`);
+  if (gfx.logoRules?.placement) lines.push(`- **Ubicación autorizada:** ${gfx.logoRules.placement}`);
+  if (gfx.logoRules?.cobrandingRule) lines.push(`- **Cobrandeo y Alianzas:** ${gfx.logoRules.cobrandingRule}`);
+  lines.push('');
+
+  lines.push('### Tipografía y Jerarquía de Pesos');
+  if (gfx.typographyRules?.primaryFontFamily) lines.push(`- **Familia principal:** ${gfx.typographyRules.primaryFontFamily}`);
+  if (gfx.typographyRules?.webAlternativeFontFamily) lines.push(`- **Alternativa web e interfaz:** ${gfx.typographyRules.webAlternativeFontFamily}`);
+  if (gfx.typographyRules?.weightHierarchy && typeof gfx.typographyRules.weightHierarchy === 'object') {
+    const weights = Object.entries(gfx.typographyRules.weightHierarchy);
+    if (weights.length > 0) {
+      lines.push('- **Jerarquía de pesos:**');
+      weights.forEach(([weight, desc]) => lines.push(`  - **${weight}:** ${desc}`));
+    }
+  }
+  if (gfx.typographyRules?.visionAuditGuidance) {
+    lines.push(`- **Criterio de revisión visual:** ${cleanExportText(gfx.typographyRules.visionAuditGuidance)}`);
+  }
+  lines.push('');
+
+  lines.push('### Línea Basal');
+  if (gfx.lineaBasalRules?.description) lines.push(`- **Descripción:** ${gfx.lineaBasalRules.description}`);
+  if (Array.isArray(gfx.lineaBasalRules?.proportionInvariants) && gfx.lineaBasalRules.proportionInvariants.length) {
+    lines.push('- **Proporciones invariables:**');
+    gfx.lineaBasalRules.proportionInvariants.forEach((item) => lines.push(`  - ${item}`));
+  }
+  if (Array.isArray(gfx.lineaBasalRules?.interactionAndSizeRules) && gfx.lineaBasalRules.interactionAndSizeRules.length) {
+    lines.push('- **Interacción tridimensional (abrazo) y tamaño:**');
+    gfx.lineaBasalRules.interactionAndSizeRules.forEach((item) => lines.push(`  - ${item}`));
+  }
+  if (Array.isArray(gfx.lineaBasalRules?.allowedAndForbiddenCrops) && gfx.lineaBasalRules.allowedAndForbiddenCrops.length) {
+    lines.push('- **Recortes permitidos y prohibidos:**');
+    gfx.lineaBasalRules.allowedAndForbiddenCrops.forEach((item) => lines.push(`  - ${item}`));
+  }
+  if (Array.isArray(gfx.lineaBasalRules?.nonAggressionRules) && gfx.lineaBasalRules.nonAggressionRules.length) {
+    lines.push('- **Reglas de no agresión:**');
+    gfx.lineaBasalRules.nonAggressionRules.forEach((item) => lines.push(`  - ${item}`));
+  }
+  lines.push('');
+
+  lines.push('### Modularidad y Cajas');
+  if (gfx.modularityRules?.cornerGeometry) lines.push(`- **Geometría de esquinas:** ${gfx.modularityRules.cornerGeometry}`);
+  if (gfx.modularityRules?.noFloatingBoxes) lines.push(`- **Prohibición de cajas flotantes:** ${gfx.modularityRules.noFloatingBoxes}`);
+  if (gfx.modularityRules?.singleAxisOrientation) lines.push(`- **Orientación de un solo eje:** ${gfx.modularityRules.singleAxisOrientation}`);
+  if (gfx.modularityRules?.maxSizeLimits) lines.push(`- **Límites máximos de tamaño:** ${gfx.modularityRules.maxSizeLimits}`);
+  if (gfx.modularityRules?.horizontalLayoutAndCtaTab) lines.push(`- **Composición horizontal y pleca de CTA:** ${gfx.modularityRules.horizontalLayoutAndCtaTab}`);
+  lines.push('');
+
+  lines.push('### Preciadores y Descuentos');
+  if (gfx.pricingAndDiscountsRules?.mandatoryColor) lines.push(`- **Color obligatorio:** ${gfx.pricingAndDiscountsRules.mandatoryColor}`);
+  if (gfx.pricingAndDiscountsRules?.circularBadgeBleed) lines.push(`- **Círculo rebasado sobre fotografía:** ${gfx.pricingAndDiscountsRules.circularBadgeBleed}`);
+  if (gfx.pricingAndDiscountsRules?.modularPromoBox) lines.push(`- **Caja promocional modular:** ${gfx.pricingAndDiscountsRules.modularPromoBox}`);
+  lines.push('');
+
+  lines.push('### Íconos, Legales y Piezas sin Fotografía');
+  if (gfx.iconsLegalsAndNoPhotoRules?.icons) lines.push(`- **Íconos:** ${gfx.iconsLegalsAndNoPhotoRules.icons}`);
+  if (gfx.iconsLegalsAndNoPhotoRules?.legalsPlacement) lines.push(`- **Ubicación de legales:** ${gfx.iconsLegalsAndNoPhotoRules.legalsPlacement}`);
+  if (gfx.iconsLegalsAndNoPhotoRules?.noPhotoLayouts) lines.push(`- **Piezas sin fotografía:** ${gfx.iconsLegalsAndNoPhotoRules.noPhotoLayouts}`);
   lines.push('');
 
   lines.push(`## ${manual.channels?.uiTabTitle || '5. Reglas por Canal'}`);
-  Object.values(channels).forEach((ch) => {
-    lines.push(`### ${ch.label} (\`${ch.id}\`)`);
-    if (Array.isArray(ch.supportedFormats)) lines.push(`- **Formatos:** ${ch.supportedFormats.join(', ')}`);
-    lines.push(`- **Copy:** ${ch.copyRules || ''}`);
-    lines.push(`- **Fotografía:** ${ch.photoRules || ''}`);
-    lines.push(`- **Contexto Focus Group:** ${ch.focusGroupContext || ''}`);
+  const orderedChannelKeys = [
+    ...BUILT_IN_CHANNEL_ORDER.filter((k) => Boolean(channels[k])),
+    ...Object.keys(channels).filter((k) => !BUILT_IN_CHANNEL_ORDER.includes(k))
+  ];
+  orderedChannelKeys.forEach((chKey) => {
+    const ch = channels[chKey];
+    if (!ch) return;
+    lines.push(`### ${ch.label || DEFAULT_CHANNEL_LABELS[chKey] || 'Canal'}`);
+    if (ch.sourcePages) lines.push(`*Referencia Manual V4: ${ch.sourcePages}*`);
+    if (Array.isArray(ch.supportedFormats) && ch.supportedFormats.length) {
+      lines.push(`- **Formatos:** ${ch.supportedFormats.join(', ')}`);
+    }
+    lines.push(`- **Copy:** ${cleanExportText(ch.copyRules || '')}`);
+    lines.push(`- **Fotografía:** ${cleanExportText(ch.photoRules || '')}`);
+    lines.push(`- **Contexto Focus Group:** ${cleanExportText(ch.focusGroupContext || '')}`);
     if (Array.isArray(ch.auditorRules) && ch.auditorRules.length) {
-      lines.push('- **Reglas de Auditoría:**');
-      ch.auditorRules.forEach((r) => lines.push(`  - ${r}`));
+      lines.push('- **Reglas de Revisión:**');
+      ch.auditorRules.forEach((r) => lines.push(`  - ${cleanExportText(r)}`));
     }
     lines.push('');
   });

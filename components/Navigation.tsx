@@ -87,10 +87,18 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
     '04_reglas_realismo_clinico_y_operativo.md': {
       es: 'Reglas de Imagen y Realismo Clínico',
       en: 'Visual & Clinical Realism Rules',
-      descEs: 'Equipamiento médico, vestimenta de pacientes y entrega digital',
-      descEn: 'Medical equipment, patient attire, and digital delivery rules',
-      category: 'Realismo Visual'
+      descEs: 'Protocolo clínico de equipos médicos, vestimenta de pacientes y entrega digital',
+      descEn: 'Clinical protocol for medical equipment, patient attire, and digital delivery',
+      category: 'Realismo Clínico'
     }
+  };
+
+  const getFriendlyDocTitle = (filename: string): string => {
+    const pillar = CORE_RAG_PILLARS[filename];
+    if (pillar) {
+      return language === 'es' ? pillar.es : pillar.en;
+    }
+    return filename.replace(/\.(md|txt|pdf)$/i, '').replace(/_/g, ' ').trim() || filename;
   };
 
   const formatVersionDate = (ver: ConfigVersionSnapshot): string => {
@@ -111,6 +119,9 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
     if (!label) return t('Configuración Base por Defecto — Laboratorio Médico del Chopo', 'Default Baseline Configuration — Laboratorio Médico del Chopo');
     if (/MVP|Semilla Oficial/i.test(label)) {
       return t('Configuración Base por Defecto — Laboratorio Médico del Chopo', 'Default Baseline Configuration — Laboratorio Médico del Chopo');
+    }
+    if (/^Rollback a:\s*/i.test(label)) {
+      return label.replace(/^Rollback a:\s*/i, t('Restaurado desde: ', 'Restored from: '));
     }
     return label;
   };
@@ -142,8 +153,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
     setIsSavingRag(true);
     setRagStatusMsg(null);
     try {
-      const docMeta = CORE_RAG_PILLARS[selectedDocFilename];
-      const friendlyName = docMeta ? docMeta.es : selectedDocFilename;
+      const friendlyName = getFriendlyDocTitle(selectedDocFilename);
       const label = ragVersionLabel.trim() || t(
         `Actualización: ${friendlyName}`,
         `Updated: ${friendlyName}`
@@ -177,11 +187,13 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
       cleanName = `${cleanName}.txt`;
     }
 
+    const displayName = getFriendlyDocTitle(cleanName);
+
     setIsUploadingFile(true);
     setRagStatusMsg(
       isPdf
-        ? t(`Subiendo "${file.name}" y extrayendo contenido del PDF...`, `Uploading "${file.name}" and extracting PDF content...`)
-        : t(`Cargando "${file.name}"...`, `Loading "${file.name}"...`)
+        ? t(`Subiendo "${displayName}" y extrayendo contenido del PDF...`, `Uploading "${displayName}" and extracting PDF content...`)
+        : t(`Cargando "${displayName}"...`, `Loading "${displayName}"...`)
     );
 
     try {
@@ -199,6 +211,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
           base64Data
         });
 
+        const uploadedDisplayName = getFriendlyDocTitle(uploaded.filename);
         const updatedDocs = {
           ...ragDocs,
           [uploaded.filename]: uploaded.content
@@ -208,14 +221,14 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
 
         const saved = await saveRagDocs(
           updatedDocs,
-          t(`Carga de PDF: ${uploaded.filename}`, `PDF Upload: ${uploaded.filename}`)
+          t(`Carga de PDF: ${uploadedDisplayName}`, `PDF Upload: ${uploadedDisplayName}`)
         );
         setRagDocs(saved);
         const versionsData = await fetchConfigVersions('rag_docs');
         setRagVersions(versionsData || []);
         setRagStatusMsg(t(
-          `PDF "${uploaded.filename}" procesado, respaldado y disponible para edición.`,
-          `PDF "${uploaded.filename}" processed, backed up, and ready for editing.`
+          `PDF "${uploadedDisplayName}" procesado, respaldado y disponible para edición.`,
+          `PDF "${uploadedDisplayName}" processed, backed up, and ready for editing.`
         ));
       } else {
         const textContent = await new Promise<string>((resolve, reject) => {
@@ -240,14 +253,14 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
 
         const saved = await saveRagDocs(
           updatedDocs,
-          t(`Carga de documento: ${cleanName}`, `Document upload: ${cleanName}`)
+          t(`Carga de documento: ${displayName}`, `Document upload: ${displayName}`)
         );
         setRagDocs(saved);
         const versionsData = await fetchConfigVersions('rag_docs');
         setRagVersions(versionsData || []);
         setRagStatusMsg(t(
-          `Documento "${cleanName}" cargado y sincronizado correctamente.`,
-          `Document "${cleanName}" uploaded and synced successfully.`
+          `Documento "${displayName}" cargado y sincronizado correctamente.`,
+          `Document "${displayName}" uploaded and synced successfully.`
         ));
       }
     } catch (err) {
@@ -307,7 +320,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
       const versionsData = await fetchConfigVersions('rag_docs');
       setRagVersions(versionsData || []);
       setRagStatusMsg(
-        versionId === 'OFFICIAL_SEED'
+        versionId === 'OFFICIAL_SEED' || versionId.startsWith('v_seed_initial')
           ? t('Se restauraron los documentos iniciales por defecto.', 'Default initial documents restored.')
           : t('Se restauró la versión seleccionada correctamente.', 'Selected version restored successfully.')
       );
@@ -359,7 +372,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
 
   const getFileExtensionBadge = (filename: string) => {
     const ext = filename.split('.').pop()?.toUpperCase() || 'DOC';
-    return ext;
+    return ext === 'PDF' ? 'PDF' : 'TEXTO';
   };
 
   return (
@@ -390,7 +403,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         <div className="hidden md:flex flex-col items-center justify-center p-6 border-b border-gray-200">
-          <img src={brandConfig.logo.sidebar} alt="Chopo AI" className="h-14 w-auto" />
+          <img src={brandConfig.logo.sidebar} alt="Laboratorio Médico del Chopo" className="h-14 w-auto" />
         </div>
 
         <div className="p-4 space-y-2">
@@ -408,7 +421,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                     w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 font-medium text-sm
                     ${isActive
                       ? `${brandConfig.ui.button.primary}`
-                      : `text-gray-600 hover:bg-gray-100 hover:text-[#0066FF]`}
+                      : `text-gray-600 hover:bg-gray-100 hover:text-[#005FFC]`}
                   `}
                 >
                   <Icon size={20} className="shrink-0" />
@@ -423,9 +436,9 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
           <button
             type="button"
             onClick={() => setIsHelpGuideOpen(true)}
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl bg-[#EFF6FF] hover:bg-blue-100 text-[#003B7A] border border-blue-200 transition-all text-xs font-bold shadow-sm"
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl bg-[#EFF6FF] hover:bg-blue-100 text-[#004699] border border-blue-200 transition-all text-xs font-bold shadow-sm"
           >
-            <HelpCircle size={17} className="text-[#0066FF] shrink-0" />
+            <HelpCircle size={17} className="text-[#005FFC] shrink-0" />
             <span className="whitespace-nowrap">{t('Guía de Uso / Ayuda', 'Help & Usage Guide')}</span>
           </button>
           <button
@@ -438,7 +451,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-sm font-bold shadow-sm ${
               currentMode === AppMode.BRAND_MANUAL
                 ? 'bg-[#005FFC] text-white border-[#005FFC] shadow-md'
-                : 'bg-[#EFF9FE] hover:bg-blue-100/80 text-[#003B7A] border-blue-200 hover:border-[#005FFC]'
+                : 'bg-[#EFF9FE] hover:bg-blue-100/80 text-[#004699] border-blue-200 hover:border-[#005FFC]'
             }`}
           >
             <Palette size={18} className={currentMode === AppMode.BRAND_MANUAL ? 'text-white shrink-0' : 'text-[#005FFC] shrink-0'} />
@@ -449,9 +462,9 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
             onClick={openRagAdminModal}
             title={t('Base de Conocimiento (COFEPRIS y Clínico)', 'Base de Conocimiento (COFEPRIS y Clínico)')}
             aria-label={t('Base de Conocimiento (COFEPRIS y Clínico)', 'Base de Conocimiento (COFEPRIS y Clínico)')}
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 text-[#003B7A] border border-slate-200 hover:border-blue-200 transition-all text-left shadow-sm"
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 text-[#004699] border border-slate-200 hover:border-blue-200 transition-all text-left shadow-sm"
           >
-            <BookOpen size={18} className="text-[#0066FF] shrink-0" />
+            <BookOpen size={18} className="text-[#005FFC] shrink-0" />
             <div className="min-w-0 leading-tight">
               <span className="block text-sm font-semibold whitespace-nowrap">{t('Base de Conocimiento', 'Base de Conocimiento')}</span>
               <span className="block text-[11px] font-medium text-slate-500 whitespace-nowrap">{t('(COFEPRIS y Clínico)', '(COFEPRIS y Clínico)')}</span>
@@ -462,17 +475,17 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
         <div className="w-full px-4 py-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-full bg-[#0066FF] text-white flex items-center justify-center font-bold text-base shrink-0">
+              <div className="w-9 h-9 rounded-full bg-[#005FFC] text-white flex items-center justify-center font-bold text-base shrink-0">
                 {name.charAt(0)}
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-[#003B7A] leading-tight whitespace-nowrap">{name}</p>
+                <p className="text-sm font-bold text-[#004699] leading-tight whitespace-nowrap truncate">{name}</p>
                 <p className="text-xs text-gray-500 font-medium">{t('Edición Empresarial', 'Enterprise Edition')}</p>
               </div>
             </div>
             <button 
               onClick={() => setIsSettingsOpen(true)}
-              className="p-1.5 shrink-0 text-gray-400 hover:text-[#0066FF] transition-colors rounded-lg hover:bg-white shadow-sm border border-transparent hover:border-gray-100"
+              className="p-1.5 shrink-0 text-gray-400 hover:text-[#005FFC] transition-colors rounded-lg hover:bg-white shadow-sm border border-transparent hover:border-gray-100"
               title={t('Configuración de Contexto de Empresa', 'Company Context Settings')}
             >
               <Settings size={18} />
@@ -489,11 +502,11 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
             {/* Top Header */}
             <div className="px-6 py-4 border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#0066FF]">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#005FFC]">
                   <BookOpen size={20} />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-[#003B7A]">
+                  <h2 className="text-lg font-bold text-[#004699]">
                     {t('Base de Conocimiento (COFEPRIS y Clínico)', 'Base de Conocimiento (COFEPRIS y Clínico)')}
                   </h2>
                   <p className="text-xs text-slate-500">
@@ -514,11 +527,11 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                     onClick={() => setActiveRagTab('docs')}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 ${
                       activeRagTab === 'docs'
-                        ? 'bg-white text-[#003B7A] shadow-sm'
-                        : 'text-slate-600 hover:text-[#003B7A]'
+                        ? 'bg-white text-[#004699] shadow-sm'
+                        : 'text-slate-600 hover:text-[#004699]'
                     }`}
                   >
-                    <FileCheck size={14} className={activeRagTab === 'docs' ? 'text-[#0066FF]' : ''} />
+                    <FileCheck size={14} className={activeRagTab === 'docs' ? 'text-[#005FFC]' : ''} />
                     {t('Documentos Activos', 'Active Documents')} ({Object.keys(ragDocs).length})
                   </button>
                   <button
@@ -527,11 +540,11 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                     onClick={() => setActiveRagTab('history')}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 ${
                       activeRagTab === 'history'
-                        ? 'bg-white text-[#003B7A] shadow-sm'
-                        : 'text-slate-600 hover:text-[#003B7A]'
+                        ? 'bg-white text-[#004699] shadow-sm'
+                        : 'text-slate-600 hover:text-[#004699]'
                     }`}
                   >
-                    <History size={14} className={activeRagTab === 'history' ? 'text-[#0066FF]' : ''} />
+                    <History size={14} className={activeRagTab === 'history' ? 'text-[#005FFC]' : ''} />
                     {t('Historial de Versiones', 'Version History')}
                   </button>
                 </div>
@@ -592,7 +605,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
               <div className={`flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-12 ${isRagBusy ? 'pointer-events-none opacity-65 select-none' : ''}`}>
                 {/* Left Column: Clean Document List */}
                 <div className="md:col-span-4 border-r border-slate-200 bg-slate-50/60 p-5 flex flex-col gap-4 overflow-y-auto">
-                  {/* Action Buttons (Well spaced, no emojis, supports PDF/TXT/MD) */}
+                  {/* Action Buttons */}
                   <div className="grid grid-cols-2 gap-2.5">
                     <input
                       ref={ragFileInputRef}
@@ -606,16 +619,16 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                       type="button"
                       disabled={isRagBusy}
                       onClick={() => ragFileInputRef.current?.click()}
-                      className="px-3 py-2.5 rounded-xl bg-white hover:bg-blue-50 text-[#003B7A] border border-slate-200 hover:border-blue-300 text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all disabled:opacity-50"
+                      className="px-3 py-2.5 rounded-xl bg-white hover:bg-blue-50 text-[#004699] border border-slate-200 hover:border-blue-300 text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all disabled:opacity-50"
                     >
-                      {isUploadingFile ? <Loader2 size={15} className="animate-spin text-[#0066FF]" /> : <Upload size={15} className="text-[#0066FF]" />}
-                      <span>{t('Subir PDF / TXT / MD', 'Upload PDF / TXT / MD')}</span>
+                      {isUploadingFile ? <Loader2 size={15} className="animate-spin text-[#005FFC]" /> : <Upload size={15} className="text-[#005FFC]" />}
+                      <span>{t('Subir PDF o Documento de Texto', 'Upload PDF or Text Document')}</span>
                     </button>
                     <button
                       type="button"
                       disabled={isRagBusy}
                       onClick={() => setIsAddingNewDoc(!isAddingNewDoc)}
-                      className="px-3 py-2.5 rounded-xl bg-[#0066FF] hover:bg-[#0052CC] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
+                      className="px-3 py-2.5 rounded-xl bg-[#005FFC] hover:bg-[#004699] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
                     >
                       <Plus size={15} />
                       <span>{t('Nuevo Documento', 'New Document')}</span>
@@ -624,7 +637,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
 
                   {isAddingNewDoc && (
                     <div className="p-3.5 bg-white rounded-xl border border-blue-200 shadow-sm space-y-2.5">
-                      <label className="block text-[11px] font-bold text-[#003B7A]">
+                      <label className="block text-[11px] font-bold text-[#004699]">
                         {t('Nombre del nuevo documento', 'New document name')}
                       </label>
                       <input
@@ -632,8 +645,8 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                         disabled={isRagBusy}
                         value={newDocNameInput}
                         onChange={(e) => setNewDocNameInput(e.target.value)}
-                        placeholder={t('ej. Lineamientos_Promociones', 'e.g. Promo_Guidelines')}
-                        className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0066FF] disabled:opacity-60"
+                        placeholder={t('ej. Lineamientos Promociones', 'e.g. Promo Guidelines')}
+                        className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#005FFC] disabled:opacity-60"
                       />
                       <div className="flex justify-end gap-2">
                         <button
@@ -648,7 +661,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                           type="button"
                           disabled={isRagBusy}
                           onClick={handleCreateNewRagDoc}
-                          className="px-3.5 py-1.5 bg-[#0066FF] text-white rounded-lg text-xs font-bold disabled:opacity-50"
+                          className="px-3.5 py-1.5 bg-[#005FFC] hover:bg-[#004699] text-white rounded-lg text-xs font-bold disabled:opacity-50"
                         >
                           {t('Crear', 'Create')}
                         </button>
@@ -659,7 +672,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                   {/* Document Cards */}
                   {isLoadingRag ? (
                     <div className="py-12 flex items-center justify-center text-slate-400 text-xs gap-2">
-                      <Loader2 size={18} className="animate-spin text-[#0066FF]" />
+                      <Loader2 size={18} className="animate-spin text-[#005FFC]" />
                       <span>{t('Cargando documentos...', 'Loading documents...')}</span>
                     </div>
                   ) : (
@@ -676,21 +689,23 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                             }}
                             className={`cursor-pointer p-3.5 rounded-xl border transition-all flex items-start justify-between gap-3 ${
                               isSelected
-                                ? 'bg-white border-[#0066FF] ring-2 ring-[#0066FF]/15 shadow-sm'
+                                ? 'bg-white border-[#005FFC] ring-2 ring-[#005FFC]/15 shadow-sm'
                                 : 'bg-white hover:border-slate-300 text-slate-800 border-slate-200/90'
                             }`}
                           >
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-50 text-[#0066FF]">
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-50 text-[#005FFC]">
                                   {pillar ? pillar.category : getFileExtensionBadge(filename)}
                                 </span>
                               </div>
-                              <p className="text-sm font-bold text-[#003B7A] leading-snug">
-                                {pillar ? (language === 'es' ? pillar.es : pillar.en) : filename.replace(/\.(md|txt|pdf)$/i, '').replace(/_/g, ' ')}
+                              <p className="text-sm font-bold text-[#004699] leading-snug">
+                                {getFriendlyDocTitle(filename)}
                               </p>
                               <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                                {pillar ? (language === 'es' ? pillar.descEs : pillar.descEn) : filename}
+                                {pillar
+                                  ? (language === 'es' ? pillar.descEs : pillar.descEn)
+                                  : t('Documento adicional de referencia cargado por el equipo', 'Additional reference document uploaded by the team')}
                               </p>
                             </div>
                             {!pillar && (
@@ -719,13 +734,14 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                 <div className="md:col-span-8 p-6 flex flex-col h-full overflow-hidden bg-white">
                   <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100">
                     <div>
-                      <h3 className="text-base font-bold text-[#003B7A]">
-                        {CORE_RAG_PILLARS[selectedDocFilename]
-                          ? (language === 'es' ? CORE_RAG_PILLARS[selectedDocFilename].es : CORE_RAG_PILLARS[selectedDocFilename].en)
-                          : selectedDocFilename}
+                      <h3 className="text-base font-bold text-[#004699]">
+                        {getFriendlyDocTitle(selectedDocFilename)}
                       </h3>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        {selectedDocFilename} • {(ragDocs[selectedDocFilename] || '').length.toLocaleString()} {t('caracteres', 'characters')}
+                        {CORE_RAG_PILLARS[selectedDocFilename]
+                          ? `${t('Documento Oficial', 'Official Document')} • ${CORE_RAG_PILLARS[selectedDocFilename].category}`
+                          : t('Documento Adicional', 'Additional Document')}{' '}
+                        • {(ragDocs[selectedDocFilename] || '').length.toLocaleString()} {t('caracteres', 'characters')}
                       </p>
                     </div>
 
@@ -736,13 +752,13 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                         value={ragVersionLabel}
                         onChange={(e) => setRagVersionLabel(e.target.value)}
                         placeholder={t('Nota de versión (opcional)...', 'Version note (optional)...')}
-                        className="px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0066FF] w-56 disabled:opacity-60"
+                        className="px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#005FFC] w-56 disabled:opacity-60"
                       />
                       <button
                         type="button"
                         disabled={isRagBusy}
                         onClick={handleSaveRagDocs}
-                        className="px-4 py-2 bg-[#0066FF] hover:bg-[#0052CC] text-white rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 transition-all disabled:opacity-50"
+                        className="px-4 py-2 bg-[#005FFC] hover:bg-[#004699] text-white rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 transition-all disabled:opacity-50"
                       >
                         {isSavingRag ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
                         <span>{t('Guardar Cambios', 'Save Changes')}</span>
@@ -759,7 +775,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                         [selectedDocFilename]: e.target.value
                       }))
                     }
-                    className="flex-1 w-full p-5 bg-slate-50/70 focus:bg-white text-slate-800 text-sm leading-relaxed rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0066FF] resize-none transition-colors disabled:opacity-60"
+                    className="flex-1 w-full p-5 bg-slate-50/70 focus:bg-white text-slate-800 text-sm leading-relaxed rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005FFC] resize-none transition-colors disabled:opacity-60"
                     placeholder={t('Escribe o edita aquí el contenido del documento...', 'Write or edit the document content here...')}
                   />
                 </div>
@@ -770,7 +786,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                 <div className="max-w-4xl mx-auto space-y-5">
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-4 shadow-sm">
                     <div>
-                      <h3 className="text-sm font-bold text-[#003B7A]">
+                      <h3 className="text-sm font-bold text-[#004699]">
                         {t('Control de Versiones de la Base de Conocimiento', 'Knowledge Base Version Control')}
                       </h3>
                       <p className="text-xs text-slate-500 mt-0.5">
@@ -798,16 +814,17 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                         className="p-4 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-4 shadow-sm hover:border-blue-200 transition-colors"
                       >
                         <div className="min-w-0">
-                          <p className="text-sm font-bold text-[#003B7A] truncate">{sanitizeVersionLabel(ver.label)}</p>
+                          <p className="text-sm font-bold text-[#004699] truncate">{sanitizeVersionLabel(ver.label)}</p>
                           <p className="text-xs text-slate-500 mt-0.5">
                             {formatVersionDate(ver)} • {ver.itemCount || Object.keys(ragDocs).length} {t('documentos', 'documents')}
+                            {(ver as any).updatedBy ? ` • ${(ver as any).updatedBy}` : ''}
                           </p>
                         </div>
                         <button
                           type="button"
                           disabled={isRagBusy}
                           onClick={() => handleRestoreRagVersion(ver.versionId)}
-                          className="px-4 py-2 rounded-xl bg-blue-50 hover:bg-[#0066FF] text-[#0066FF] hover:text-white text-xs font-bold transition-colors shrink-0 disabled:opacity-50"
+                          className="px-4 py-2 rounded-xl bg-blue-50 hover:bg-[#005FFC] text-[#005FFC] hover:text-white text-xs font-bold transition-colors shrink-0 disabled:opacity-50"
                         >
                           {t('Restaurar esta versión', 'Restore this version')}
                         </button>
@@ -827,11 +844,11 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100">
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-[#0066FF]/10 rounded-lg text-[#0066FF]">
+                <div className="p-2 bg-[#005FFC]/10 rounded-lg text-[#005FFC]">
                   <Settings size={20} />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-[#003B7A]">{t('Contexto de la Empresa', 'Company Context')}</h2>
+                  <h2 className="text-xl font-bold text-[#004699]">{t('Contexto de la Empresa', 'Company Context')}</h2>
                   <p className="text-xs text-gray-500">{t('Configuración global para agentes de IA', 'Global configuration for AI agents')}</p>
                 </div>
               </div>
@@ -852,7 +869,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                   disabled={isSettingsBusy}
                   value={tempName}
                   onChange={(e) => setTempName(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#0066FF] focus:border-transparent transition-all outline-none font-medium text-gray-900 disabled:opacity-60"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#005FFC] focus:border-transparent transition-all outline-none font-medium text-gray-900 disabled:opacity-60"
                   placeholder={t('ej. Laboratorio Médico del Chopo', 'e.g. Laboratorio Médico del Chopo')}
                 />
               </div>
@@ -864,7 +881,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
                   value={tempDesc}
                   onChange={(e) => setTempDesc(e.target.value)}
                   rows={5}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#0066FF] focus:border-transparent transition-all outline-none font-medium text-gray-900 resize-none disabled:opacity-60"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#005FFC] focus:border-transparent transition-all outline-none font-medium text-gray-900 resize-none disabled:opacity-60"
                   placeholder={t('Describe tu empresa, estudios clínicos, audiencias objetivo y propuestas de valor...', 'Describe your company, products, target audience, and key value propositions...')}
                 />
                 <p className="mt-2 text-[11px] text-gray-400 italic">
@@ -880,7 +897,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
               <button 
                 onClick={handleLoadLast}
                 disabled={isSettingsBusy}
-                className="mr-auto px-4 py-2.5 text-xs font-bold text-gray-500 hover:text-[#0066FF] transition-colors flex items-center gap-1 disabled:opacity-50"
+                className="mr-auto px-4 py-2.5 text-xs font-bold text-gray-500 hover:text-[#005FFC] transition-colors flex items-center gap-1 disabled:opacity-50"
               >
                 <RotateCcw size={14} className={isLoadingLast ? 'animate-spin' : ''} />
                 {isLoadingLast ? t('Cargando...', 'Loading...') : t('Cargar Último', 'Load Last')}
@@ -895,7 +912,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
               <button 
                 onClick={handleSaveSettings}
                 disabled={isSettingsBusy}
-                className="px-6 py-2.5 bg-[#0066FF] hover:bg-[#004ECC] text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                className="px-6 py-2.5 bg-[#005FFC] hover:bg-[#004699] text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
               >
                 {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                 {isSaving ? t('Guardando...', 'Saving...') : t('Guardar Cambios', 'Save Changes')}
@@ -908,10 +925,10 @@ export const Navigation: React.FC<NavigationProps> = ({ currentMode, setMode, is
       <button
         type="button"
         onClick={() => setIsHelpGuideOpen(true)}
-        className="fixed bottom-5 right-5 z-40 px-4 py-2.5 rounded-full bg-[#003B7A] hover:bg-[#0066FF] text-white shadow-xl border border-white/20 flex items-center gap-2 text-xs font-bold transition-all hover:scale-[1.02]"
+        className="fixed bottom-5 right-5 z-40 px-4 py-2.5 rounded-full bg-[#004699] hover:bg-[#005FFC] text-white shadow-xl border border-white/20 flex items-center gap-2 text-xs font-bold transition-all hover:scale-[1.02]"
         title={t('Abrir guía paso a paso de esta sección', 'Open step-by-step guide for this section')}
       >
-        <span className="w-2 h-2 rounded-full bg-[#78D600]" />
+        <span className="w-2 h-2 rounded-full bg-[#63CF00]" />
         <HelpCircle size={16} className="text-white shrink-0" />
         <span>{t('¿Cómo usar esta sección?', 'How to use this section?')}</span>
       </button>

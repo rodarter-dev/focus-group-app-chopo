@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   generateMarketingBrief,
   generateMarketingCampaignAssets,
@@ -6,14 +6,17 @@ import {
   fetchUseCases,
   saveUseCases,
   fetchConfigVersions,
-  restoreConfigVersion
+  restoreConfigVersion,
+  fetchBrandManual
 } from '../services/geminiService';
 import { brandConfig } from '../config';
-import { Send, Loader2, Globe, Target, Calendar, ShieldCheck, Zap, ArrowLeft, Search, Mail, Youtube, Share2, MessageCircle, ThumbsUp, Sparkles, Heart, FileText, Users, X, ListChecks, Award, Clock, Settings, RotateCcw, Plus, Edit2, Trash2, CheckCircle2, History, Eye, Upload, Image as ImageIcon, ChevronDown, ChevronUp, LayoutTemplate, Layers } from 'lucide-react';
+import { Send, Loader2, Globe, Target, Calendar, ShieldCheck, Zap, ArrowLeft, Search, Mail, Youtube, Share2, MessageCircle, ThumbsUp, Sparkles, Heart, FileText, Users, X, ListChecks, Award, Clock, Settings, RotateCcw, Plus, Edit2, Trash2, CheckCircle2, History, Eye, Upload, Image as ImageIcon, ChevronDown, ChevronUp, LayoutTemplate, Layers, Download, Printer, Megaphone, Store } from 'lucide-react';
 import {
   AppMode,
   BrandAudienceSegmentKey,
   BrandChannelKey,
+  BrandChannelRule,
+  BrandManualConfig,
   ClinicalUseCase,
   ConfigVersionSnapshot,
   FunnelStage,
@@ -26,8 +29,17 @@ import {
   SEGMENT_KEY_TO_TRACK,
   TRACK_TO_SEGMENT_KEY,
   buildBrandSlices,
+  getSubformatsForChannel,
   resolveSegmentKey
 } from '../services/brandManualUtils';
+import {
+  BriefCreativeAssetSnapshot,
+  BriefExecutiveReportPayload,
+  buildBriefExecutiveReportHtml,
+  buildSafeReportFilename,
+  downloadHtmlReport,
+  openPrintableReport
+} from '../services/reportExporter';
 
 interface MarketingBriefProps {
   setMode?: (mode: AppMode) => void;
@@ -77,9 +89,90 @@ const V4_CHANNELS: Array<{
   { key: 'pdv_sucursal', label: 'PDV Sucursal', shortDesc: 'Póster, folleto, lona y regional' }
 ];
 
-const getChannelDisplayLabel = (channelKey?: string): string => {
-  const found = V4_CHANNELS.find((c) => c.key === channelKey);
-  return found ? found.label : (channelKey || 'Redes Sociales');
+const DEFAULT_SEED_CHANNEL_LABELS: Record<string, string> = {
+  social_media: 'Redes Sociales (Feed 1:1, Vertical 4:5, Carruseles, Historias y Reels/TikTok 9:16)',
+  mailing_ecommerce: 'Mailings (Email Marketing) y E-commerce',
+  web: 'Sitio Web y Banners Digitales (chopo.com.mx)',
+  pdv_sucursal: 'Punto de Venta en Sucursal — PDV (Pósters, Folletos, Lonas Exteriores y Regionales)'
+};
+
+const BUILT_IN_CHANNEL_KEY_SET = new Set<string>(V4_CHANNELS.map((c) => c.key));
+
+const getBrandManualChannelMap = (
+  manual: BrandManualConfig | null | undefined
+): Record<string, BrandChannelRule> => {
+  const rawChannels = manual?.channels as
+    | { items?: Record<string, BrandChannelRule> }
+    | Record<string, BrandChannelRule>
+    | undefined;
+  if (!rawChannels || typeof rawChannels !== 'object') return {};
+  if ('items' in rawChannels && rawChannels.items && typeof rawChannels.items === 'object') {
+    return rawChannels.items as Record<string, BrandChannelRule>;
+  }
+  const flat: Record<string, BrandChannelRule> = {};
+  Object.entries(rawChannels).forEach(([k, v]) => {
+    if (v && typeof v === 'object' && ('label' in v || 'supportedFormats' in v)) {
+      flat[k] = v as BrandChannelRule;
+    }
+  });
+  return flat;
+};
+
+const getChannelDisplayLabel = (
+  channelKey?: string,
+  manual?: BrandManualConfig | null
+): string => {
+  const key = String(channelKey || '').trim();
+  const builtIn = V4_CHANNELS.find((c) => c.key === key);
+  const manualChannel = key ? getBrandManualChannelMap(manual)[key] : undefined;
+  const rawManualLabel = manualChannel?.label?.trim();
+
+  if (rawManualLabel) {
+    if (builtIn && rawManualLabel === DEFAULT_SEED_CHANNEL_LABELS[key]) {
+      return builtIn.label;
+    }
+    return rawManualLabel;
+  }
+  if (builtIn) return builtIn.label;
+  return key || 'Redes Sociales';
+};
+
+const resolveSubformatsForChannel = (
+  chKey: string,
+  manual: BrandManualConfig | null
+): string[] => {
+  const manualChannel = getBrandManualChannelMap(manual)[chKey];
+  if (Array.isArray(manualChannel?.supportedFormats)) {
+    const trimmed = Array.from(
+      new Set(
+        manualChannel.supportedFormats
+          .map((fmt) => String(fmt || '').trim())
+          .filter(Boolean)
+      )
+    );
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  const fallback = getSubformatsForChannel(chKey, manual);
+  return Array.isArray(fallback) && fallback.length > 0
+    ? fallback
+    : ['Formato Estándar'];
+};
+
+const renderChannelIcon = (chKey: string, className: string) => {
+  switch (chKey) {
+    case 'social_media':
+      return <Share2 size={14} className={className} />;
+    case 'mailing_ecommerce':
+      return <Mail size={14} className={className} />;
+    case 'web':
+      return <Globe size={14} className={className} />;
+    case 'pdv_sucursal':
+      return <Store size={14} className={className} />;
+    default:
+      return <Megaphone size={14} className={className} />;
+  }
 };
 
 const getSegmentDisplayLabel = (segmentKey?: string): string => {
@@ -210,6 +303,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
   const [funnelStage, setFunnelStage] = useState<FunnelStage>('performance');
   const [channelKey, setChannelKey] = useState<BrandChannelKey>('social_media');
   const [channelSubformat, setChannelSubformat] = useState<string>(CHANNEL_SUBFORMATS.social_media[0]);
+  const [activeBrandManual, setActiveBrandManual] = useState<BrandManualConfig | null>(null);
   const [brief, setBrief] = useState<MarketingBriefData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1);
@@ -223,10 +317,239 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
   const [selectedAudienceModal, setSelectedAudienceModal] = useState<any | null>(null);
   const [isUploadingEmailImage, setIsUploadingEmailImage] = useState<boolean>(false);
   const emailImageInputRef = useRef<HTMLInputElement>(null);
+  const [exportFeedback, setExportFeedback] = useState<string>('');
+  const exportFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedUseCase = useCases.find(u => u.id === selectedUseCaseId) || useCases.find(u => u.isDefault) || useCases[0] || DEFAULT_FALLBACK_USE_CASES[0];
   const currentAssets = campaignAssetsMap && selectedAudience ? campaignAssetsMap[selectedAudience] : null;
   const isBusy = isLoading || isAssetLoading || isSavingUseCase || isUploadingEmailImage;
+
+  const availableChannels = useMemo<Array<{ key: BrandChannelKey; label: string; shortDesc: string; isCustom: boolean }>>(() => {
+    const channelMap = getBrandManualChannelMap(activeBrandManual);
+    const builtIns = V4_CHANNELS.map((ch) => ({
+      key: ch.key as BrandChannelKey,
+      label: getChannelDisplayLabel(ch.key, activeBrandManual),
+      shortDesc: ch.shortDesc,
+      isCustom: false
+    }));
+
+    const customChannels = Object.entries(channelMap)
+      .filter(([key]) => !BUILT_IN_CHANNEL_KEY_SET.has(key))
+      .map(([key, rule]) => {
+        const cleanFormats = Array.isArray(rule?.supportedFormats)
+          ? rule.supportedFormats.map((f) => String(f || '').trim()).filter(Boolean)
+          : [];
+        const shortDesc =
+          cleanFormats.length > 0
+            ? cleanFormats.slice(0, 2).join(' · ') + (cleanFormats.length > 2 ? ` +${cleanFormats.length - 2}` : '')
+            : 'Canal personalizado del Manual V4';
+        return {
+          key: key as BrandChannelKey,
+          label: getChannelDisplayLabel(key, activeBrandManual),
+          shortDesc,
+          isCustom: true
+        };
+      });
+
+    return [...builtIns, ...customChannels];
+  }, [activeBrandManual]);
+
+  const availableSubformats = useMemo<string[]>(() => {
+    return resolveSubformatsForChannel(channelKey, activeBrandManual);
+  }, [channelKey, activeBrandManual]);
+
+  useEffect(() => {
+    if (availableSubformats.length === 0) {
+      if (channelSubformat !== '') setChannelSubformat('');
+      return;
+    }
+    if (!availableSubformats.includes(channelSubformat)) {
+      setChannelSubformat(availableSubformats[0] || '');
+    }
+  }, [availableSubformats, channelSubformat]);
+
+  useEffect(() => {
+    return () => {
+      if (exportFeedbackTimerRef.current) {
+        clearTimeout(exportFeedbackTimerRef.current);
+      }
+    };
+  }, []);
+
+  const showExportFeedback = (message: string) => {
+    setExportFeedback(message);
+    if (exportFeedbackTimerRef.current) {
+      clearTimeout(exportFeedbackTimerRef.current);
+    }
+    exportFeedbackTimerRef.current = setTimeout(() => {
+      setExportFeedback('');
+    }, 4500);
+  };
+
+  const handleExportBriefReport = (format: 'pdf' | 'html') => {
+    if (!brief || isBusy) return;
+
+    const matchedUseCase =
+      useCases.find(
+        (u) =>
+          u.studyName.toLowerCase() === (brief.studyName || brief.productName || '').toLowerCase()
+      ) || selectedUseCase;
+
+    const activeSegmentKey = brief.audienceSegment || audienceSegment;
+    const activeFunnelStage = brief.funnelStage || funnelStage;
+    const activeChannelKey = brief.channelKey || channelKey;
+    const activeSubformat = brief.channelSubformat || channelSubformat;
+
+    const creativeSnapshots: BriefCreativeAssetSnapshot[] = [];
+    if (campaignAssetsMap && Object.keys(campaignAssetsMap).length > 0) {
+      const orderedKeys = Object.keys(campaignAssetsMap).sort((a, b) =>
+        a === selectedAudience ? -1 : b === selectedAudience ? 1 : 0
+      );
+      orderedKeys.forEach((audKey) => {
+        const asset = campaignAssetsMap[audKey];
+        if (!asset) return;
+        const cleanEmailBody = (asset.email?.body || '')
+          .replace(/\s*Incluye pie legal:[\s\S]*$/i, '')
+          .trim();
+        creativeSnapshots.push({
+          audienceLabel: formatDisplayPersonaName(audKey),
+          imageUrl: asset.image || null,
+          headline:
+            asset.email?.bannerHeadline ||
+            asset.search?.headline ||
+            brief.messaging?.primaryHook?.es ||
+            brief.productName,
+          subheadline: asset.email?.bannerSubheadline || brief.slogan || 'Chopo, toda una vida cuidando la vida.',
+          bodyCopy: brief.channelAdaptedCopy || asset.social?.caption || asset.search?.description || '',
+          ctaText: asset.email?.ctaText || 'Agenda tu estudio en chopo.com.mx',
+          legalFooter:
+            asset.email?.legalFooter ||
+            (matchedUseCase?.cofeprisPermitB2C
+              ? `Consulte a su médico. ${matchedUseCase.cofeprisPermitB2C}.`
+              : 'Consulte a su médico.'),
+          socialCaption: asset.social?.caption || '',
+          socialHashtags: Array.isArray(asset.social?.hashtags) ? asset.social.hashtags : [],
+          searchHeadline: asset.search?.headline || '',
+          searchDescription: asset.search?.description || '',
+          searchUrl: asset.search?.url || 'chopo.com.mx',
+          emailSubject: asset.email?.subject || '',
+          emailPreheader: asset.email?.preheader || '',
+          emailBannerHeadline: asset.email?.bannerHeadline || '',
+          emailBannerSubheadline: asset.email?.bannerSubheadline || '',
+          emailBody: cleanEmailBody,
+          emailCtaText: asset.email?.ctaText || '',
+          emailImageUrl: asset.email?.image || null,
+          emailLegalFooter: asset.email?.legalFooter || '',
+          youtubeTitle: asset.youtube?.title || '',
+          youtubeScript: asset.youtube?.script || ''
+        });
+      });
+    } else if (brief.campaignAssets) {
+      const asset = brief.campaignAssets;
+      creativeSnapshots.push({
+        imageUrl: asset.image || null,
+        headline: asset.email?.bannerHeadline || asset.search?.headline || brief.productName,
+        subheadline: asset.email?.bannerSubheadline || brief.slogan || 'Chopo, toda una vida cuidando la vida.',
+        bodyCopy: brief.channelAdaptedCopy || asset.social?.caption || asset.search?.description || '',
+        ctaText: asset.email?.ctaText || 'Agenda tu estudio en chopo.com.mx',
+        legalFooter: asset.email?.legalFooter || '',
+        socialCaption: asset.social?.caption || '',
+        socialHashtags: Array.isArray(asset.social?.hashtags) ? asset.social.hashtags : [],
+        searchHeadline: asset.search?.headline || '',
+        searchDescription: asset.search?.description || '',
+        searchUrl: asset.search?.url || 'chopo.com.mx',
+        emailSubject: asset.email?.subject || '',
+        emailPreheader: asset.email?.preheader || '',
+        emailBody: (asset.email?.body || '').replace(/\s*Incluye pie legal:[\s\S]*$/i, '').trim(),
+        emailCtaText: asset.email?.ctaText || '',
+        emailImageUrl: asset.email?.image || null,
+        youtubeTitle: asset.youtube?.title || '',
+        youtubeScript: asset.youtube?.script || ''
+      });
+    }
+
+    const supportingMessages: Array<{ title: string; content: string }> = [];
+    if (brief.messaging?.supporting1?.title) {
+      supportingMessages.push({
+        title: brief.messaging.supporting1.title,
+        content: brief.messaging.supporting1.content?.es || brief.messaging.supporting1.content?.en || ''
+      });
+    }
+    if (brief.messaging?.supporting2?.title) {
+      supportingMessages.push({
+        title: brief.messaging.supporting2.title,
+        content: brief.messaging.supporting2.content?.es || brief.messaging.supporting2.content?.en || ''
+      });
+    }
+
+    const payload: BriefExecutiveReportPayload = {
+      title: brief.title || brief.productName || 'Brief Creativo Chopo',
+      generatedAt: brief.timestamp || new Date(),
+      studyName: brief.studyName || matchedUseCase?.studyName || brief.productName,
+      productName: brief.productName,
+      segmentKey: activeSegmentKey,
+      funnelStage: activeFunnelStage,
+      funnelLabel: getFunnelDisplayLabel(activeFunnelStage),
+      channelKey: activeChannelKey,
+      channelLabel: getChannelDisplayLabel(activeChannelKey, activeBrandManual),
+      channelSubformat: activeSubformat,
+      slogan: brief.slogan || 'Chopo, toda una vida cuidando la vida.',
+      campaignGoal: brief.campaignGoal,
+      objectiveGoal: brief.objective?.goal?.es || brief.objective?.goal?.en || brief.campaignGoal,
+      targetKpi: brief.objective?.targetKpi?.es || brief.objective?.targetKpi?.en,
+      valuePropMain: brief.valueProp?.main?.es || brief.valueProp?.main?.en,
+      competitiveEdge: brief.valueProp?.againstCompetitors,
+      marketContext: brief.valueProp?.addressingTrends,
+      primaryHook: brief.messaging?.primaryHook?.es || brief.messaging?.primaryHook?.en,
+      supportingMessages,
+      channelAdaptedCopy: brief.channelAdaptedCopy,
+      complianceChecklist: brief.preFlightComplianceCheck,
+      assumptions: brief.assumptions,
+      audiences: (brief.audiences || []).map((aud) => ({
+        name: formatDisplayPersonaName(aud.name),
+        sourceSegment: aud.sourceSegment,
+        ageRange: aud.ageRange,
+        painPoints: aud.painPoints || [],
+        drivers: aud.drivers || [],
+        messagingAngle: aud.messagingAngle?.es || aud.messagingAngle?.en || ''
+      })),
+      kpis: brief.kpis || [],
+      channels: brief.channels || [],
+      phases: brief.phases || [],
+      clinicalContext: matchedUseCase
+        ? {
+            studyName: matchedUseCase.studyName,
+            category: cleanCategoryLabel(matchedUseCase.category),
+            includedStudies: matchedUseCase.includedStudies || [],
+            fastingRequirement: matchedUseCase.fastingRequirement,
+            visualRealismRules: cleanRealismRules(matchedUseCase.visualRealismRules),
+            defaultPromoText: matchedUseCase.defaultPromoText,
+            cofeprisPermitB2C: matchedUseCase.cofeprisPermitB2C,
+            cofeprisPermitB2B: matchedUseCase.cofeprisPermitB2B,
+            responsableSanitario: matchedUseCase.responsableSanitario
+          }
+        : undefined,
+      creativeAssets: creativeSnapshots
+    };
+
+    const html = buildBriefExecutiveReportHtml(payload);
+    const filename = buildSafeReportFilename(
+      'reporte_brief_chopo',
+      brief.studyName || brief.productName || brief.title
+    );
+
+    if (format === 'html') {
+      downloadHtmlReport(html, filename);
+      showExportFeedback('Reporte HTML descargado en tu equipo.');
+    } else {
+      const outcome = openPrintableReport(html, filename);
+      showExportFeedback(
+        outcome === 'print_window'
+          ? 'Vista de impresión lista para guardar como PDF.'
+          : 'Reporte HTML descargado en tu equipo.'
+      );
+    }
+  };
 
   const getAudienceSegmentCode = (aud: any): 'B2C' | 'B2D' | 'B2B' => {
     if (!aud) return 'B2C';
@@ -269,8 +592,8 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
 
   const handleChannelChange = (newChannelKey: BrandChannelKey) => {
     setChannelKey(newChannelKey);
-    const subformats = CHANNEL_SUBFORMATS[newChannelKey] || ['Formato Estándar'];
-    setChannelSubformat(subformats[0]);
+    const subformats = resolveSubformatsForChannel(newChannelKey, activeBrandManual);
+    setChannelSubformat(subformats[0] || '');
   };
 
   const toggleAudienceSelection = (audName: string) => {
@@ -451,10 +774,10 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
   };
 
   const resolveDefaultAssetTab = (chKey?: string): 'v4_modular' | 'social' | 'search' | 'email' | 'youtube' | 'website' => {
-    if (chKey === 'pdv_sucursal') return 'v4_modular';
+    if (!chKey || chKey === 'social_media') return 'social';
     if (chKey === 'mailing_ecommerce') return 'email';
     if (chKey === 'web') return 'website';
-    return 'social';
+    return 'v4_modular';
   };
 
   const handleGenerate = async () => {
@@ -593,7 +916,8 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
         if (data.funnelStage) setFunnelStage(data.funnelStage);
         if (data.channelKey) {
           setChannelKey(data.channelKey);
-          setChannelSubformat(data.channelSubformat || (CHANNEL_SUBFORMATS[data.channelKey] || ['Formato Estándar'])[0]);
+          const subformats = resolveSubformatsForChannel(data.channelKey, activeBrandManual);
+          setChannelSubformat(data.channelSubformat || subformats[0] || '');
         }
         if (data.campaignAssetsMap) {
           setCampaignAssetsMap(data.campaignAssetsMap);
@@ -707,8 +1031,23 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
         console.warn("Could not load clinical use cases from backend, using fallback seed:", err);
       }
     };
+    let isMounted = true;
+    const loadActiveBrandManual = async () => {
+      try {
+        const manual = await fetchBrandManual(true);
+        if (isMounted && manual) {
+          setActiveBrandManual(manual);
+        }
+      } catch (err) {
+        console.warn("Could not load Brand Manual V4, using default channel configuration:", err);
+      }
+    };
     fetchAudiences();
     loadClinicalUseCases();
+    loadActiveBrandManual();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -891,23 +1230,32 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                     <label className="block text-xs font-bold text-[#004699] uppercase tracking-wider">
                       {t('3. Canal Principal y Subformato')}
                     </label>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {V4_CHANNELS.map((ch) => {
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-60 overflow-y-auto pr-0.5">
+                      {availableChannels.map((ch, idx) => {
                         const isActive = channelKey === ch.key;
+                        const spanFull = availableChannels.length % 2 === 1 && idx === availableChannels.length - 1;
                         return (
                           <button
                             key={ch.key}
                             type="button"
                             disabled={isBusy}
                             onClick={() => handleChannelChange(ch.key)}
-                            className={`px-2.5 py-2 rounded-lg text-left border transition-all ${
+                            className={`px-2.5 py-2 rounded-lg text-left border transition-all min-w-0 ${
+                              spanFull ? 'sm:col-span-2' : ''
+                            } ${
                               isActive
                                 ? 'bg-[#005FFC] text-white border-[#005FFC] shadow-sm'
                                 : 'bg-[#F8FAFC] hover:bg-[#EFF9FE] text-[#004699] border-slate-200'
                             }`}
                           >
-                            <div className="text-xs font-bold leading-tight">{ch.label}</div>
-                            <div className={`text-[10px] mt-0.5 leading-tight ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {renderChannelIcon(
+                                ch.key,
+                                `shrink-0 ${isActive ? 'text-white' : 'text-[#005FFC]'}`
+                              )}
+                              <span className="text-xs font-bold leading-tight truncate">{ch.label}</span>
+                            </div>
+                            <div className={`text-[10px] mt-0.5 leading-tight line-clamp-2 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
                               {ch.shortDesc}
                             </div>
                           </button>
@@ -926,7 +1274,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                       onChange={(e) => setChannelSubformat(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl border border-[#BDD4F2] bg-[#F8FAFC] focus:bg-white text-xs font-bold text-[#004699] focus:outline-none focus:ring-2 focus:ring-[#005FFC]"
                     >
-                      {(CHANNEL_SUBFORMATS[channelKey] || ['Formato Estándar']).map((sub) => (
+                      {(availableSubformats.length > 0 ? availableSubformats : ['Formato Estándar']).map((sub) => (
                         <option key={sub} value={sub}>
                           {sub}
                         </option>
@@ -1302,11 +1650,41 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
           </div>
 
           <div className="content-card overflow-hidden p-0">
-            <div className="p-6 flex justify-between items-center border-b border-slate-100">
-              <div>
+            <div className="p-6 flex flex-wrap justify-between items-start gap-4 border-b border-slate-100">
+              <div className="min-w-0 flex-1">
                 <h3 className="text-2xl font-bold text-heading">{brief.title}</h3>
                 <p className="text-subtext">{t('Fecha:', 'Timestamp:')} {brief.timestamp}</p>
                 <p className="text-subtext mt-2 text-sm">{t('Objetivo de Campaña:', 'Campaign Goal:')} {brief.campaignGoal}</p>
+              </div>
+              <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => handleExportBriefReport('pdf')}
+                    title="Abrir vista ejecutiva lista para imprimir o guardar como PDF"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#004699] hover:bg-[#003575] text-white text-xs font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Printer size={15} />
+                    <span>Exportar Reporte (PDF)</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => handleExportBriefReport('html')}
+                    title="Descargar archivo HTML autónomo del reporte ejecutivo"
+                    className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#EFF9FE] hover:bg-[#BDD4F2]/60 text-[#004699] border border-[#BDD4F2] text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Download size={15} />
+                    <span>Descargar HTML</span>
+                  </button>
+                </div>
+                {exportFeedback && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold">
+                    <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                    <span>{exportFeedback}</span>
+                  </span>
+                )}
               </div>
             </div>
 
@@ -1604,7 +1982,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                           </span>
                           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-[#BDD4F2] text-xs font-medium text-[#004699]">
                             <span className="font-bold text-[#005FFC]">{t('Canal / Subformato:')}</span>
-                            <span>{getChannelDisplayLabel(activeBriefChannel)} · {activeBriefSubformat}</span>
+                            <span>{getChannelDisplayLabel(activeBriefChannel, activeBrandManual)} · {activeBriefSubformat}</span>
                           </span>
                         </div>
                         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-none rounded-br-2xl bg-[#BDD4F2] text-[#004699] text-xs font-bold">
@@ -1620,7 +1998,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                             <div className="flex items-center gap-2">
                               <LayoutTemplate size={16} className="text-[#63CF00]" />
                               <span className="text-xs font-bold uppercase tracking-wider">
-                                {t('Pieza Adaptada al Canal Seleccionado')} — {getChannelDisplayLabel(activeBriefChannel)} ({activeBriefSubformat})
+                                {t('Pieza Adaptada al Canal Seleccionado')} — {getChannelDisplayLabel(activeBriefChannel, activeBrandManual)} ({activeBriefSubformat})
                               </span>
                             </div>
                             <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-[#F24360] text-white">
@@ -1790,7 +2168,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                                     {t('Precio especial en línea')}
                                   </span>
                                   <span className="text-[11px] font-medium uppercase tracking-wider text-[#004699]/80">
-                                    {getChannelDisplayLabel(v4Channel)} • {getFunnelDisplayLabel(v4Funnel)}
+                                    {getChannelDisplayLabel(v4Channel, activeBrandManual)} • {getFunnelDisplayLabel(v4Funnel)}
                                   </span>
                                 </div>
 
@@ -1831,7 +2209,7 @@ export const MarketingBrief: React.FC<MarketingBriefProps> = ({ setMode }) => {
                                 <div className="pt-3 border-t border-[#004699]/20 space-y-1">
                                   {!brief.channelAdaptedCopy && (
                                     <p className="text-[11px] font-medium text-[#004699]">
-                                      {buildBrandSlices(null, {
+                                      {buildBrandSlices(activeBrandManual, {
                                         audienceSegment: brief.audienceSegment || audienceSegment,
                                         funnelStage: v4Funnel,
                                         channelKey: v4Channel

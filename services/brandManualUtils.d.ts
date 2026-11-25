@@ -7,13 +7,22 @@ import {
   FunnelStage
 } from '../types';
 
+export interface BrandChannelOption {
+  id: string;
+  label: string;
+  supportedFormats: string[];
+  isBuiltIn: boolean;
+}
+
 export declare const TRACK_TO_SEGMENT_KEY: Record<AudienceTrack, BrandAudienceSegmentKey>;
 export declare const SEGMENT_KEY_TO_TRACK: Record<BrandAudienceSegmentKey, AudienceTrack>;
 export declare const CHANNEL_SUBFORMATS: Record<string, string[]>;
+export declare const BUILT_IN_CHANNEL_ORDER: readonly string[];
 
 export declare function resolveSegmentKey(segmentOrTrack?: string): BrandAudienceSegmentKey;
 export declare function resolveTrackFromSegment(segmentOrTrack?: string): AudienceTrack;
 export declare function getSubformatsForChannel(channelKey: string, manual?: BrandManualConfig | null): string[];
+export declare function getChannelOptionsFromManual(manual?: BrandManualConfig | null): BrandChannelOption[];
 
 export declare function buildBrandSlices(
   manual: BrandManualConfig | null | undefined,

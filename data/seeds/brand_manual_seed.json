@@ -134,10 +134,10 @@
     },
     "contactTouchpointsOrder": {
       "strictOrder": [
-        "1. App Chopo",
-        "2. Página web (chopo.com.mx)",
-        "3. WhatsApp (55 6481 1373)",
-        "4. Teléfonos (800 00 24676)"
+        "App Chopo",
+        "Página web (chopo.com.mx)",
+        "WhatsApp (55 6481 1373)",
+        "Teléfonos (800 00 24676)"
       ],
       "rule": "Siempre que una pieza incluya puntos de contacto, deben aparecer estrictamente en este orden jerárquico: primero App, segundo Página web, tercero WhatsApp y cuarto Teléfonos (salvo Historias de IG/FB, las cuales no llevan puntos de contacto)."
     },
@@ -153,7 +153,7 @@
     "sourcePages": "Págs. 42–44, 97–98",
     "generalPhilosophy": "Las fotografías deben conectar emocionalmente mostrando que cuidamos personas reales. Retratar la realidad mexicana/latina en tez de piel y momentos cotidianos, con diversidad de edades y género, proyectando siempre tranquilidad, alivio y calidez.",
     "colorTemperatureRule": "Homogeneidad en tonos cálidos: blancos cremosos e iluminación natural de día. Incluso en escenas clínicas, consultorios o equipos tecnológicos de gabinete, la luz debe sentirse cálida y acogedora (nunca fría, azulada, oscura ni estéril de hospital sombrío).",
-    "cleanBaseImageRuleForAI": "Al generar fotografías base con IA, producir SIEMPRE fotografía pura y limpia SIN texto incrustado, SIN logotipos, SIN círculos de descuento y SIN dibujar la línea basal verde (esos elementos vectoriales se superponen en diseño o vista previa). Dejar aire visual limpio para titulares/cajas modulares y mantener rostros, ojos y transductores médicos alejados de los bordes de recorte.",
+    "cleanBaseImageRuleForAI": "Al generar fotografías base, producir siempre una fotografía limpia sin textos, logos, círculos de descuento ni elementos gráficos o línea basal verde incrustados; la diagramación y los elementos de marca se integran posteriormente en diseño o vista previa. Dejar aire visual limpio para titulares y cajas modulares, y mantener rostros, ojos y transductores médicos alejados de los bordes de recorte.",
     "focusGroupWarmthHint": "Evalúa si la imagen transmite calidez, tranquilidad, modernidad digital y cercanía auténtica con familias y médicos en México, o si se siente fría, falsa o ajena.",
     "dos": [
       "Personas reales con fenotipo mexicano o latino auténtico.",
@@ -203,7 +203,7 @@
         "backgroundName": "Azul marino",
         "allowedForegrounds": ["#63CF00", "#98BAF4", "#BDD4F2", "#FFFFFF"],
         "forbiddenForegrounds": ["#005FFC"],
-        "notes": "Excelente legibilidad con texto blanco o azul claro."
+        "notes": "Excelente legibilidad con texto blanco o azul claro. Excepción en Folletos PDV impresos (Regla de Folletos PDV): evitar verde (#63CF00) sobre azul marino."
       },
       {
         "backgroundHex": "#005FFC",
@@ -234,32 +234,53 @@
         "notes": "En cajas modulares #BDD4F2, el texto y el logotipo deben ir en azul oscuro/corporativo, NUNCA en blanco ni en verde."
       },
       {
+        "backgroundHex": "#81A4EE",
+        "backgroundName": "Azul vibrante modular",
+        "allowedForegrounds": ["#004699", "#FFFFFF"],
+        "forbiddenForegrounds": ["#63CF00", "#BDD4F2", "#EFF9FE"],
+        "notes": "Usar Azul marino (#004699) para textos principales; Blanco (#FFFFFF) reservado para títulos grandes o íconos. Prohibido verde o azules claros sobre este fondo."
+      },
+      {
         "backgroundHex": "#EFF9FE",
         "backgroundName": "Hielo / Azul muy pálido",
         "allowedForegrounds": ["#004699", "#005FFC", "#63CF00", "#98BAF4"],
         "forbiddenForegrounds": ["#BDD4F2"],
-        "notes": "Contraste limpio sobre fondo claro."
+        "notes": "Contraste limpio sobre fondo claro usando Azul marino (#004699) o Azul brillante (#005FFC). Verde (#63CF00) y Azul claro 1 (#98BAF4) se reservan para acentos, íconos y Línea Basal (no usar en textos de cuerpo pequeños por contraste)."
       },
       {
         "backgroundHex": "#F24360",
-        "backgroundName": "Rosa Preciadores (y Rojo #E20613)",
+        "backgroundName": "Rosa Promocional / Preciador",
         "allowedForegrounds": ["#FFFFFF"],
         "forbiddenForegrounds": ["#004699", "#005FFC", "#63CF00", "#98BAF4", "#BDD4F2"],
-        "notes": "Sobre preciadores rosas (#F24360) o rojos (#E20613) ÚNICAMENTE se permite texto en Blanco (#FFFFFF)."
+        "notes": "Sobre preciadores y bloques promocionales en Rosa (#F24360) únicamente se permite texto e íconos en Blanco (#FFFFFF)."
+      },
+      {
+        "backgroundHex": "#E20613",
+        "backgroundName": "Rojo Estacional — Buen Fin / Hot Sale",
+        "allowedForegrounds": ["#FFFFFF"],
+        "forbiddenForegrounds": ["#63CF00", "#005FFC", "#F24360", "#D200F4"],
+        "notes": "Exclusivo para campañas estacionales Buen Fin y Hot Sale. Únicamente se permite texto e íconos en Blanco (#FFFFFF)."
+      },
+      {
+        "backgroundHex": "#D200F4",
+        "backgroundName": "Magenta Botones — Exclusivo Mailing / E-commerce",
+        "allowedForegrounds": ["#FFFFFF"],
+        "forbiddenForegrounds": ["#004699", "#63CF00", "#F24360", "#E20613"],
+        "notes": "Exclusivo para botones de acción en mailings y e-commerce. Utilizar únicamente texto blanco (#FFFFFF)."
       },
       {
         "backgroundHex": "#FFFFFF",
         "backgroundName": "Blanco",
         "allowedForegrounds": ["#004699", "#005FFC", "#63CF00", "#98BAF4"],
         "forbiddenForegrounds": ["#BDD4F2", "#EFF9FE"],
-        "notes": "Evitar azules pálidos sin contraste sobre blanco."
+        "notes": "Usar Azul marino (#004699) o Azul brillante (#005FFC) para lectura principal. Verde (#63CF00) y Azul claro 1 (#98BAF4) se reservan para acentos, íconos y Línea Basal (no usar en textos de cuerpo pequeños por contraste); evitar azules pálidos sin contraste sobre blanco."
       }
     ]
   },
   "graphic_design_and_layout": {
     "uiTabTitle": "4. Diseño Gráfico, Logo y Línea Basal",
     "sourcePages": "Págs. 11–21, 32–41, 45–71",
-    "usageNote": "Estas reglas geométricas y gráficas se inyectan exclusivamente en el Agente Evaluador (cuando audita artes diseñados de agencia) y guían las plantillas CSS de vista previa de la aplicación. NO se envían al generador de fotografías base.",
+    "usageNote": "Estas reglas geométricas y gráficas se inyectan exclusivamente en el Agente Evaluador (cuando audita artes diseñados de agencia) y guían las vistas previas de la plataforma y las auditorías automáticas. NO se envían al generador de fotografías base.",
     "logoRules": {
       "mandatoryDescriptor": "El logotipo de campaña SIEMPRE debe incluir debajo el descriptivo 'Análisis clínicos y estudios especializados' (incluyendo mercados de entrada o no maduros).",
       "contrastOnPhotos": "En versión blanca sobre foto debe apoyarse con un degradado oscuro sutil detrás. En versión azul sobre zonas claras se puede aclarar ligeramente la zona de la foto para ganar lectura, pero NUNCA llegar a blanco puro al 100%.",
@@ -276,7 +297,7 @@
         "MEDIUM": "Cuerpos de texto y Call to Action inferior.",
         "LIGHT": "Textos legales y permisos al pie."
       },
-      "visionAuditGuidance": "Al evaluar imágenes rasterizadas (JPG/PNG), auditar que la tipografía sea sans-serif geométrica/limpia (rechazar fuentes serif, manuscritas o decorativas) y que respete estrictamente la jerarquía visual de pesos (título en peso grueso Black, subtexto/slogan en Heavy, cuerpo en Medium y legales pequeños en Light), sin intentar adivinar diferencias microscópicas entre familias sans-serif casi idénticas."
+      "visionAuditGuidance": "Al evaluar artes finales en imagen (JPG/PNG), auditar que la tipografía sea sans-serif geométrica/limpia (rechazar fuentes serif, manuscritas o decorativas) y que respete estrictamente la jerarquía visual de pesos (título en peso grueso Black, subtexto/slogan en Heavy, cuerpo en Medium y legales pequeños en Light), sin intentar adivinar diferencias microscópicas entre familias sans-serif casi idénticas."
     },
     "lineaBasalRules": {
       "description": "Versión estilizada de la onda de pulso verde (#63CF00) del logotipo de Chopo que representa acompañamiento humano.",
@@ -327,7 +348,7 @@
         "id": "social_media",
         "label": "Redes Sociales (Feed 1:1, Vertical 4:5, Carruseles, Historias y Reels/TikTok 9:16)",
         "sourcePages": "Págs. 82–95",
-        "supportedFormats": ["1:1 (Feed / Mosaico)", "4:5 (Feed vertical y Carruseles IG)", "9:16 (Historias, Reels y TikTok)"],
+        "supportedFormats": ["Post Fijo 1:1", "Post / Carrusel 4:5", "Historia 9:16", "Reel / TikTok 9:16"],
         "copyRules": "Textos ágiles, escaneables en menos de 3 segundos (35–45 palabras antes del pie legal). Si el contenido requiere más de 3 líneas informativas o listado de estudios, estructurarlo para diseño modular o carrusel 4:5. En Historias (9:16) NO incluir números telefónicos ni tira de puntos de contacto (usar llamado corto o interacción/link). Cero signos de admiración (¡!). Si cita cifras médicas, incluir fuente <= 5 años en APA 7.",
         "photoRules": "Generar encuadre limpio acorde a 1:1, 4:5 o 9:16. En formato vertical 9:16 dejar aire limpio arriba (mínimo 250 px) y abajo (mínimo 350 px) y evitar elementos críticos pegados al margen derecho (100 px de botonera en Reels/TikTok). En carruseles 4:5, la primera lámina siempre debe ser fotográfica y humana.",
         "focusGroupContext": "Imagina que estás haciendo scroll cotidiano en tu celular (Instagram, Facebook, TikTok o LinkedIn) y te aparece esta publicación en tu feed o historias.",
@@ -365,7 +386,7 @@
         "focusGroupContext": "Imagina que entras al sitio web chopo.com.mx desde tu computadora o celular buscando cotizar un estudio y ves este banner principal en la página de inicio.",
         "auditorRules": [
           "Tipografía web oficial: familia Roboto (Regular, Medium, Bold, Black) o Avenir en artes gráficos de banner.",
-          "En carruseles web debe existir coherencia con la campaña umbrella ('Toda una vida cuidando la vida'), incluyendo al menos una cabeza con 'Toda una vida...' sin obligar a repetirla en cada slide.",
+          "En carruseles web debe existir coherencia con la campaña paraguas ('Toda una vida cuidando la vida'), incluyendo al menos una cabeza con 'Toda una vida...' sin obligar a repetirla en cada slide.",
           "La línea basal verde no está obligada a repetirse en cada banner inferior de la página si ya protagoniza el Hero superior.",
           "Tarjetas de estudios destacan el 'Precio en línea' en azul y usan iconografía a 1 solo color alineada al manual."
         ]

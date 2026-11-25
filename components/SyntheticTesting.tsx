@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
     simulateMarketingFocusGroup,
     simulateAcquisitionFocusGroup,
@@ -14,11 +14,12 @@ import {
     saveRubrics,
     fetchConfigVersions,
     restoreConfigVersion,
+    fetchBrandManual,
     DEFAULT_CHOPO_RUBRICS
 } from '../services/geminiService';
 import { brandConfig } from '../config';
-import { AppMode, AudienceTrack, BrandChannelKey, SimulationResult, MarketingBriefData, AcquisitionResult, SavedSimulation, Persona, ABTestResult, FocusGroupRubric, ConfigVersionSnapshot } from '../types';
-import { Users, BarChart2, Save, Download, Play, ShoppingCart, Mail, MessageSquare, Settings, X, ChevronDown, ChevronUp, Sparkles, UserPlus, Zap, Trash2, Edit2, History, MessageCircle, Plus, Info, ShoppingBag, Image, CheckCircle2, XCircle, Loader2, Upload, ClipboardList, RotateCcw, Radio } from 'lucide-react';
+import { AppMode, AudienceTrack, BrandChannelKey, BrandChannelRule, BrandManualConfig, SimulationResult, MarketingBriefData, AcquisitionResult, SavedSimulation, Persona, ABTestResult, FocusGroupRubric, ConfigVersionSnapshot } from '../types';
+import { Users, BarChart2, Save, Download, Printer, Play, ShoppingCart, Mail, MessageSquare, Settings, X, ChevronDown, ChevronUp, Sparkles, UserPlus, Zap, Trash2, Edit2, History, MessageCircle, Plus, Info, ShoppingBag, Image, CheckCircle2, XCircle, Loader2, Upload, ClipboardList, RotateCcw, Radio } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { SyntheticChat } from './SyntheticChat';
 import { SyntheticInterview } from './SyntheticInterview';
@@ -26,6 +27,16 @@ import { SIMULATION_PRODUCTS, STANDARD_AUDIENCES, localizePersonaLabel, getPerso
 import { useCompanyContext } from '../context/CompanyContext';
 import { useLanguage } from '../context/LanguageContext';
 import { resolveSegmentKey } from '../services/brandManualUtils';
+import {
+    FocusGroupExecutiveReportPayload,
+    FocusGroupParticipantOpinion,
+    FocusGroupRubricSummaryItem,
+    FocusGroupVariantItem,
+    buildFocusGroupExecutiveReportHtml,
+    buildSafeReportFilename,
+    downloadHtmlReport,
+    openPrintableReport
+} from '../services/reportExporter';
 
 interface SyntheticTestingProps {
     setMode?: (mode: AppMode) => void;
@@ -40,6 +51,54 @@ const EVALUATED_CHANNEL_OPTIONS: Array<{
     { key: 'web', label: 'Sitio Web' },
     { key: 'pdv_sucursal', label: 'PDV Sucursal' }
 ];
+
+const DEFAULT_SEED_CHANNEL_LABELS: Record<string, string> = {
+    social_media: 'Redes Sociales (Feed 1:1, Vertical 4:5, Carruseles, Historias y Reels/TikTok 9:16)',
+    mailing_ecommerce: 'Mailings (Email Marketing) y E-commerce',
+    web: 'Sitio Web y Banners Digitales (chopo.com.mx)',
+    pdv_sucursal: 'Punto de Venta en Sucursal — PDV (Pósters, Folletos, Lonas Exteriores y Regionales)'
+};
+
+const BUILT_IN_CHANNEL_KEY_SET = new Set<string>(EVALUATED_CHANNEL_OPTIONS.map((c) => c.key));
+
+const getBrandManualChannelMap = (
+    manual: BrandManualConfig | null | undefined
+): Record<string, BrandChannelRule> => {
+    const rawChannels = manual?.channels as
+        | { items?: Record<string, BrandChannelRule> }
+        | Record<string, BrandChannelRule>
+        | undefined;
+    if (!rawChannels || typeof rawChannels !== 'object') return {};
+    if ('items' in rawChannels && rawChannels.items && typeof rawChannels.items === 'object') {
+        return rawChannels.items as Record<string, BrandChannelRule>;
+    }
+    const flat: Record<string, BrandChannelRule> = {};
+    Object.entries(rawChannels).forEach(([k, v]) => {
+        if (v && typeof v === 'object' && ('label' in v || 'supportedFormats' in v)) {
+            flat[k] = v as BrandChannelRule;
+        }
+    });
+    return flat;
+};
+
+const resolveChannelLabelFromManual = (
+    channelKey: string | undefined,
+    manual: BrandManualConfig | null
+): string => {
+    const key = String(channelKey || '').trim();
+    const builtIn = EVALUATED_CHANNEL_OPTIONS.find((c) => c.key === key);
+    const manualChannel = key ? getBrandManualChannelMap(manual)[key] : undefined;
+    const rawManualLabel = manualChannel?.label?.trim();
+
+    if (rawManualLabel) {
+        if (builtIn && rawManualLabel === DEFAULT_SEED_CHANNEL_LABELS[key]) {
+            return builtIn.label;
+        }
+        return rawManualLabel;
+    }
+    if (builtIn) return builtIn.label;
+    return key || 'Redes Sociales';
+};
 
 const inferPersonaTrack = (p: any): AudienceTrack => {
     if (!p) return 'patient';
@@ -102,6 +161,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
     const [personas, setPersonas] = useState<any[]>([]);
     const [allCatalogPersonas, setAllCatalogPersonas] = useState<any[]>(STANDARD_AUDIENCES);
     const [brief, setBrief] = useState<MarketingBriefData | null>(null);
+    const [activeBrandManual, setActiveBrandManual] = useState<BrandManualConfig | null>(null);
     const [selectedChannelKey, setSelectedChannelKey] = useState<BrandChannelKey>('social_media');
     const [activeTab, setActiveTab] = useState<'ACQUISITION' | 'CHAT' | 'EMAIL' | 'BRIEF' | 'PURCHASE' | 'CREATIVE' | 'AB_TEST'>('CHAT');
     const [savedHistory, setSavedHistory] = useState<SavedSimulation[]>([]);
@@ -117,9 +177,31 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
             "Controla tu diabetes a tiempo: resultados de HbA1c el mismo día en tu WhatsApp",
             "Precisión diagnóstica acreditada para el seguimiento clínico de tus pacientes con diabetes",
             "Tu Check-up preventivo completo cerca de ti: agenda en línea con descuento especial",
-            "Prevención que da tranquilidad: estudios de laboratorio clínico certificados por Chopo"
+            "Prevención que da tranquilidad: estudios de laboratorio clínico respaldados por nuestra calidad clínica"
         ];
     });
+
+    const evaluatedChannelOptions = useMemo<Array<{ key: BrandChannelKey; label: string }>>(() => {
+        const channelMap = getBrandManualChannelMap(activeBrandManual);
+        const builtIns = EVALUATED_CHANNEL_OPTIONS.map((ch) => ({
+            key: ch.key as BrandChannelKey,
+            label: resolveChannelLabelFromManual(ch.key, activeBrandManual)
+        }));
+        const customChannels = Object.keys(channelMap)
+            .filter((key) => !BUILT_IN_CHANNEL_KEY_SET.has(key))
+            .map((key) => ({
+                key: key as BrandChannelKey,
+                label: resolveChannelLabelFromManual(key, activeBrandManual)
+            }));
+        const merged = [...builtIns, ...customChannels];
+        if (selectedChannelKey && !merged.some((ch) => ch.key === selectedChannelKey)) {
+            merged.push({
+                key: selectedChannelKey,
+                label: resolveChannelLabelFromManual(selectedChannelKey, activeBrandManual)
+            });
+        }
+        return merged;
+    }, [activeBrandManual, selectedChannelKey]);
     const [newMessage, setNewMessage] = useState("");
     const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
     const [editingMessageText, setEditingMessageText] = useState("");
@@ -157,6 +239,16 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [interviewPersona, setInterviewPersona] = useState<{ persona: Persona; result: any } | null>(null);
     const historyDropdownRef = useRef<HTMLDivElement>(null);
+    const [exportFeedback, setExportFeedback] = useState<string>('');
+    const exportFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (exportFeedbackTimerRef.current) {
+                clearTimeout(exportFeedbackTimerRef.current);
+            }
+        };
+    }, []);
 
     // Close history dropdown when clicking outside
     useEffect(() => {
@@ -435,12 +527,9 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
     const syncStimuliFromBrief = (loadedBrief: MarketingBriefData) => {
         if (!loadedBrief) return;
 
-        // 0. Sync evaluated channel cleanly when Brief includes a V4 channelKey
-        if (
-            loadedBrief.channelKey &&
-            EVALUATED_CHANNEL_OPTIONS.some(c => c.key === loadedBrief.channelKey)
-        ) {
-            setSelectedChannelKey(loadedBrief.channelKey);
+        // 0. Sync evaluated channel cleanly when Brief includes a V4 channelKey (built-in or custom)
+        if (loadedBrief.channelKey && String(loadedBrief.channelKey).trim()) {
+            setSelectedChannelKey(String(loadedBrief.channelKey).trim() as BrandChannelKey);
         }
 
         // 1. Sync Key Marketing Messages (BRIEF tab)
@@ -584,11 +673,8 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
             if (data && data.title) {
                 console.log("Refreshed Brief Data:", data);
                 setBrief(data);
-                if (
-                    data.channelKey &&
-                    EVALUATED_CHANNEL_OPTIONS.some(c => c.key === data.channelKey)
-                ) {
-                    setSelectedChannelKey(data.channelKey);
+                if (data.channelKey && String(data.channelKey).trim()) {
+                    setSelectedChannelKey(String(data.channelKey).trim() as BrandChannelKey);
                 }
                 if (shouldAutoSync(data)) {
                     syncStimuliFromBrief(data);
@@ -610,6 +696,9 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
             console.log("Loaded Brief from Local Storage");
             const parsed = JSON.parse(saved);
             setBrief(parsed);
+            if (parsed?.channelKey && String(parsed.channelKey).trim()) {
+                setSelectedChannelKey(String(parsed.channelKey).trim() as BrandChannelKey);
+            }
             if (shouldAutoSync(parsed)) {
                 syncStimuliFromBrief(parsed);
             }
@@ -617,7 +706,17 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
     };
 
     useEffect(() => {
+        let isMounted = true;
         refreshBriefData();
+
+        // Load active Brand Manual V4 (including custom channels and edited labels)
+        fetchBrandManual(true)
+            .then(manual => {
+                if (isMounted && manual) {
+                    setActiveBrandManual(manual);
+                }
+            })
+            .catch(err => console.warn("Could not load Brand Manual V4 from server, using built-in channels:", err));
 
         // Load Rubrics from Firestore / Seed
         fetchRubrics()
@@ -691,11 +790,15 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
         fetch('/api/load-run/synthetic_focus_group')
             .then(res => res.json())
             .then(data => {
-                if (data && Array.isArray(data)) {
+                if (isMounted && data && Array.isArray(data)) {
                     setSavedHistory(data);
                 }
             })
             .catch(e => console.log("No server history found"));
+
+        return () => {
+            isMounted = false;
+        };
     }, []);
 
     // --- Dynamic Rubrics Management & Rollback ---
@@ -1138,7 +1241,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
         setStatus(t("Simulando promociones y captación de nuevos pacientes...", "Simulating Net-New Acquisition..."));
         try {
             let pool = [...syntheticUsers];
-            const results = await simulateAcquisitionFocusGroup(pool, acquisitionOffers, name, description);
+            const results = await simulateAcquisitionFocusGroup(pool, acquisitionOffers, name, description, selectedChannelKey);
             setAcquisitionResults(results);
 
             // Auto Save
@@ -1203,7 +1306,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
 
             setStatus(t(`Simulando respuestas de ${pool.length} participantes...`, `Simulating ${pool.length} members...`));
             const briefWithChannel = { ...brief, channelKey: selectedChannelKey };
-            const results = await simulateMarketingFocusGroup(pool, briefWithChannel, simulationProducts, emailCampaigns, marketingMessages);
+            const results = await simulateMarketingFocusGroup(pool, briefWithChannel, simulationProducts, emailCampaigns, marketingMessages, selectedChannelKey);
             setMemberResults(results);
 
             // Auto Save
@@ -1374,7 +1477,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                 const targetAudience = brief.audiences?.[0]?.name || "General Audience";
                 const combinedGoal = `Goal: ${brief.campaignGoal}. Persona: ${targetAudience}. Context: ${description}`;
 
-                const generatedAssets = await generateMarketingCampaignAssets(productName, combinedGoal, combinedGoal);
+                const generatedAssets = await generateMarketingCampaignAssets(productName, combinedGoal, combinedGoal, { channelKey: selectedChannelKey });
                 if (!generatedAssets) throw new Error("Failed to generate assets");
 
                 const updatedBrief = { ...brief, campaignAssets: generatedAssets };
@@ -1463,7 +1566,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
             }));
 
             // Simulate A/B Test
-            const results = await simulateABTestFocusGroup(pool, variants.map(v => ({ region: v.region, image: v.image })), name, description);
+            const results = await simulateABTestFocusGroup(pool, variants.map(v => ({ region: v.region, image: v.image })), name, description, selectedChannelKey);
             setAbTestResults(results);
 
             // Auto Save
@@ -1575,6 +1678,670 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
             .slice(0, 5);
     };
     const purchasedStats = getPurchasedStats();
+
+    // --- Executive Report Export Helpers ---
+    const showExportFeedback = (message: string) => {
+        setExportFeedback(message);
+        if (exportFeedbackTimerRef.current) {
+            clearTimeout(exportFeedbackTimerRef.current);
+        }
+        exportFeedbackTimerRef.current = setTimeout(() => {
+            setExportFeedback('');
+        }, 4500);
+    };
+
+    const getEvaluatedChannelLabel = (channelKeyOverride?: string): string => {
+        const targetKey = channelKeyOverride || selectedChannelKey;
+        const resolved = resolveChannelLabelFromManual(targetKey, activeBrandManual);
+        if (resolved && resolved !== targetKey) {
+            return resolved;
+        }
+        const found = evaluatedChannelOptions.find((ch) => ch.key === targetKey);
+        return found ? found.label : String(targetKey || 'Redes Sociales');
+    };
+
+    const resolveParticipantMeta = (personaId?: string, personaName?: string) => {
+        const pool = [...syntheticUsers, ...personas, ...allCatalogPersonas];
+        const matched = pool.find(
+            (u: any) =>
+                (personaId && u.id && (personaId === u.id || personaId.includes(String(u.id)))) ||
+                (personaName && (u.name === personaName || u.personaName === personaName))
+        );
+        const track = inferPersonaTrack(matched || { name: personaName });
+        const segmentLabel =
+            track === 'physician'
+                ? 'Médico B2D'
+                : track === 'enterprise'
+                    ? 'Empresa B2B'
+                    : 'Paciente B2C';
+        const ageVal = matched?.age || matched?.details?.age;
+        const jobVal = matched?.job_title || matched?.details?.job_title || matched?.demographics;
+        const profileParts: string[] = [];
+        if (ageVal) {
+            profileParts.push(typeof ageVal === 'number' ? `${ageVal} años` : String(ageVal));
+        }
+        if (jobVal) {
+            profileParts.push(String(jobVal));
+        }
+        return {
+            segmentLabel,
+            profileDetail: profileParts.join(' · ')
+        };
+    };
+
+    const summarizeSegmentsLabel = (opinions: FocusGroupParticipantOpinion[]): string => {
+        const unique = Array.from(new Set(opinions.map((o) => o.segmentLabel).filter(Boolean))) as string[];
+        if (unique.length === 0) return 'Paciente B2C';
+        if (unique.length === 1) return unique[0];
+        return `Multisegmento (${unique.join(', ')})`;
+    };
+
+    const uniqueCleanStrings = (items: Array<string | undefined | null>, maxItems: number = 5): string[] => {
+        const seen = new Set<string>();
+        const out: string[] = [];
+        for (const raw of items) {
+            const cleaned = String(raw || '').trim();
+            if (!cleaned || /^none$|^ninguna$/i.test(cleaned)) continue;
+            const key = cleaned.toLowerCase();
+            if (!seen.has(key)) {
+                seen.add(key);
+                out.push(cleaned);
+                if (out.length >= maxItems) break;
+            }
+        }
+        return out;
+    };
+
+    const buildFocusGroupPayloadForActiveTab = (): FocusGroupExecutiveReportPayload | null => {
+        const channelLabel = getEvaluatedChannelLabel();
+        const studyName = brief?.productName || brief?.studyName || 'Campaña Laboratorio Médico del Chopo';
+
+        if (activeTab === 'CREATIVE' && displayedCreativeResults.length > 0) {
+            const count = displayedCreativeResults.length;
+            const avgVisual = Math.round(displayedCreativeResults.reduce((a, b) => a + (Number(b.visualAppeal) || 0), 0) / count);
+            const avgBrand = Math.round(displayedCreativeResults.reduce((a, b) => a + (Number(b.brandFit) || 0), 0) / count);
+            const avgConv = Math.round(displayedCreativeResults.reduce((a, b) => a + (Number(b.conversionLikelihood) || 0), 0) / count);
+            const avgStop = Math.round(displayedCreativeResults.reduce((a, b) => a + (Number(b.stoppingPower) || 0), 0) / count);
+            const weightedScores = displayedCreativeResults
+                .map((r) => Number(r.weightedOverallScore))
+                .filter((n) => Number.isFinite(n) && n > 0);
+            const avgOverall =
+                weightedScores.length > 0
+                    ? Math.round(weightedScores.reduce((a, b) => a + b, 0) / weightedScores.length)
+                    : Math.round((avgVisual + avgBrand + avgConv + avgStop) / 4);
+
+            const rubricMap: Record<string, { name: string; weight?: number; total: number; count: number; rationales: string[] }> = {};
+            displayedCreativeResults.forEach((r) => {
+                (r.rubricScores || []).forEach((rs: any) => {
+                    const key = rs.rubricId || rs.rubricKey || rs.name || rs.rubricName;
+                    if (!key) return;
+                    if (!rubricMap[key]) {
+                        const matchedRubric = rubrics.find((rub) => rub.id === rs.rubricId || (rub as any).key === rs.rubricKey);
+                        rubricMap[key] = {
+                            name: rs.name || rs.rubricName || matchedRubric?.name || key,
+                            weight: Number.isFinite(Number(rs.weight)) ? Number(rs.weight) : matchedRubric?.weight,
+                            total: 0,
+                            count: 0,
+                            rationales: []
+                        };
+                    }
+                    rubricMap[key].total += Number(rs.score) || 0;
+                    rubricMap[key].count += 1;
+                    if (rs.rationale && rubricMap[key].rationales.length < 2) {
+                        rubricMap[key].rationales.push(String(rs.rationale).trim());
+                    }
+                });
+            });
+
+            const rubricBreakdown: FocusGroupRubricSummaryItem[] = Object.values(rubricMap).map((item) => ({
+                name: item.name,
+                weight: item.weight,
+                score: Math.round(item.total / (item.count || 1)),
+                rationale: item.rationales[0] || ''
+            }));
+
+            const opinions: FocusGroupParticipantOpinion[] = displayedCreativeResults.map((r) => {
+                const meta = resolveParticipantMeta(r.personaId, r.personaName);
+                const scoreVal = Number.isFinite(Number(r.weightedOverallScore))
+                    ? Math.round(Number(r.weightedOverallScore))
+                    : Math.round(Number(r.conversionLikelihood) || 0);
+                return {
+                    name: formatDisplayPersonaLabel(localizePersonaLabel(r.personaName, 'es')),
+                    segmentLabel: meta.segmentLabel,
+                    profileDetail: meta.profileDetail,
+                    sentiment: r.sentiment,
+                    score: scoreVal,
+                    scoreMax: 100,
+                    opinion: r.feedback || 'Sin comentario textual registrado.',
+                    barriers: r.barriersOrConcerns,
+                    suggestedImprovement: r.suggestedImprovement || r.copyEdit
+                };
+            });
+
+            const sortedRubrics = [...rubricBreakdown].sort((a, b) => b.score - a.score);
+            const strengths = sortedRubrics
+                .filter((rb) => rb.score >= 75)
+                .map((rb) => `${rb.name}: calificación destacada de ${rb.score} sobre 100.`);
+            if (strengths.length === 0 && avgBrand >= 70) {
+                strengths.push(`Sólida afinidad con la marca Chopo (${avgBrand} sobre 100).`);
+            }
+
+            const keyFindings: string[] = [
+                `Calificación general consolidada de ${avgOverall} sobre 100 con ${count} participantes evaluados en ${channelLabel}.`
+            ];
+            if (sortedRubrics.length > 0) {
+                keyFindings.push(`Criterio mejor evaluado: ${sortedRubrics[0].name} (${sortedRubrics[0].score} / 100).`);
+                if (sortedRubrics.length > 1) {
+                    const lowest = sortedRubrics[sortedRubrics.length - 1];
+                    keyFindings.push(`Principal foco de atención: ${lowest.name} (${lowest.score} / 100).`);
+                }
+            }
+
+            const improvements = uniqueCleanStrings(
+                displayedCreativeResults.map((r) => r.barriersOrConcerns),
+                4
+            );
+            const agencyAdjustments = uniqueCleanStrings(
+                displayedCreativeResults.flatMap((r) => [r.suggestedImprovement, r.copyEdit, r.suggestedMessaging]),
+                4
+            );
+
+            return {
+                title: `Evaluación Creativa: ${studyName}`,
+                testMode: 'campaign',
+                studyName,
+                channelKey: selectedChannelKey,
+                channelLabel,
+                segmentLabel: summarizeSegmentsLabel(opinions),
+                evaluatedCount: count,
+                averageScore: avgOverall,
+                averageScoreLabel: 'Calificación Promedio',
+                averageScoreSuffix: ' / 100',
+                extraMetrics: [
+                    { label: 'Diseño y Atractivo Visual', value: `${avgVisual} / 100` },
+                    { label: 'Afinidad con la Marca', value: `${avgBrand} / 100` },
+                    { label: 'Intención de Agendar', value: `${avgConv} / 100` },
+                    { label: 'Impacto Visual y Claridad', value: `${avgStop} / 100` }
+                ],
+                evaluatedMaterial: activeCreativeAssets
+                    ? {
+                        headline:
+                            activeCreativeAssets.search?.headline ||
+                            activeCreativeAssets.email?.bannerHeadline ||
+                            studyName,
+                        subheadline: selectedCreativeAudience
+                            ? formatDisplayPersonaLabel(localizePersonaLabel(selectedCreativeAudience, 'es'))
+                            : undefined,
+                        copy: activeCreativeAssets.social?.caption || activeCreativeAssets.search?.description || '',
+                        imageUrl: activeCreativeAssets.image || null,
+                        ctaText: activeCreativeAssets.email?.ctaText
+                    }
+                    : undefined,
+                rubricBreakdown,
+                strategicSummary: {
+                    keyFindings,
+                    strengths,
+                    improvements,
+                    agencyAdjustments
+                },
+                opinions
+            };
+        }
+
+        if (activeTab === 'AB_TEST' && abTestResults.length > 0) {
+            const count = abTestResults.length;
+            const variantScores: Record<string, { total: number; count: number; votes: number; rationales: string[] }> = {};
+            abTestResults.forEach((r) => {
+                if (r.selectedVariant) {
+                    if (!variantScores[r.selectedVariant]) {
+                        variantScores[r.selectedVariant] = { total: 0, count: 0, votes: 0, rationales: [] };
+                    }
+                    variantScores[r.selectedVariant].votes += 1;
+                }
+                (r.rankings || []).forEach((rank) => {
+                    if (!variantScores[rank.variantName]) {
+                        variantScores[rank.variantName] = { total: 0, count: 0, votes: 0, rationales: [] };
+                    }
+                    variantScores[rank.variantName].total += Number(rank.score) || 0;
+                    variantScores[rank.variantName].count += 1;
+                    if (rank.rationale && variantScores[rank.variantName].rationales.length < 2) {
+                        variantScores[rank.variantName].rationales.push(rank.rationale);
+                    }
+                });
+            });
+
+            const sortedVariants = Object.entries(variantScores).sort((a, b) => {
+                const avgA = a[1].count > 0 ? a[1].total / a[1].count : 0;
+                const avgB = b[1].count > 0 ? b[1].total / b[1].count : 0;
+                if (avgB !== avgA) return avgB - avgA;
+                return b[1].votes - a[1].votes;
+            });
+
+            const winnerName = sortedVariants[0]?.[0] || '';
+            const winnerAvg =
+                sortedVariants[0] && sortedVariants[0][1].count > 0
+                    ? Number((sortedVariants[0][1].total / sortedVariants[0][1].count).toFixed(1))
+                    : 0;
+
+            const abVariants: FocusGroupVariantItem[] = sortedVariants.map(([variantName, data], idx) => {
+                const matchedRegional = regionalVariants.find((v) => v.region === variantName);
+                const avg = data.count > 0 ? Number((data.total / data.count).toFixed(1)) : 0;
+                return {
+                    label: variantName,
+                    imageUrl: matchedRegional?.image || null,
+                    score: avg,
+                    scoreScale: 10,
+                    votes: data.votes,
+                    isWinner: idx === 0,
+                    summary: data.rationales[0] || ''
+                };
+            });
+
+            const opinions: FocusGroupParticipantOpinion[] = abTestResults.map((r) => {
+                const meta = resolveParticipantMeta(r.personaId, r.personaName);
+                const bestRank = (r.rankings || []).find((rk) => rk.variantName === r.selectedVariant) || r.rankings?.[0];
+                return {
+                    name: formatDisplayPersonaLabel(localizePersonaLabel(r.personaName, 'es')),
+                    segmentLabel: meta.segmentLabel,
+                    profileDetail: meta.profileDetail,
+                    sentiment: r.sentiment,
+                    score: bestRank ? Number(bestRank.score) : null,
+                    scoreMax: 10,
+                    selectedOption: r.selectedVariant,
+                    opinion: r.overallFeedback || (r as any).rationale || 'Sin comentario textual registrado.'
+                };
+            });
+
+            const winnerVotes = sortedVariants[0]?.[1]?.votes || 0;
+            const keyFindings = [
+                winnerName
+                    ? `La variante ganadora fue ${winnerName} con puntaje promedio de ${winnerAvg} sobre 10 y ${winnerVotes} preferencias directas.`
+                    : `Se evaluaron ${abVariants.length} variantes con ${count} participantes.`
+            ];
+            if (sortedVariants.length > 1) {
+                const second = sortedVariants[1];
+                const secondAvg = second[1].count > 0 ? (second[1].total / second[1].count).toFixed(1) : '0.0';
+                keyFindings.push(`Segunda posición: ${second[0]} (${secondAvg} / 10).`);
+            }
+
+            return {
+                title: `Prueba A/B de Campaña: ${studyName}`,
+                testMode: 'ab_test',
+                studyName,
+                channelKey: selectedChannelKey,
+                channelLabel,
+                segmentLabel: summarizeSegmentsLabel(opinions),
+                evaluatedCount: count,
+                averageScore: winnerAvg,
+                averageScoreLabel: 'Puntaje Variante Ganadora',
+                averageScoreSuffix: ' / 10',
+                extraMetrics: [
+                    { label: 'Variante Ganadora', value: winnerName || 'Sin definir' },
+                    { label: 'Preferencia Directa', value: `${winnerVotes} de ${count}` },
+                    { label: 'Variantes Evaluadas', value: `${abVariants.length}` }
+                ],
+                abVariants,
+                strategicSummary: {
+                    keyFindings,
+                    strengths: uniqueCleanStrings(sortedVariants[0]?.[1]?.rationales || [], 3),
+                    improvements: uniqueCleanStrings(
+                        sortedVariants.slice(1).flatMap(([, d]) => d.rationales),
+                        3
+                    )
+                },
+                opinions
+            };
+        }
+
+        if (activeTab === 'BRIEF' && memberResults.length > 0) {
+            const count = memberResults.length;
+            const avgInterest = Math.round(memberResults.reduce((a, b) => a + (Number(b.briefMetrics?.interestScore) || 0), 0) / count);
+            const avgClarity = Math.round(memberResults.reduce((a, b) => a + (Number(b.briefMetrics?.clarityScore) || 0), 0) / count);
+            const avgRel = Math.round(memberResults.reduce((a, b) => a + (Number(b.briefMetrics?.relevanceScore) || 0), 0) / count);
+            const avgOverall = Math.round((avgInterest + avgClarity + avgRel) / 3);
+
+            const msgScoreMap: Record<string, { total: number; count: number }> = {};
+            memberResults.forEach((r) => {
+                (r.messageReactions || []).forEach((mr) => {
+                    if (!mr?.message) return;
+                    if (!msgScoreMap[mr.message]) msgScoreMap[mr.message] = { total: 0, count: 0 };
+                    msgScoreMap[mr.message].total += Number(mr.score) || 0;
+                    msgScoreMap[mr.message].count += 1;
+                });
+            });
+
+            const opinions: FocusGroupParticipantOpinion[] = memberResults.map((r) => {
+                const meta = resolveParticipantMeta(r.personaId, r.personaName);
+                const combined = Math.round(
+                    ((Number(r.briefMetrics?.interestScore) || 0) +
+                        (Number(r.briefMetrics?.clarityScore) || 0) +
+                        (Number(r.briefMetrics?.relevanceScore) || 0)) / 3
+                );
+                const derivedSentiment = combined >= 75 ? 'Positivo' : combined >= 50 ? 'Neutral' : 'Negativo';
+                return {
+                    name: formatDisplayPersonaLabel(localizePersonaLabel(r.personaName, 'es')),
+                    segmentLabel: meta.segmentLabel,
+                    profileDetail: meta.profileDetail,
+                    sentiment: derivedSentiment,
+                    score: combined,
+                    scoreMax: 100,
+                    opinion: r.briefMetrics?.feedback || 'Sin comentario textual registrado.',
+                    barriers: r.briefMetrics?.negativeFeedback
+                };
+            });
+
+            return {
+                title: `Evaluación de Mensajes Clave: ${studyName}`,
+                testMode: 'messages',
+                studyName,
+                channelKey: selectedChannelKey,
+                channelLabel,
+                segmentLabel: summarizeSegmentsLabel(opinions),
+                evaluatedCount: count,
+                averageScore: avgOverall,
+                averageScoreLabel: 'Calificación Promedio',
+                averageScoreSuffix: ' / 100',
+                extraMetrics: [
+                    { label: 'Nivel de Interés', value: `${avgInterest} / 100` },
+                    { label: 'Claridad del Mensaje', value: `${avgClarity} / 100` },
+                    { label: 'Relevancia Clínica', value: `${avgRel} / 100` }
+                ],
+                evaluatedMaterial: {
+                    itemsListTitle: 'Mensajes Clave Evaluados',
+                    itemsList: marketingMessages.map((msg) => {
+                        const stat = msgScoreMap[msg];
+                        const avgMsg = stat && stat.count > 0 ? Math.round(stat.total / stat.count) : null;
+                        return {
+                            title: msg,
+                            detail: 'Mensaje clave de campaña',
+                            badge: avgMsg !== null ? `${avgMsg} / 100` : 'Evaluado'
+                        };
+                    })
+                },
+                strategicSummary: {
+                    keyFindings: [
+                        `Claridad promedio de ${avgClarity} sobre 100, interés de ${avgInterest} y relevancia clínica de ${avgRel}.`
+                    ],
+                    strengths: [
+                        avgClarity >= 75 ? 'Alta comprensión inmediata de la propuesta de valor.' : 'Oportunidad de reforzar la claridad del mensaje principal.'
+                    ],
+                    improvements: uniqueCleanStrings(memberResults.map((r) => r.briefMetrics?.negativeFeedback), 4)
+                },
+                opinions
+            };
+        }
+
+        if (activeTab === 'ACQUISITION' && acquisitionResults.length > 0) {
+            const count = acquisitionResults.length;
+            const convPct = Math.round(acqStats?.conversion || 0);
+            const avgValue = Math.round(acqStats?.avgValue || 0);
+            const topOfferLabel = acqStats?.topOffer?.[0] || 'Sin oferta dominante';
+
+            const offerCounts: Record<string, number> = {};
+            acquisitionResults.forEach((r) => {
+                if (r.winningOffer && r.winningOffer !== 'None' && r.winningOffer !== 'Ninguna') {
+                    offerCounts[r.winningOffer] = (offerCounts[r.winningOffer] || 0) + 1;
+                }
+            });
+
+            const opinions: FocusGroupParticipantOpinion[] = acquisitionResults.map((r) => {
+                const meta = resolveParticipantMeta(r.personaId, r.personaName);
+                const derivedSentiment =
+                    r.likelihoodToJoin > 70 ? 'Positivo' : r.likelihoodToJoin >= 45 ? 'Neutral' : 'Negativo';
+                return {
+                    name: formatDisplayPersonaLabel(localizePersonaLabel(r.personaName, 'es')),
+                    segmentLabel: meta.segmentLabel,
+                    profileDetail: meta.profileDetail,
+                    sentiment: derivedSentiment,
+                    score: Math.round(Number(r.likelihoodToJoin) || 0),
+                    scoreMax: 100,
+                    selectedOption: r.winningOffer,
+                    opinion: r.feedback || 'Sin comentario textual registrado.',
+                    barriers: r.barriers
+                };
+            });
+
+            return {
+                title: `Evaluación de Oferta de Captación: ${studyName}`,
+                testMode: 'acquisition',
+                studyName,
+                channelKey: selectedChannelKey,
+                channelLabel,
+                segmentLabel: summarizeSegmentsLabel(opinions),
+                evaluatedCount: count,
+                averageScore: convPct,
+                averageScoreLabel: 'Tasa de Conversión Estimada',
+                averageScoreSuffix: '%',
+                extraMetrics: [
+                    { label: 'Valor Percibido', value: `${avgValue} / 100` },
+                    { label: 'Oferta Ganadora', value: topOfferLabel },
+                    { label: 'Promociones Evaluadas', value: `${acquisitionOffers.length}` }
+                ],
+                evaluatedMaterial: {
+                    itemsListTitle: 'Promociones y Beneficios Evaluados',
+                    itemsList: acquisitionOffers.map((offer) => ({
+                        title: offer,
+                        detail: 'Beneficio de captación evaluado',
+                        badge: `${offerCounts[offer] || 0} votos`
+                    }))
+                },
+                strategicSummary: {
+                    keyFindings: [
+                        `Tasa de intención de conversión estimada en ${convPct}% con un valor percibido promedio de ${avgValue} sobre 100.`,
+                        `Oferta con mayor preferencia: ${topOfferLabel}.`
+                    ],
+                    improvements: uniqueCleanStrings(acquisitionResults.map((r) => r.barriers), 4)
+                },
+                opinions
+            };
+        }
+
+        if (activeTab === 'EMAIL' && memberResults.length > 0 && emailStats.length > 0) {
+            const count = memberResults.length;
+            const avgOpen = Math.round(emailStats.reduce((a, b) => a + b.openRate, 0) / emailStats.length);
+            const avgClick = Math.round(emailStats.reduce((a, b) => a + b.clickRate, 0) / emailStats.length);
+            const topEmail = emailStats[0];
+
+            const opinions: FocusGroupParticipantOpinion[] = memberResults.map((r) => {
+                const meta = resolveParticipantMeta(r.personaId, r.personaName);
+                const topEngage = r.emailEngagement.find((e) => e.subjectLine === topEmail.subject) || r.emailEngagement[0];
+                const derivedSentiment = topEngage?.clicked
+                    ? 'Positivo'
+                    : topEngage?.opened
+                        ? 'Neutral'
+                        : 'Negativo';
+                const opinionText =
+                    topEngage?.feedback ||
+                    (topEngage?.clicked ? r.briefMetrics?.feedback : r.briefMetrics?.negativeFeedback || r.briefMetrics?.feedback) ||
+                    'Sin comentario textual registrado.';
+                return {
+                    name: formatDisplayPersonaLabel(localizePersonaLabel(r.personaName, 'es')),
+                    segmentLabel: meta.segmentLabel,
+                    profileDetail: meta.profileDetail,
+                    sentiment: derivedSentiment,
+                    selectedOption: topEngage
+                        ? `${topEngage.subjectLine} (${topEngage.clicked ? 'Clic' : topEngage.opened ? 'Abierto' : 'Omitido'})`
+                        : undefined,
+                    opinion: opinionText
+                };
+            });
+
+            return {
+                title: `Evaluación de Correo Electrónico: ${studyName}`,
+                testMode: 'email',
+                studyName,
+                channelKey: 'mailing_ecommerce',
+                channelLabel: getEvaluatedChannelLabel('mailing_ecommerce'),
+                segmentLabel: summarizeSegmentsLabel(opinions),
+                evaluatedCount: count,
+                averageScore: avgOpen,
+                averageScoreLabel: 'Tasa de Apertura Promedio',
+                averageScoreSuffix: '%',
+                extraMetrics: [
+                    { label: 'Tasa de Clics Promedio (CTR)', value: `${avgClick}%` },
+                    { label: 'Mejor Asunto', value: topEmail.subject },
+                    { label: 'Correos Evaluados', value: `${emailStats.length}` }
+                ],
+                evaluatedMaterial: {
+                    headline: topEmail.bannerHeadline || topEmail.subject,
+                    subheadline: `Asunto líder: ${topEmail.subject}`,
+                    copy: topEmail.body,
+                    imageUrl: topEmail.image || null,
+                    ctaText: topEmail.ctaText,
+                    itemsListTitle: 'Desempeño por Pieza de Correo Electrónico',
+                    itemsList: emailStats.map((st) => ({
+                        title: st.subject,
+                        detail: st.bannerHeadline || '',
+                        badge: `Apertura ${st.openRate}% · Clics ${st.clickRate}%`
+                    }))
+                },
+                strategicSummary: {
+                    keyFindings: [
+                        `Tasa promedio de apertura de ${avgOpen}% y tasa de clics de ${avgClick}% en ${emailStats.length} correos evaluados.`,
+                        `Asunto con mejor desempeño: "${topEmail.subject}" (${topEmail.openRate}% apertura, ${topEmail.clickRate}% clics).`
+                    ],
+                    improvements: uniqueCleanStrings(memberResults.map((r) => r.briefMetrics?.negativeFeedback), 4)
+                },
+                opinions
+            };
+        }
+
+        if (activeTab === 'PURCHASE' && memberResults.length > 0) {
+            const count = memberResults.length;
+            const totalBookings = memberResults.reduce((acc, r) => acc + r.cart.filter((c) => c.purchased).length, 0);
+            const buyersCount = memberResults.filter((r) => r.cart.some((c) => c.purchased)).length;
+            const bookingRate = Math.round((buyersCount / count) * 100);
+            const topStudyName = purchasedStats[0]?.[0]?.split(':')[0]?.replace(/\s*\[.*?\]\s*/g, '').trim() || studyName;
+
+            const studyBookingMap: Record<string, number> = {};
+            memberResults.forEach((r) => {
+                r.cart.forEach((c) => {
+                    if (c.purchased) {
+                        const cleanTitle = parseSimulationProduct(c.productName).title;
+                        studyBookingMap[cleanTitle] = (studyBookingMap[cleanTitle] || 0) + 1;
+                    }
+                });
+            });
+
+            const opinions: FocusGroupParticipantOpinion[] = memberResults.map((r) => {
+                const meta = resolveParticipantMeta(r.personaId, r.personaName);
+                const bought = r.cart.filter((c) => c.purchased);
+                const skipped = r.cart.filter((c) => !c.purchased);
+                const derivedSentiment = bought.length >= 2 ? 'Positivo' : bought.length === 1 ? 'Neutral' : 'Negativo';
+                const opinionText =
+                    bought.find((b) => b.reason)?.reason ||
+                    r.briefMetrics?.feedback ||
+                    skipped.find((s) => s.reason)?.reason ||
+                    'Sin comentario textual registrado.';
+                return {
+                    name: formatDisplayPersonaLabel(localizePersonaLabel(r.personaName, 'es')),
+                    segmentLabel: meta.segmentLabel,
+                    profileDetail: meta.profileDetail,
+                    sentiment: derivedSentiment,
+                    selectedOption: bought.length > 0
+                        ? bought.map((b) => parseSimulationProduct(b.productName).title).join(', ')
+                        : 'Sin estudio agendado',
+                    opinion: opinionText,
+                    barriers: r.briefMetrics?.negativeFeedback || skipped[0]?.reason
+                };
+            });
+
+            return {
+                title: `Evaluación de Estudio y Demanda: ${studyName}`,
+                testMode: 'product',
+                studyName,
+                channelKey: selectedChannelKey,
+                channelLabel,
+                segmentLabel: summarizeSegmentsLabel(opinions),
+                evaluatedCount: count,
+                averageScore: bookingRate,
+                averageScoreLabel: 'Intención de Agendamiento',
+                averageScoreSuffix: '%',
+                extraMetrics: [
+                    { label: 'Total Estudios Agendados', value: `${totalBookings}` },
+                    { label: 'Estudio Más Solicitado', value: topStudyName },
+                    { label: 'Estudios Evaluados', value: `${simulationProducts.length}` }
+                ],
+                evaluatedMaterial: {
+                    itemsListTitle: 'Catálogo de Estudios Evaluados',
+                    itemsList: simulationProducts.map((raw) => {
+                        const parsed = parseSimulationProduct(raw);
+                        const bookings = studyBookingMap[parsed.title] || 0;
+                        return {
+                            title: parsed.title,
+                            detail: `${parsed.modality}${parsed.description ? ` · ${parsed.description}` : ''}`,
+                            badge: `${bookings} agendamientos`
+                        };
+                    })
+                },
+                strategicSummary: {
+                    keyFindings: [
+                        `${buyersCount} de ${count} participantes (${bookingRate}%) mostraron intención de agendar al menos un estudio clínico.`,
+                        `Estudio con mayor demanda: ${topStudyName}.`
+                    ],
+                    improvements: uniqueCleanStrings(memberResults.map((r) => r.briefMetrics?.negativeFeedback), 4)
+                },
+                opinions
+            };
+        }
+
+        return null;
+    };
+
+    const handleExportFocusGroupReport = (format: 'pdf' | 'html') => {
+        if (isBusy) return;
+        const payload = buildFocusGroupPayloadForActiveTab();
+        if (!payload) return;
+
+        const html = buildFocusGroupExecutiveReportHtml(payload);
+        const filename = buildSafeReportFilename(
+            `reporte_focus_group_${payload.testMode}`,
+            payload.studyName || payload.title
+        );
+
+        if (format === 'html') {
+            downloadHtmlReport(html, filename);
+            showExportFeedback('Reporte HTML descargado en tu equipo.');
+        } else {
+            const outcome = openPrintableReport(html, filename);
+            showExportFeedback(
+                outcome === 'print_window'
+                    ? 'Vista de impresión lista para guardar como PDF.'
+                    : 'Reporte HTML descargado en tu equipo.'
+            );
+        }
+    };
+
+    const renderReportExportActions = () => (
+        <div className="flex flex-wrap items-center gap-2">
+            <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => handleExportFocusGroupReport('pdf')}
+                title="Abrir vista ejecutiva lista para imprimir o guardar como PDF"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#004699] hover:bg-[#003575] text-white text-xs font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                <Printer size={14} />
+                <span>Exportar Reporte (PDF)</span>
+            </button>
+            <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => handleExportFocusGroupReport('html')}
+                title="Descargar archivo HTML autónomo del reporte ejecutivo"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#EFF9FE] hover:bg-[#BDD4F2]/60 text-[#004699] border border-[#BDD4F2] text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                <Download size={14} />
+                <span>Descargar HTML</span>
+            </button>
+            {exportFeedback && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold">
+                    <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+                    <span>{exportFeedback}</span>
+                </span>
+            )}
+        </div>
+    );
 
 
     return (
@@ -1768,7 +2535,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                 onChange={(e) => setSelectedChannelKey(e.target.value as BrandChannelKey)}
                                 className="bg-white border border-[#BDD4F2] rounded-lg px-2.5 py-1 text-xs font-bold text-[#004699] focus:outline-none focus:ring-2 focus:ring-[#005FFC] cursor-pointer disabled:opacity-50"
                             >
-                                {EVALUATED_CHANNEL_OPTIONS.map((ch) => (
+                                {evaluatedChannelOptions.map((ch) => (
                                     <option key={ch.key} value={ch.key}>
                                         {ch.label}
                                     </option>
@@ -1990,7 +2757,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
 
                                     {acquisitionResults.length > 0 && (
                                         <div className="content-card p-0 overflow-hidden shadow-xl border-blue-100">
-                                            <div className="p-6 border-b border-gray-100 bg-white flex justify-between items-center">
+                                            <div className="p-6 border-b border-gray-100 bg-white flex flex-wrap justify-between items-center gap-3">
                                                 <div className="flex items-center gap-3">
                                                     <div className="p-2 bg-blue-50 rounded-lg">
                                                         <MessageSquare className="text-[#0066FF]" size={20} />
@@ -2000,7 +2767,10 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                                         <p className="text-[10px] text-subtext font-bold">{t(`Análisis de sentimiento profundo de ${acquisitionResults.length} interacciones simuladas`, `In-depth sentiment analysis from ${acquisitionResults.length} simulated interactions`)}</p>
                                                     </div>
                                                 </div>
-                                                <div className="badge badge-blue">{acquisitionResults.length} {t('participantes', 'participants')}</div>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <div className="badge badge-blue">{acquisitionResults.length} {t('participantes', 'participants')}</div>
+                                                    {renderReportExportActions()}
+                                                </div>
                                             </div>
                                             <div className="max-h-[600px] overflow-y-auto p-6 space-y-4 custom-scrollbar bg-gray-50/30">
                                                 {acquisitionResults.map((r, i) => (
@@ -2543,9 +3313,12 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
 
                             {/* Email Performance Analytics */}
                             <div className="content-card">
-                                <h3 className="font-bold text-heading mb-4 flex items-center gap-2">
-                                    <Mail size={18} className="text-[#0066FF]" /> {t('Desempeño de Campaña de Email', 'Campaign Performance')}
-                                </h3>
+                                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                                    <h3 className="font-bold text-heading flex items-center gap-2">
+                                        <Mail size={18} className="text-[#0066FF]" /> {t('Desempeño de Campaña de Email', 'Campaign Performance')}
+                                    </h3>
+                                    {emailStats.length > 0 && renderReportExportActions()}
+                                </div>
                                 <div className="space-y-4 h-[75vh] overflow-y-auto pr-2 custom-scrollbar">
                                     {emailStats.length > 0 ? emailStats.map((stat, i) => (
                                         <div
@@ -2725,6 +3498,16 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
 
                     {activeTab === 'BRIEF' && (
                         <div className="space-y-6 animate-fadeIn">
+                            {/* Export Action Bar for Key Messages Results */}
+                            {memberResults.length > 0 && (
+                                <div className="bg-white px-5 py-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
+                                    <span className="text-xs font-bold text-[#003B7A] uppercase tracking-wider">
+                                        Resultados de Evaluación de Mensajes Clave ({memberResults.length} participantes)
+                                    </span>
+                                    {renderReportExportActions()}
+                                </div>
+                            )}
+
                             {/* Score Cards - MOVED TO TOP */}
                             {memberResults.length > 0 && (
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fadeIn">
@@ -2998,11 +3781,14 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
 
                             {/* Products Purchased Summary */}
                             <div className="content-card">
-                                <div className="flex justify-between items-center mb-4">
+                                <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
                                     <h3 className="font-bold text-heading flex items-center gap-2">
                                         <ShoppingBag size={18} className="text-green-500" /> {t('Resumen de Estudios Seleccionados', 'Purchased Summary')}
                                     </h3>
-                                    {purchasedStats.length > 0 && <span className="badge badge-green">{memberResults.reduce((acc, r) => acc + r.cart.filter(c => c.purchased).length, 0)} {t('Estudios Agendados', 'Total Bookings')}</span>}
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {purchasedStats.length > 0 && <span className="badge badge-green">{memberResults.reduce((acc, r) => acc + r.cart.filter(c => c.purchased).length, 0)} {t('Estudios Agendados', 'Total Bookings')}</span>}
+                                        {memberResults.length > 0 && renderReportExportActions()}
+                                    </div>
                                 </div>
                                 <div className="space-y-3">
                                     {purchasedStats.length > 0 ? purchasedStats.map(([product, count], i) => (
@@ -3302,16 +4088,19 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                             {/* Results */}
                             {creativeResults.length > 0 && (
                                 <div className="content-card lg:col-span-2">
-                                    <h3 className="font-black text-heading mb-6 flex items-center gap-2 uppercase tracking-widest text-sm">
-                                        {t('Resumen de Retroalimentación del Focus Group', 'Focus Group Feedback Summary')}
-                                        <div className="group relative">
-                                            <Info size={16} className="text-subtext cursor-help" />
-                                            <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-64 bg-heading text-white text-[10px] p-4 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none border border-white/10 leading-relaxed font-medium">
-                                                {t('Calificaciones agregadas de todos los perfiles sintéticos de esta cohorte.', 'Aggregated scoring insights from all synthetic personas in this cohort.')}
-                                                <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-heading" />
+                                    <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                                        <h3 className="font-black text-heading flex items-center gap-2 uppercase tracking-widest text-sm">
+                                            {t('Resumen de Retroalimentación del Focus Group', 'Focus Group Feedback Summary')}
+                                            <div className="group relative">
+                                                <Info size={16} className="text-subtext cursor-help" />
+                                                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-64 bg-heading text-white text-[10px] p-4 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none border border-white/10 leading-relaxed font-medium">
+                                                    {t('Calificaciones agregadas de todos los perfiles sintéticos de esta cohorte.', 'Aggregated scoring insights from all synthetic personas in this cohort.')}
+                                                    <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-heading" />
+                                                </div>
                                             </div>
-                                        </div>
-                                    </h3>
+                                        </h3>
+                                        {renderReportExportActions()}
+                                    </div>
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                                         <div className="bg-gray-50 p-5 rounded-2xl text-center relative group cursor-help transition-all border border-gray-100 hover:border-[#0066FF] shadow-sm">
                                             <div className="text-3xl font-black text-heading">{Math.round(displayedCreativeResults.reduce((a, b) => a + b.visualAppeal, 0) / displayedCreativeResults.length) || 0}</div>
@@ -3606,7 +4395,14 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
 
                             {/* Show Results if any */}
                             {abTestResults.length > 0 && (
-                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                <div className="space-y-4">
+                                    <div className="bg-white px-5 py-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+                                        <span className="text-xs font-bold text-[#003B7A] uppercase tracking-wider">
+                                            Resultados de Prueba A/B ({abTestResults.length} participantes)
+                                        </span>
+                                        {renderReportExportActions()}
+                                    </div>
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                     {/* Stats Column */}
                                     <div className="content-card">
                                         <h3 className="font-black text-heading mb-4 uppercase tracking-widest text-sm">{t('Desempeño por Variante (Promedio)', 'Variant Performance (Avg Score)')}</h3>
@@ -3677,6 +4473,7 @@ export const SyntheticTesting: React.FC<SyntheticTestingProps> = () => {
                                             ))}
                                         </div>
                                     </div>
+                                </div>
                                 </div>
                             )}
                         </div>

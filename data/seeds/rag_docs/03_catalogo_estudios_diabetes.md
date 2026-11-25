@@ -1,11 +1,11 @@
-# Catálogo Clínico y Reglas de Exactitud Médica — Línea Diabetes y Check-ups Preventivos Chopo
+# Catálogo Clínico y Reglas de Exactitud Médica — Línea Diabetes y Check-ups Preventivos
 
-**Documento de Referencia Clínica (RAG Pillar 3 — Área Médica)**
-**Alcance inicial del proyecto:** Campañas de **Prevención, Detección y Control de Diabetes Mellitus** y **Check-ups Integrales**.
+**Lineamientos Clínicos y Normativos — Área Médica de Laboratorio Médico del Chopo**
+**Alcance inicial:** Campañas de **Prevención, Detección y Control de Diabetes Mellitus** y **Check-ups Integrales** para Pacientes (B2C), Médicos (B2D) y Empresas (B2B).
 
 ---
 
-## 1. Perfiles y Estudios Oficiales de la Línea Diabetes en Chopo
+## 1. Perfiles y Estudios Oficiales de la Línea Diabetes en Laboratorio Médico del Chopo
 
 ### A. `Check-up Control Diabetes` (Seguimiento Integral del Paciente con Diabetes)
 * **Objetivo Clínico:** Evaluar el control glucémico de los últimos 3 meses, el estado metabólico general y la función renal temprana en pacientes diagnosticados con diabetes o prediabetes.
@@ -25,7 +25,7 @@
   * Muestra: Sangre venosa con anticoagulante EDTA (tubo tapón lila), procesada por metodología certificada (HPLC / Inmunoensayo estandarizado).
 
 ### C. `Check-up Completo / Check-up Básico Preventivo`
-* **Objetivo Clínico:** Valoración periódica del estado general de salud en adultos aparentemente sanos o con factores de riesgo metabólico/cardiovascular.
+* **Objetivo Clínico:** Valoración periódica del estado general de salud en adultos aparentemente sanos o con factores de riesgo metabólico o cardiovascular.
 * **Estudios que incluye:**
   1. **Biometría Hemática Completa (`BH`):** Evalúa serie roja (anemia), serie blanca (respuesta inmune/infecciones) y plaquetas.
   2. **Química Sanguínea de 27 a 45 elementos (`QS`):** Incluye glucosa, función renal, función hepática, electrolitos y perfil de lípidos completo.
@@ -36,20 +36,20 @@
 
 ---
 
-## 2. Reglas de Exactitud Clínica (Checklist del Agente Revisor)
+## 2. Reglas de Exactitud Clínica (Criterios de Revisión)
 
 ### Regla `CLN-001`: Fidelidad en los Estudios Incluidos en el Paquete
 * **Requisito:** La campaña solo puede mencionar estudios que realmente formen parte del perfil anunciado o aclarar qué incluye el paquete. No debe inventar pruebas inexistentes ni prometer estudios de imagenología avanzada (como resonancia magnética o tomografía) dentro de un *Check-up* básico de laboratorio clínico sin especificarlo.
-* **Criterio de Falla (`FAIL`):** Atribuir estudios falsos al paquete o confundir el propósito clínico de una prueba (ej. decir que la Biometría Hemática mide el azúcar de los últimos 3 meses).
+* **Motivo de rechazo:** Atribuir estudios falsos al paquete o confundir el propósito clínico de una prueba (ej. decir que la Biometría Hemática mide el azúcar de los últimos 3 meses).
 
 ### Regla `CLN-002`: Exactitud en Requisitos de Preparación y Ayuno
 * **Requisito:**
   * Si el anuncio informa sobre la preparación para un **Check-up Control Diabetes** o **Química Sanguínea con Perfil de Lípidos**, debe indicar correctamente el **ayuno de 8 a 12 horas** (o remitir a *"Consulta las indicaciones de preparación en chopo.com.mx"*).
   * No debe afirmar falsamente *"Sin ayuno"* para un *Check-up* que incluye Química Sanguínea y Triglicéridos (solo la `HbA1c` aislada no requiere ayuno).
-* **Criterio de Falla (`FAIL`):** Indicar preparación clínica incorrecta que pueda invalidar la muestra del paciente en sucursal (error preanalítico).
+* **Motivo de rechazo:** Indicar preparación clínica incorrecta que pueda invalidar la muestra del paciente en sucursal (error preanalítico).
 
-### Regla `CLN-003`: Rigor Científico para la Pista Médico (B2B)
-* **Requisito:** En comunicaciones dirigidas a médicos especialistas (Internistas, Endocrinólogos, Cardiólogos, Médicos Generales):
-  * Destacar el valor clínico real: correlación entre `HbA1c`, tasa de filtración glomerular estimada (`TFGe`) y relación albúmina/creatinina urinaria (`ACR`) para estratificación de riesgo cardiorrenal.
-  * Evitar simplificaciones comerciales sin sustento clínico.
-* **Criterio de Falla (`FAIL`):** Presentar afirmaciones clínicas inexactas o carentes de rigor médico ante profesionales de la salud.
+### Regla `CLN-003`: Rigor Científico para Médicos (B2D) y Claridad Corporativa para Empresas (B2B)
+* **Requisito:**
+  * En comunicaciones dirigidas a **Médicos (B2D)** (Internistas, Endocrinólogos, Cardiólogos, Médicos Generales): destacar el valor clínico real, la correlación entre `HbA1c`, tasa de filtración glomerular estimada (`TFGe`) y relación albúmina/creatinina urinaria (`ACR`) para estratificación de riesgo cardiorrenal, evitando simplificaciones comerciales sin sustento clínico.
+  * En comunicaciones dirigidas a **Empresas (B2B)** (Recursos Humanos y salud ocupacional): presentar con precisión el alcance preventivo de los perfiles diagnósticos, los requisitos de preparación para jornadas corporativas y la cobertura operativa de Laboratorio Médico del Chopo, sin exagerar alcances clínicos.
+* **Motivo de rechazo:** Presentar afirmaciones clínicas inexactas o carentes de rigor médico ante profesionales de la salud o responsables de salud ocupacional corporativa.

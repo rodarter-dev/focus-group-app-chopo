@@ -9,13 +9,21 @@ import { Firestore } from '@google-cloud/firestore';
 import { Storage } from '@google-cloud/storage';
 import { AuthClient } from 'google-auth-library';
 import { buildBrandSlices, exportBrandManualToMarkdown } from './services/brandManualUtils.js';
+import {
+    parseSecurityConfig,
+    createSecurityHeadersMiddleware,
+    createRateLimiter,
+    createAuthMiddleware,
+    requireAdminRole,
+    resolveScopedRunDocId
+} from './services/securityMiddleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json({ limit: '50mb' }));
-const port = process.env.PORT || 8080;
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
 
 // Load local .env if present
 const envPath = path.join(__dirname, '.env');
@@ -32,6 +40,31 @@ if (fs.existsSync(envPath)) {
         }
     }
 }
+
+const port = process.env.PORT || 8080;
+
+// --- Security Hardening, Auth/RBAC & Rate Limiting ---
+const securityConfig = parseSecurityConfig(process.env);
+const securityHeadersMiddleware = createSecurityHeadersMiddleware();
+const authMiddleware = createAuthMiddleware(securityConfig);
+const adminGuard = requireAdminRole(securityConfig);
+const apiRateLimiter = createRateLimiter({
+    windowMs: securityConfig.apiRateLimitWindowMs,
+    maxRequests: securityConfig.apiRateLimitMax,
+    keyPrefix: 'api',
+    message: 'Se superó el límite temporal de solicitudes a la API. Intenta nuevamente en unos segundos.'
+});
+const genaiRateLimiter = createRateLimiter({
+    windowMs: securityConfig.genaiRateLimitWindowMs,
+    maxRequests: securityConfig.genaiRateLimitMax,
+    keyPrefix: 'genai',
+    message: 'Se superó el límite temporal de solicitudes a Vertex AI. Intenta nuevamente en unos segundos.'
+});
+
+app.use(securityHeadersMiddleware);
+app.use('/api', authMiddleware);
+app.use('/api', apiRateLimiter);
+app.use(express.json({ limit: '50mb' }));
 
 // --- GCP Configuration (100% Remote: Vertex AI + Cloud Firestore + Cloud Storage) ---
 const project = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'gsd-appmod';
@@ -527,6 +560,7 @@ const memoryStore = {
             timestamp: '2026-11-01T12:00:00.000Z',
             label: 'Configuración Inicial por Defecto',
             itemCount: initialPersonasSeed.length,
+            isSeed: true,
             data: [...initialPersonasSeed]
         },
         {
@@ -535,6 +569,7 @@ const memoryStore = {
             timestamp: '2026-11-01T12:00:00.000Z',
             label: 'Configuración Inicial por Defecto',
             itemCount: initialRubricsSeed.length,
+            isSeed: true,
             data: [...initialRubricsSeed]
         },
         {
@@ -543,6 +578,7 @@ const memoryStore = {
             timestamp: '2026-11-01T12:00:00.000Z',
             label: 'Configuración Inicial por Defecto',
             itemCount: initialUseCasesSeed.length,
+            isSeed: true,
             data: [...initialUseCasesSeed]
         },
         {
@@ -551,6 +587,7 @@ const memoryStore = {
             timestamp: '2026-11-01T12:00:00.000Z',
             label: 'Configuración Inicial por Defecto',
             itemCount: Object.keys(initialRagDocsSeed).length,
+            isSeed: true,
             data: { ...initialRagDocsSeed }
         },
         {
@@ -559,6 +596,7 @@ const memoryStore = {
             timestamp: '2026-11-01T12:00:00.000Z',
             label: 'Manual de Marca Oficial V4 — Laboratorio Médico del Chopo',
             itemCount: 5,
+            isSeed: true,
             data: structuredClone(initialBrandManualSeed)
         }
     ],
@@ -665,7 +703,34 @@ async function extractAndUploadImages(obj, prefix = 'asset') {
 
 // --- Config Versioning & Auto-Seeding ---
 
-async function saveConfigVersionSnapshot(entityType, dataArray, label, customVersionId = null, customItemCount = null) {
+function resolveSnapshotActor(req) {
+    const bodyActor = (!Array.isArray(req?.body) && typeof req?.body?.updatedBy === 'string')
+        ? req.body.updatedBy.trim()
+        : '';
+    if (bodyActor) return bodyActor;
+    if (req?.chopoUser?.email) return String(req.chopoUser.email);
+    if (req?.chopoUser?.userId) return String(req.chopoUser.userId);
+    return null;
+}
+
+function isSeedVersionEntry(entry) {
+    if (!entry) return false;
+    return (
+        entry.versionId === 'OFFICIAL_SEED' ||
+        String(entry.versionId || '').startsWith('v_seed_initial') ||
+        entry.isSeed === true
+    );
+}
+
+function normalizeVersionLabel(label) {
+    if (typeof label !== 'string') return label;
+    if (/^Rollback a:\s*/i.test(label)) {
+        return label.replace(/^Rollback a:\s*/i, 'Restaurado desde: ');
+    }
+    return label;
+}
+
+async function saveConfigVersionSnapshot(entityType, dataArray, label, customVersionId = null, customItemCount = null, updatedBy = null) {
     const itemCount = typeof customItemCount === 'number'
         ? customItemCount
         : (entityType === 'brand_manual'
@@ -679,12 +744,16 @@ async function saveConfigVersionSnapshot(entityType, dataArray, label, customVer
     }
     const versionId = customVersionId || `v_${entityType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const timestamp = new Date().toISOString();
+    const resolvedUpdatedBy = typeof updatedBy === 'string' && updatedBy.trim() ? updatedBy.trim() : null;
+    const isSeed = isSeedVersionEntry({ versionId });
     const snapshot = {
         versionId,
         entityType,
         timestamp,
-        label: label || `Actualización (${entityType})`,
+        label: normalizeVersionLabel(label) || `Actualización (${entityType})`,
         itemCount,
+        ...(isSeed ? { isSeed: true } : {}),
+        ...(resolvedUpdatedBy ? { updatedBy: resolvedUpdatedBy } : {}),
         data: dataArray
     };
 
@@ -767,6 +836,7 @@ async function loadMemoryStoreFromGCS() {
                         timestamp: '2026-11-01T12:00:00.000Z',
                         label: 'Manual de Marca Oficial V4 — Laboratorio Médico del Chopo',
                         itemCount: 5,
+                        isSeed: true,
                         data: structuredClone(initialBrandManualSeed)
                     });
                 }
@@ -901,6 +971,39 @@ app.get('/health', (req, res) => {
             evaluator: VERTEX_EVALUATOR_MODEL,
             image: VERTEX_IMAGE_MODEL,
             video: VERTEX_VIDEO_MODEL
+        },
+        security: {
+            authMode: securityConfig.authMode,
+            rbacEnforced: securityConfig.rbacEnforced,
+            userScopedRuns: securityConfig.userScopedRuns,
+            rateLimitingEnabled: true,
+            genaiRateLimitMax: securityConfig.genaiRateLimitMax,
+            apiRateLimitMax: securityConfig.apiRateLimitMax
+        }
+    });
+});
+
+app.get('/api/auth/me', (req, res) => {
+    const user = req.chopoUser || {
+        userId: 'local-demo',
+        email: 'marketing@chopo.local',
+        role: 'admin',
+        authMode: securityConfig.authMode,
+        authenticated: securityConfig.authMode === 'none'
+    };
+    const isAdminAllowed = !securityConfig.rbacEnforced || (Boolean(user.authenticated) && user.role === 'admin');
+    res.json({
+        authenticated: Boolean(user.authenticated),
+        authMode: user.authMode || securityConfig.authMode,
+        userId: user.userId,
+        email: user.email,
+        role: user.role,
+        rbacEnforced: securityConfig.rbacEnforced,
+        userScopedRuns: securityConfig.userScopedRuns,
+        permissions: {
+            canEditBrandManual: isAdminAllowed,
+            canManageRag: isAdminAllowed,
+            canManageCatalogs: isAdminAllowed
         }
     });
 });
@@ -929,7 +1032,7 @@ function normalizeVertexModel(requestedModel) {
     return requestedModel;
 }
 
-app.post('/api/genai/generateContent', checkAi, async (req, res) => {
+app.post('/api/genai/generateContent', genaiRateLimiter, checkAi, async (req, res) => {
     try {
         let { model, contents, config } = req.body;
         const originalModel = model;
@@ -1003,7 +1106,7 @@ app.post('/api/genai/generateContent', checkAi, async (req, res) => {
     }
 });
 
-app.post('/api/genai/generateVideos', checkAi, async (req, res) => {
+app.post('/api/genai/generateVideos', genaiRateLimiter, checkAi, async (req, res) => {
     try {
         const { model, prompt, image, config } = req.body;
         const response = await ai.models.generateVideos({ model, prompt, image, config });
@@ -1014,7 +1117,7 @@ app.post('/api/genai/generateVideos', checkAi, async (req, res) => {
     }
 });
 
-app.post('/api/genai/getOperation', checkAi, async (req, res) => {
+app.post('/api/genai/getOperation', genaiRateLimiter, checkAi, async (req, res) => {
     try {
         const { operation } = req.body;
         const mockOperation = {
@@ -1162,7 +1265,7 @@ app.get('/api/personas', async (req, res) => {
     }
 });
 
-app.post('/api/personas', async (req, res) => {
+app.post('/api/personas', adminGuard, async (req, res) => {
     try {
         const rawList = Array.isArray(req.body) ? req.body : (req.body?.personas || []);
         const label = (!Array.isArray(req.body) && req.body?.label) ? req.body.label : 'Actualización de Audiencias y Personas';
@@ -1204,14 +1307,15 @@ app.post('/api/personas', async (req, res) => {
         const backupSnapshotPersonas = (!Array.isArray(req.body) && Array.isArray(req.body?.backupPersonas))
             ? req.body.backupPersonas
             : null;
+        const actor = resolveSnapshotActor(req);
         if (backupSnapshotPersonas && backupSnapshotPersonas.length > 0) {
             const uploadedBackup = await extractAndUploadImages(backupSnapshotPersonas, 'persona_backup');
             const sanitizedBackup = uploadedBackup.map((p, i) => sanitizePersona(p, i));
-            await saveConfigVersionSnapshot('personas', sanitizedBackup, label);
+            await saveConfigVersionSnapshot('personas', sanitizedBackup, label, null, null, actor);
         }
 
         const snapshot = (!skipVersionSnapshot && !backupSnapshotPersonas)
-            ? await saveConfigVersionSnapshot('personas', sanitizedList, label)
+            ? await saveConfigVersionSnapshot('personas', sanitizedList, label, null, null, actor)
             : { versionId: null };
         res.json({ success: true, personas: sanitizedList, versionId: snapshot.versionId });
     } catch (e) {
@@ -1230,7 +1334,7 @@ app.get('/api/audiences', async (req, res) => {
     }
 });
 
-app.post('/api/audiences', async (req, res) => {
+app.post('/api/audiences', adminGuard, async (req, res) => {
     try {
         const rawPersonas = Array.isArray(req.body) ? req.body : (req.body?.personas || []);
         const uploadedPersonas = await extractAndUploadImages(rawPersonas, 'audience');
@@ -1262,7 +1366,7 @@ app.post('/api/audiences', async (req, res) => {
             console.warn('Saved audiences to memoryStore (Firestore sync warning):', fsErr.message);
         }
 
-        await saveConfigVersionSnapshot('personas', cleanPersonas, 'Actualización de Audiencias');
+        await saveConfigVersionSnapshot('personas', cleanPersonas, 'Actualización de Audiencias', null, null, resolveSnapshotActor(req));
         res.json({ success: true, personas: cleanPersonas });
     } catch (e) {
         console.error("Error saving audiences:", e);
@@ -1280,7 +1384,7 @@ app.get('/api/config/personas', async (req, res) => {
     }
 });
 
-app.post('/api/config/personas', async (req, res) => {
+app.post('/api/config/personas', adminGuard, async (req, res) => {
     try {
         const rawList = Array.isArray(req.body) ? req.body : (req.body?.personas || []);
         const label = (!Array.isArray(req.body) && (req.body?.changeSummary || req.body?.label))
@@ -1324,14 +1428,15 @@ app.post('/api/config/personas', async (req, res) => {
         const backupSnapshotPersonas = (!Array.isArray(req.body) && Array.isArray(req.body?.backupPersonas))
             ? req.body.backupPersonas
             : null;
+        const actor = resolveSnapshotActor(req);
         if (backupSnapshotPersonas && backupSnapshotPersonas.length > 0) {
             const uploadedBackup = await extractAndUploadImages(backupSnapshotPersonas, 'persona_backup');
             const sanitizedBackup = uploadedBackup.map((p, i) => sanitizePersona(p, i));
-            await saveConfigVersionSnapshot('personas', sanitizedBackup, label);
+            await saveConfigVersionSnapshot('personas', sanitizedBackup, label, null, null, actor);
         }
 
         const snapshot = (!skipVersionSnapshot && !backupSnapshotPersonas)
-            ? await saveConfigVersionSnapshot('personas', sanitizedList, label)
+            ? await saveConfigVersionSnapshot('personas', sanitizedList, label, null, null, actor)
             : { versionId: null };
         res.json({ success: true, personas: sanitizedList, versionId: snapshot.versionId });
     } catch (e) {
@@ -1355,14 +1460,18 @@ app.get('/api/config/personas/versions', async (req, res) => {
             docsList = snapshot.docs.map(doc => {
                 const d = doc.data();
                 const items = Array.isArray(d.data) ? d.data : [];
+                const resolvedVersionId = d.versionId || doc.id;
+                const cleanLabel = normalizeVersionLabel(d.label);
                 return {
-                    id: d.versionId || doc.id,
-                    versionId: d.versionId || doc.id,
+                    id: resolvedVersionId,
+                    versionId: resolvedVersionId,
                     entityType: d.entityType,
                     timestamp: d.timestamp,
                     createdAt: d.timestamp,
-                    label: d.label,
-                    changeSummary: d.label,
+                    label: cleanLabel,
+                    changeSummary: cleanLabel,
+                    ...(d.updatedBy ? { updatedBy: d.updatedBy } : {}),
+                    ...(isSeedVersionEntry({ versionId: resolvedVersionId, isSeed: d.isSeed }) ? { isSeed: true } : {}),
                     itemCount: d.itemCount ?? items.length,
                     previewNames: items.map(p => p.name || p.personaName).filter(Boolean)
                 };
@@ -1372,26 +1481,37 @@ app.get('/api/config/personas/versions', async (req, res) => {
                 .filter(v => v.entityType === 'personas')
                 .map(v => {
                     const items = Array.isArray(v.data) ? v.data : [];
+                    const cleanLabel = normalizeVersionLabel(v.label);
                     return {
                         id: v.versionId,
                         versionId: v.versionId,
                         entityType: v.entityType,
                         timestamp: v.timestamp,
                         createdAt: v.timestamp,
-                        label: v.label,
-                        changeSummary: v.label,
+                        label: cleanLabel,
+                        changeSummary: cleanLabel,
+                        ...(v.updatedBy ? { updatedBy: v.updatedBy } : {}),
+                        ...(isSeedVersionEntry(v) ? { isSeed: true } : {}),
                         itemCount: v.itemCount ?? items.length,
                         previewNames: items.map(p => p.name || p.personaName).filter(Boolean)
                     };
                 });
         }
 
+        let seenSeed = false;
         const versions = docsList
             .filter(v => (v.itemCount ?? 0) > 0 && v.label !== 'Guardado desde Generador de Audiencias' && !String(v.label || '').startsWith('Rollback a:'))
             .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
+            .filter(v => {
+                if (isSeedVersionEntry(v)) {
+                    if (seenSeed) return false;
+                    seenSeed = true;
+                }
+                return true;
+            })
             .slice(0, 20);
 
-        if (!versions.some(v => v.versionId === 'OFFICIAL_SEED')) {
+        if (!versions.some(v => isSeedVersionEntry(v))) {
             versions.push({
                 id: 'OFFICIAL_SEED',
                 versionId: 'OFFICIAL_SEED',
@@ -1400,6 +1520,7 @@ app.get('/api/config/personas/versions', async (req, res) => {
                 createdAt: '2026-11-01T12:00:00.000Z',
                 label: 'Configuración Inicial por Defecto',
                 changeSummary: 'Configuración Inicial por Defecto',
+                isSeed: true,
                 itemCount: initialPersonasSeed.length || 5
             });
         }
@@ -1411,7 +1532,7 @@ app.get('/api/config/personas/versions', async (req, res) => {
     }
 });
 
-app.post('/api/config/personas/rollback', async (req, res) => {
+app.post('/api/config/personas/rollback', adminGuard, async (req, res) => {
     try {
         const versionId = req.body?.versionId || req.body?.id;
         if (!versionId) {
@@ -1482,7 +1603,7 @@ app.post('/api/config/personas/rollback', async (req, res) => {
     }
 });
 
-app.post('/api/config/personas/reset', async (req, res) => {
+app.post('/api/config/personas/reset', adminGuard, async (req, res) => {
     try {
         const seed = loadSeedJson('personas_seed.json');
         const restoredData = (seed?.personas || []).map((p, i) => sanitizePersona(p, i));
@@ -1515,7 +1636,7 @@ app.post('/api/config/personas/reset', async (req, res) => {
             console.warn('Reset personas in memoryStore:', fsErr.message);
         }
 
-        const snapshot = await saveConfigVersionSnapshot('personas', restoredData, 'Restauración de Perfiles Base Oficiales');
+        const snapshot = await saveConfigVersionSnapshot('personas', restoredData, 'Restauración de Perfiles Base Oficiales', null, null, resolveSnapshotActor(req));
         res.json({ success: true, personas: restoredData, data: restoredData, versionId: snapshot.versionId });
     } catch (e) {
         console.error('Error resetting personas:', e);
@@ -1534,7 +1655,7 @@ app.get('/api/rubrics', async (req, res) => {
     }
 });
 
-app.post('/api/rubrics', async (req, res) => {
+app.post('/api/rubrics', adminGuard, async (req, res) => {
     try {
         const rawRubrics = Array.isArray(req.body) ? req.body : (req.body?.rubrics || []);
         const label = (!Array.isArray(req.body) && req.body?.label) ? req.body.label : 'Actualización de Rúbricas de Focus Group';
@@ -1556,7 +1677,7 @@ app.post('/api/rubrics', async (req, res) => {
             console.warn('Saved rubrics to memoryStore (Firestore sync warning):', fsErr.message);
         }
 
-        const snapshot = await saveConfigVersionSnapshot('rubrics', cleanRubrics, label);
+        const snapshot = await saveConfigVersionSnapshot('rubrics', cleanRubrics, label, null, null, resolveSnapshotActor(req));
         res.json({ success: true, rubrics: cleanRubrics, versionId: snapshot.versionId });
     } catch (e) {
         console.error('Error saving rubrics:', e);
@@ -1575,7 +1696,7 @@ app.get('/api/use-cases', async (req, res) => {
     }
 });
 
-app.post('/api/use-cases', async (req, res) => {
+app.post('/api/use-cases', adminGuard, async (req, res) => {
     try {
         const rawUseCases = Array.isArray(req.body) ? req.body : (req.body?.useCases || []);
         const label = (!Array.isArray(req.body) && req.body?.label) ? req.body.label : 'Actualización de Casos de Uso Clínicos';
@@ -1597,7 +1718,7 @@ app.post('/api/use-cases', async (req, res) => {
             console.warn('Saved use cases to memoryStore (Firestore sync warning):', fsErr.message);
         }
 
-        const snapshot = await saveConfigVersionSnapshot('use_cases', cleanUseCases, label);
+        const snapshot = await saveConfigVersionSnapshot('use_cases', cleanUseCases, label, null, null, resolveSnapshotActor(req));
         res.json({ success: true, useCases: cleanUseCases, versionId: snapshot.versionId });
     } catch (e) {
         console.error('Error saving use cases:', e);
@@ -1643,7 +1764,7 @@ app.get('/api/config/brand-manual', async (req, res) => {
     }
 });
 
-app.post('/api/config/brand-manual', async (req, res) => {
+app.post('/api/config/brand-manual', adminGuard, async (req, res) => {
     try {
         const rawManual = req.body?.identity_and_voice ? req.body : req.body?.manual;
         const label = (!req.body?.identity_and_voice && (req.body?.label || req.body?.changeSummary))
@@ -1686,7 +1807,8 @@ app.post('/api/config/brand-manual', async (req, res) => {
             manual,
             label || 'Actualización del Manual de Marca V4',
             null,
-            itemCount
+            itemCount,
+            resolveSnapshotActor(req)
         );
         syncMemoryStoreToGCS();
 
@@ -1747,11 +1869,14 @@ async function listConfigVersionsHandler(req, res) {
                 );
                 allDocs = snapshot.docs.map(doc => {
                     const d = doc.data();
+                    const resolvedVersionId = d.versionId || doc.id;
                     return {
-                        versionId: d.versionId || doc.id,
+                        versionId: resolvedVersionId,
                         entityType: d.entityType,
                         timestamp: d.timestamp,
-                        label: d.label,
+                        label: normalizeVersionLabel(d.label),
+                        ...(d.updatedBy ? { updatedBy: d.updatedBy } : {}),
+                        ...(isSeedVersionEntry({ versionId: resolvedVersionId, isSeed: d.isSeed }) ? { isSeed: true } : {}),
                         itemCount: d.itemCount ?? (
                             d.entityType === 'brand_manual'
                                 ? 5
@@ -1764,7 +1889,9 @@ async function listConfigVersionsHandler(req, res) {
                     versionId: v.versionId,
                     entityType: v.entityType,
                     timestamp: v.timestamp,
-                    label: v.label,
+                    label: normalizeVersionLabel(v.label),
+                    ...(v.updatedBy ? { updatedBy: v.updatedBy } : {}),
+                    ...(isSeedVersionEntry(v) ? { isSeed: true } : {}),
                     itemCount: v.itemCount
                 }));
             }
@@ -1786,11 +1913,14 @@ async function listConfigVersionsHandler(req, res) {
             );
             docsList = snapshot.docs.map(doc => {
                 const d = doc.data();
+                const resolvedVersionId = d.versionId || doc.id;
                 return {
-                    versionId: d.versionId || doc.id,
+                    versionId: resolvedVersionId,
                     entityType: d.entityType,
                     timestamp: d.timestamp,
-                    label: d.label,
+                    label: normalizeVersionLabel(d.label),
+                    ...(d.updatedBy ? { updatedBy: d.updatedBy } : {}),
+                    ...(isSeedVersionEntry({ versionId: resolvedVersionId, isSeed: d.isSeed }) ? { isSeed: true } : {}),
                     itemCount: d.itemCount ?? (
                         d.entityType === 'brand_manual'
                             ? 5
@@ -1805,17 +1935,27 @@ async function listConfigVersionsHandler(req, res) {
                     versionId: v.versionId,
                     entityType: v.entityType,
                     timestamp: v.timestamp,
-                    label: v.label,
+                    label: normalizeVersionLabel(v.label),
+                    ...(v.updatedBy ? { updatedBy: v.updatedBy } : {}),
+                    ...(isSeedVersionEntry(v) ? { isSeed: true } : {}),
                     itemCount: v.itemCount
                 }));
         }
 
+        let seenSeed = false;
         const versions = docsList
             .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
+            .filter(v => {
+                if (isSeedVersionEntry(v)) {
+                    if (seenSeed) return false;
+                    seenSeed = true;
+                }
+                return true;
+            })
             .slice(0, 20);
 
-        // Always include the official baseline seed option so users can reset at any time
-        if (!versions.some(v => v.versionId === 'OFFICIAL_SEED')) {
+        // Always include the official baseline seed option only when no initial seed snapshot is already present
+        if (!versions.some(v => isSeedVersionEntry(v))) {
             const seedLabel = entityType === 'brand_manual'
                 ? 'Manual de Marca Oficial V4 — Laboratorio Médico del Chopo'
                 : 'Configuración Inicial por Defecto';
@@ -1829,7 +1969,8 @@ async function listConfigVersionsHandler(req, res) {
                 entityType,
                 timestamp: '2026-11-01T12:00:00.000Z',
                 label: seedLabel,
-                itemCount: seedItemCount
+                itemCount: seedItemCount,
+                isSeed: true
             });
         }
 
@@ -1967,7 +2108,7 @@ app.get('/api/rag/docs', async (req, res) => {
     }
 });
 
-app.post('/api/rag/docs', async (req, res) => {
+app.post('/api/rag/docs', adminGuard, async (req, res) => {
     try {
         const rawDocs = req.body?.docs || req.body?.documents || req.body || {};
         const label = req.body?.label || 'Actualización desde RAG Admin';
@@ -1990,7 +2131,7 @@ app.post('/api/rag/docs', async (req, res) => {
             console.warn('Saved RAG docs to memoryStore (Firestore sync warning):', fsErr.message);
         }
 
-        const snapshot = await saveConfigVersionSnapshot('rag_docs', cleanDocs, label);
+        const snapshot = await saveConfigVersionSnapshot('rag_docs', cleanDocs, label, null, null, resolveSnapshotActor(req));
         syncRagDocsToGCSBackground(cleanDocs);
 
         res.json({
@@ -2005,7 +2146,7 @@ app.post('/api/rag/docs', async (req, res) => {
 });
 
 // Upload PDF, TXT, or MD file to GCS Bucket (chopo-rag-docs/) and extract text for RAG
-app.post('/api/rag/upload-file', async (req, res) => {
+app.post('/api/rag/upload-file', adminGuard, async (req, res) => {
     try {
         const { filename, mimeType, base64Data, textContent } = req.body || {};
         if (!filename) {
@@ -2279,9 +2420,10 @@ async function restoreConfigVersionHandler(req, res) {
         const snapshot = await saveConfigVersionSnapshot(
             entityType,
             restoredData,
-            `Rollback a: ${sourceLabel}`,
+            `Restaurado desde: ${sourceLabel}`,
             null,
-            restoreItemCount
+            restoreItemCount,
+            resolveSnapshotActor(req)
         );
 
         res.json({
@@ -2297,8 +2439,8 @@ async function restoreConfigVersionHandler(req, res) {
     }
 }
 
-app.post('/api/config-versions/restore', restoreConfigVersionHandler);
-app.post('/api/config/versions/restore', restoreConfigVersionHandler);
+app.post('/api/config-versions/restore', adminGuard, restoreConfigVersionHandler);
+app.post('/api/config/versions/restore', adminGuard, restoreConfigVersionHandler);
 
 // 5. Study-Scoped RAG Retrieval Endpoint (/api/rag/retrieve)
 function filterRealismRulesByStudy(realismMarkdown, studyName = '') {
@@ -2616,15 +2758,16 @@ app.post('/api/company-context', async (req, res) => {
     }
 });
 
-// Generic Runs Persistence (chopo_runs/:featureId)
+// Generic Runs Persistence (chopo_runs/:featureId or user-scoped <userId>__<featureId>)
 app.get('/api/load-run/:featureId', async (req, res) => {
     try {
         const { featureId } = req.params;
+        const scopedDocId = resolveScopedRunDocId(featureId, req.chopoUser, securityConfig);
         try {
             const docSnap = await withTimeout(
-                firestore.collection('chopo_runs').doc(featureId).get(),
+                firestore.collection('chopo_runs').doc(scopedDocId).get(),
                 2500,
-                `load-run ${featureId}`
+                `load-run ${scopedDocId}`
             );
             if (docSnap.exists) {
                 const record = docSnap.data();
@@ -2637,15 +2780,15 @@ app.get('/api/load-run/:featureId', async (req, res) => {
                         return res.json({ personas: payload.map((p, i) => sanitizePersona(p, i)) });
                     }
                 }
-                memoryStore.runs[featureId] = payload;
+                memoryStore.runs[scopedDocId] = payload;
                 return res.json(payload);
             }
         } catch (fsErr) {
-            console.warn(`load-run/${featureId} using memoryStore fallback:`, fsErr.message);
+            console.warn(`load-run/${scopedDocId} using memoryStore fallback:`, fsErr.message);
         }
 
-        if (memoryStore.runs[featureId] !== undefined) {
-            return res.json(memoryStore.runs[featureId]);
+        if (memoryStore.runs[scopedDocId] !== undefined) {
+            return res.json(memoryStore.runs[scopedDocId]);
         }
         if (featureId === 'audience_generator') {
             return res.json({ personas: memoryStore.personas });
@@ -2664,6 +2807,7 @@ app.post('/api/save-run', async (req, res) => {
             return res.status(400).json({ error: "featureId is required" });
         }
 
+        const scopedDocId = resolveScopedRunDocId(featureId, req.chopoUser, securityConfig);
         let cleanData = await extractAndUploadImages(data, featureId);
         const updatedAt = new Date().toISOString();
 
@@ -2671,43 +2815,52 @@ app.post('/api/save-run', async (req, res) => {
         if (featureId === 'audience_generator' && cleanData) {
             if (Array.isArray(cleanData.personas)) {
                 cleanData.personas = cleanData.personas.map((p, i) => sanitizePersona(p, i));
-                memoryStore.personas = cleanData.personas;
-                try {
-                    await withTimeout(
-                        Promise.all([
-                            firestore.collection('chopo_config').doc('personas_catalog').set({
-                                personas: cleanData.personas,
-                                updatedAt
-                            }),
-                            firestore.collection('chopo_config').doc('audiences').set({
-                                personas: cleanData.personas,
-                                updatedAt
-                            })
-                        ]),
-                        2500,
-                        'sync audience_generator personas'
-                    );
-                } catch (fsErr) {
-                    console.warn('Synced audience_generator personas to memoryStore:', fsErr.message);
+                if (scopedDocId === featureId) {
+                    memoryStore.personas = cleanData.personas;
+                    try {
+                        await withTimeout(
+                            Promise.all([
+                                firestore.collection('chopo_config').doc('personas_catalog').set({
+                                    personas: cleanData.personas,
+                                    updatedAt
+                                }),
+                                firestore.collection('chopo_config').doc('audiences').set({
+                                    personas: cleanData.personas,
+                                    updatedAt
+                                })
+                            ]),
+                            2500,
+                            'sync audience_generator personas'
+                        );
+                    } catch (fsErr) {
+                        console.warn('Synced audience_generator personas to memoryStore:', fsErr.message);
+                    }
                 }
             } else if (Array.isArray(cleanData)) {
                 const sanitized = cleanData.map((p, i) => sanitizePersona(p, i));
                 cleanData = { personas: sanitized };
-                memoryStore.personas = sanitized;
+                if (scopedDocId === featureId) {
+                    memoryStore.personas = sanitized;
+                }
             }
         }
 
-        memoryStore.runs[featureId] = cleanData;
+        memoryStore.runs[scopedDocId] = cleanData;
+
+        const runRecord = {
+            featureId,
+            scopedDocId,
+            data: cleanData,
+            updatedAt,
+            ...(req.chopoUser?.userId ? { userId: req.chopoUser.userId } : {}),
+            ...(req.chopoUser?.email ? { userEmail: req.chopoUser.email } : {})
+        };
 
         try {
             await withTimeout(
-                firestore.collection('chopo_runs').doc(featureId).set({
-                    featureId,
-                    data: cleanData,
-                    updatedAt
-                }),
+                firestore.collection('chopo_runs').doc(scopedDocId).set(runRecord),
                 2500,
-                `save-run ${featureId}`
+                `save-run ${scopedDocId}`
             );
 
             if (featureId === 'company_context' && cleanData && typeof cleanData === 'object') {
@@ -2721,7 +2874,7 @@ app.post('/api/save-run', async (req, res) => {
                 );
             }
         } catch (fsErr) {
-            console.warn(`Saved run ${featureId} in memoryStore (Firestore sync warning):`, fsErr.message);
+            console.warn(`Saved run ${scopedDocId} in memoryStore (Firestore sync warning):`, fsErr.message);
         }
 
         syncMemoryStoreToGCS();
@@ -2732,7 +2885,7 @@ app.post('/api/save-run', async (req, res) => {
     }
 });
 
-app.post('/api/runs/clear-all', async (req, res) => {
+app.post('/api/runs/clear-all', adminGuard, async (req, res) => {
     try {
         const preservedCompanyContext = memoryStore.runs.company_context;
         memoryStore.runs = preservedCompanyContext ? { company_context: preservedCompanyContext } : {};
@@ -2779,7 +2932,7 @@ app.post('/api/runs/clear-all', async (req, res) => {
 
 // --- Multimodal Compliance Auditor ("Agente Revisor" — 4 Pillars: COFEPRIS, Brand, Clinical, Visual Realism) ---
 
-app.post('/api/evaluator/single-check', checkAi, async (req, res) => {
+app.post('/api/evaluator/single-check', genaiRateLimiter, checkAi, async (req, res) => {
     try {
         const {
             copyText = '',
@@ -2953,7 +3106,9 @@ app.post('/api/evaluator/single-check', checkAi, async (req, res) => {
             clinicalLine,
             ragDatastoreUsed: process.env.VERTEX_RAG_DATASTORE_ID || 'firestore-rag-catalog',
             evaluation,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            ...(req.chopoUser?.userId ? { userId: req.chopoUser.userId } : {}),
+            ...(req.chopoUser?.email ? { userEmail: req.chopoUser.email } : {})
         };
 
         let evalId = `eval_${Date.now()}`;
